@@ -1,0 +1,14 @@
+# Replicating Braitenbergs
+
+
+Braitenberg’s Vehicles (1984) demonstrate how complex, lifelike behaviors can arise from minimal sensorimotor architectures. **Vehicle 1** is the simplest form: sensors are directly linked to motors so that the vehicle’s speed increases with light intensity. This basic arrangement produces straightforward phototaxis—movement guided purely by brightness—showing how even a single feedback loop can generate purposeful motion without any form of perception or cognition.
+
+**Vehicles 2a** and **2b** expand on this idea by adding two sensors and two motors, connected either on the same side or crossed to the opposite side. In Vehicle 2a, uncrossed connections cause the vehicle to turn away from light, mimicking “fear.” In Vehicle 2b, crossed wiring produces the opposite reaction: the vehicle turns toward light, an “aggressive” or seeking behavior. These configurations reveal how directional approach and avoidance can emerge simply from geometric differences in wiring.
+
+With **Vehicles 3a** and **3b**, Braitenberg introduces inhibition, adding another layer of complexity. Here, the sensors decrease rather than increase motor activity. In 3a, same-side inhibitory wiring causes the vehicle to slow and stop near a light source—interpreted as “love.” In 3b, crossed inhibitory connections yield continual adjustments and wandering paths, behaviorally resembling “exploration.” Across this series, each new design demonstrates how variations in sensor–motor coupling can produce behaviors that seem intentional or emotional, yet arise purely from feedback dynamics.
+
+
+Cisek
+This progression offers a compelling framework for understanding the evolution of visually guided behavior in early chordates. The first chordate nervous systems consisted of a simple hypothalamic region regulating basic physiology and a hindbrain–spinal complex driving rhythmic swimming. Early photoreceptors functioned like Vehicle 1, linking light detection directly to motion. As circuits diversified, they began supporting escape responses akin to Vehicle 2a, where light reduction triggered avoidance. With bilateral photoreceptive patches and contralateral wiring—echoing Vehicle 2b—organisms gained directional control, turning toward or away from stimuli.
+
+The subsequent emergence of paired eyes and retino-tectal pathways parallels the inhibitory sophistication of Vehicles 3a and 3b, enabling both approach and avoidance depending on context. In lampreys and early vertebrates, distinct tectal zones mediated these responses through lateral inhibition, ensuring that one behavioral mode could suppress the other when necessary. Thus, the evolutionary transition from scattered photoreceptors to image-forming eyes recapitulates Braitenberg’s conceptual sequence: simple excitation gives rise to orientation, and inhibition adds adaptive choice—together forming the neural foundations of purposeful vision and action.

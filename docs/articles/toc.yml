@@ -5,5 +5,9 @@
 - name: Free Love
   href: free_love.md
   items:
-    - name: Install Bonsai 
-      href: install_bonsai.md
+    - name: 0. Braitenberg Creatures 
+      href: braitenberg_creatures.md
+    - name: 1. Lower Motor System 
+      href: lower_motor_system.md
+    - name: 2. Touch Reflexes 
+      href: touch_reflexes.md
