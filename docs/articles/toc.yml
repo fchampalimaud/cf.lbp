@@ -7,7 +7,9 @@
   items:
     - name: 0. Braitenberg Creatures 
       href: ../workflows/BraitenbergCreatures/braitenberg_creatures.md
-    - name: 1. Lower Motor System 
+    - name: 1. Expanding the Sensory System 
+      href: ../workflows/ExpandingSensorySystem/expanding_sensory_system.md
+    - name: 2. Lower Motor System 
       href: lower_motor_system.md
-    - name: 2. Touch Reflexes 
+    - name: 3. Touch Reflexes 
       href: touch_reflexes.md
