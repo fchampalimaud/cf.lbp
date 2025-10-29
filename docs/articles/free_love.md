@@ -1,4 +1,4 @@
-# Free Love
+# Free Braitenber's Love
 
 ## Unstucking Braitenberg's wheels
 

@@ -2,11 +2,11 @@
   href: welcome.md
 - name: Meet MinimU
   href: meet_minimu.md
-- name: Free Love
+- name: Free Braitenberg's Love
   href: free_love.md
   items:
     - name: 0. Braitenberg Creatures 
-      href: braitenberg_creatures.md
+      href: ../workflows/BraitenbergCreatures/braitenberg_creatures.md
     - name: 1. Lower Motor System 
       href: lower_motor_system.md
     - name: 2. Touch Reflexes 
