@@ -1,0 +1,122 @@
+{
+  "source_base_path": "D:/a/cf.lbp/cf.lbp/docs",
+  "xrefmap": "xrefmap.yml",
+  "files": [
+    {
+      "type": "Resource",
+      "output": {
+        "resource": {
+          "relative_path": "index.json"
+        }
+      }
+    },
+    {
+      "type": "Conceptual",
+      "source_relative_path": "articles/free_love.md",
+      "output": {
+        ".html": {
+          "relative_path": "articles/free_love.html"
+        }
+      },
+      "version": ""
+    },
+    {
+      "type": "Conceptual",
+      "source_relative_path": "articles/install_bonsai.md",
+      "output": {
+        ".html": {
+          "relative_path": "articles/install_bonsai.html"
+        }
+      },
+      "version": ""
+    },
+    {
+      "type": "Conceptual",
+      "source_relative_path": "articles/install_lbp_torch.md",
+      "output": {
+        ".html": {
+          "relative_path": "articles/install_lbp_torch.html"
+        }
+      },
+      "version": ""
+    },
+    {
+      "type": "Conceptual",
+      "source_relative_path": "articles/meet_minimu.md",
+      "output": {
+        ".html": {
+          "relative_path": "articles/meet_minimu.html"
+        }
+      },
+      "version": ""
+    },
+    {
+      "type": "Toc",
+      "source_relative_path": "articles/toc.yml",
+      "output": {
+        ".html": {
+          "relative_path": "articles/toc.html"
+        },
+        ".json": {
+          "relative_path": "articles/toc.json"
+        }
+      },
+      "version": ""
+    },
+    {
+      "type": "Conceptual",
+      "source_relative_path": "articles/welcome.md",
+      "output": {
+        ".html": {
+          "relative_path": "articles/welcome.html"
+        }
+      },
+      "version": ""
+    },
+    {
+      "type": "Conceptual",
+      "source_relative_path": "docfx-tools/README.md",
+      "output": {
+        ".html": {
+          "relative_path": "docfx-tools/README.html"
+        }
+      },
+      "version": ""
+    },
+    {
+      "type": "Redirection",
+      "source_relative_path": "index.md",
+      "output": {
+        ".html": {
+          "relative_path": "index.html"
+        }
+      },
+      "version": ""
+    },
+    {
+      "type": "Resource",
+      "source_relative_path": "workflows/TrialBasedSession.bonsai",
+      "output": {
+        "resource": {
+          "relative_path": "workflows/TrialBasedSession.bonsai"
+        }
+      },
+      "version": ""
+    },
+    {
+      "type": "Resource",
+      "source_relative_path": "workflows/TrialBasedSession.svg",
+      "output": {
+        "resource": {
+          "relative_path": "workflows/TrialBasedSession.svg"
+        }
+      },
+      "version": ""
+    }
+  ],
+  "groups": [
+    {
+      "xrefmap": "xrefmap.yml"
+    }
+  ]
+}
