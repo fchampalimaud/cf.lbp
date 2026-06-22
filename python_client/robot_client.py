@@ -101,25 +101,28 @@ class RobotClient:
     ROBOT_PORT = 2390
     LOCAL_PORT = 2390           # robot replies to whichever port we send FROM
 
-    PI_IP   = "192.168.0.190"
-    PI_PORT = 5002
+    PI_IP         = "192.168.0.190"
+    PI_PORT       = 5002   # port the Pi listens on for keepalives
+    CAM_LOCAL_PORT = 5126  # local port we bind to (Pi sends frames back here)
     PI_KEEPALIVE_INTERVAL = 0.5
 
     def __init__(
         self,
-        robot_ip:   str = ROBOT_IP,
-        robot_port: int = ROBOT_PORT,
-        local_port: int = LOCAL_PORT,
-        pi_ip:      str = PI_IP,
-        pi_port:    int = PI_PORT,
-        enable_camera: bool = True,
+        robot_ip:       str = ROBOT_IP,
+        robot_port:     int = ROBOT_PORT,
+        local_port:     int = LOCAL_PORT,
+        pi_ip:          str = PI_IP,
+        pi_port:        int = PI_PORT,
+        cam_local_port: int = CAM_LOCAL_PORT,
+        enable_camera:  bool = True,
     ):
-        self.robot_ip   = robot_ip
-        self.robot_port = robot_port
-        self.local_port = local_port
-        self.pi_ip      = pi_ip
-        self.pi_port    = pi_port
-        self.enable_camera = enable_camera
+        self.robot_ip       = robot_ip
+        self.robot_port     = robot_port
+        self.local_port     = local_port
+        self.pi_ip          = pi_ip
+        self.pi_port        = pi_port
+        self.cam_local_port = cam_local_port
+        self.enable_camera  = enable_camera
 
         # ── Latest sensor state ───────────────────────────────────────────────
         self.bumpers:  list = [0, 0, 0, 0]      # [pin0, pin8, pin10, pin13] — 1 = pressed
@@ -128,7 +131,7 @@ class RobotClient:
         self.gyro:     list = [0.0, 0.0, 0.0]  # deg/s  x y z
         self.acc:      list = [0.0, 0.0, 0.0]  # g      x y z
         self.mag:      list = [0.0, 0.0, 0.0]  # uT     x y z
-        self.energy: dict = {}                  # battery_level, current3/4, mkr_voltage
+        self.energy:   dict = {}                # battery_level, current3/4, mkr_voltage
         self.frame: Optional[np.ndarray] = None # latest BGR image from RPi camera
 
         # ── Callbacks (optional) ─────────────────────────────────────────────
@@ -167,7 +170,7 @@ class RobotClient:
         if self.enable_camera:
             self._cam_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             self._cam_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self._cam_sock.bind(("0.0.0.0", self.pi_port))
+            self._cam_sock.bind(("0.0.0.0", self.cam_local_port))
             self._cam_sock.settimeout(1.0)
             self._threads += [
                 threading.Thread(target=self._cam_recv_loop,      daemon=True, name="lbp-cam"),
@@ -319,6 +322,76 @@ class RobotClient:
             except OSError:
                 break
             time.sleep(self.PI_KEEPALIVE_INTERVAL)
+
+
+# ── Generic OSC listener (separate from the robot connection) ─────────────────
+
+
+class OscListener:
+    """
+    Lightweight UDP OSC listener on a single port.
+
+    Register address handlers with subscribe(), then call start()/stop()
+    or use as a context manager.
+
+    Example::
+
+        listener = OscListener(port=9001)
+        listener.subscribe("/robot",     lambda args: print("robot", args))
+        listener.subscribe("/auxrobots", lambda args: print("aux",   args))
+        with listener:
+            time.sleep(10)
+    """
+
+    def __init__(self, port: int):
+        self.port = port
+        self._handlers: dict[str, Callable[[list], None]] = {}
+        self._sock:    Optional[socket.socket] = None
+        self._thread:  Optional[threading.Thread] = None
+        self._running  = False
+
+    def subscribe(self, address: str, callback: Callable[[list], None]):
+        self._handlers[address] = callback
+
+    def start(self):
+        if self._running:
+            return
+        self._running = True
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._sock.bind(("0.0.0.0", self.port))
+        self._sock.settimeout(1.0)
+        self._thread = threading.Thread(target=self._recv_loop, daemon=True,
+                                        name=f"osc-listener-{self.port}")
+        self._thread.start()
+
+    def stop(self):
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=2.0)
+        if self._sock:
+            self._sock.close()
+            self._sock = None
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, *_):
+        self.stop()
+
+    def _recv_loop(self):
+        while self._running:
+            try:
+                data, _ = self._sock.recvfrom(4096)
+                address, args = _decode_osc(data)
+                print(f"\n[OscListener:{self.port}] got {address} {args}", flush=True)
+                if address in self._handlers:
+                    self._handlers[address](args)
+            except socket.timeout:
+                continue
+            except OSError:
+                break
 
 
 # ── Quick smoke-test ──────────────────────────────────────────────────────────
