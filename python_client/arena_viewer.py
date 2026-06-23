@@ -87,6 +87,7 @@ class ArenaViewer:
         self._r1_back = None
         self._r2      = None
         self._r3      = None
+        self._corners = [None, None, None, None]
 
         self._driving_label = "stop"
         self._refresh()
@@ -103,6 +104,18 @@ class ArenaViewer:
             self._r2 = (args[0], args[1])
             self._r3 = (args[2], args[3])
 
+    def on_corners12(self, args):
+        print(f"corners12: {args}")
+        with self._lock:
+            self._corners[0] = (args[0], args[1])
+            self._corners[1] = (args[2], args[3])
+
+    def on_corners34(self, args):
+        print(f"corners34: {args}")
+        with self._lock:
+            self._corners[2] = (args[0], args[1])
+            self._corners[3] = (args[2], args[3])
+
     # ── Keyboard helpers ──────────────────────────────────────────────────────
 
     def drive(self, label: str, vl: int, vr: int):
@@ -117,9 +130,28 @@ class ArenaViewer:
             r1_back = self._r1_back
             r2      = self._r2
             r3      = self._r3
+            corners = list(self._corners)
 
         c = self.canvas
         c.delete("robots")
+        c.delete("corners")
+
+        canvas_corners = [self._to_canvas(*pt) if pt else None for pt in corners]
+        if all(canvas_corners):
+            cx_mean = sum(x for x, y in canvas_corners) / 4
+            cy_mean = sum(y for x, y in canvas_corners) / 4
+            sorted_corners = sorted(canvas_corners,
+                                    key=lambda p: math.atan2(p[1] - cy_mean, p[0] - cx_mean))
+            pts_flat = [coord for x, y in sorted_corners for coord in (x, y)]
+            c.create_polygon(pts_flat, fill="", outline="#00ffff", width=1, tags="corners")
+        for i, cpt in enumerate(canvas_corners):
+            if cpt:
+                cx, cy = cpt
+                r = 5
+                c.create_rectangle(cx - r, cy - r, cx + r, cy + r,
+                                   outline="#00ffff", fill="", width=2, tags="corners")
+                c.create_text(cx, cy - 10, text=str(i), fill="#00ffff",
+                              font=("Courier", 8), tags="corners")
 
         if r1_fwd and r1_back:
             fx, fy = self._to_canvas(*r1_fwd)
@@ -179,8 +211,10 @@ def run():
     listener = OscListener(port=9000)
 
     viewer = ArenaViewer(root, robot)
-    listener.subscribe("/robot",     viewer.on_robot)
-    listener.subscribe("/auxrobots", viewer.on_aux)
+    listener.subscribe("/robot",      viewer.on_robot)
+    listener.subscribe("/auxrobots",  viewer.on_aux)
+    listener.subscribe("/corners12",  viewer.on_corners12)
+    listener.subscribe("/corners34",  viewer.on_corners34)
 
     robot.start()
     listener.start()
