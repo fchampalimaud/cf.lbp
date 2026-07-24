@@ -1,0 +1,52 @@
+{
+    "module_name": "BrainTemporalBraitenberg",
+    "class_name": "BrainTemporalBraitenberg",
+    "sim_params": {
+        "dt": 0.01,
+        "arena_scale": 2.0,
+        "motor_gain": 1.0,
+        "sense_radius": 1.0,
+        "init_x": -2.0,
+        "init_y": 0.0,
+        "stim_radius": 0.5,
+        "body_radius": 0.1,
+        "sensor_angle": 0.2,
+        "toggle_stim": 1.0,
+        "fixate_robot": 0.0
+    },
+    "brain_params": {
+        "speed_base": 30.0,
+        "osc_gain": 60.0,
+        "osc_drive": 4.0,
+        "m_tau": 0.05,
+        "f_tau": 0.1,
+        "f_gain": 5.0,
+        "w_ihn": 2.0,
+        "ds_gain": 70.0
+    },
+    "plot_multipliers": {
+        "light_0": 0.1,
+        "light_1": 0.1,
+        "mL": 0.1,
+        "mR": 0.1,
+        "oscL": 0.1,
+        "oscR": 0.1,
+        "biasL": 0.1,
+        "biasR": 0.1,
+        "ds": 0.1
+    },
+    "patches": [
+        {
+            "x": -0.20988507733517725,
+            "y": 0.9954203750108008,
+            "r": 1.2957801333674286,
+            "color": [
+                1.0,
+                0.0,
+                0.0
+            ],
+            "label": "A"
+        }
+    ],
+    "objects": []
+}

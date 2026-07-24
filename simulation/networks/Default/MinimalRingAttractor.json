@@ -1,0 +1,163 @@
+{
+  "version": 1,
+  "motor_layer": "motor",
+  "hidden_groups": [],
+  "disabled_groups": [],
+  "sensors": [
+    {
+      "type": "SkyCompassSensor",
+      "name": "sensor0",
+      "n": 2,
+      "scale": 1.0,
+      "activation": "relu",
+      "noise_std": 0.0,
+      "noise_tau": 0.0,
+      "derivative": true
+    }
+  ],
+  "layers": [
+    {
+      "type": "RingAttractorLayer",
+      "name": "layer1",
+      "layer": 1,
+      "n": 2,
+      "tau": 0.1,
+      "activation": "relu",
+      "bias": 0.0,
+      "noise_std": 0.0,
+      "noise_tau": 0.0,
+      "viz_row": 0
+    }
+  ],
+  "connections": [
+    {
+      "src": "layer1",
+      "tgt": "layer1",
+      "W": [
+        [
+          0.0,
+          -0.16732783914013724
+        ],
+        [
+          -0.16732783914013724,
+          0.0
+        ]
+      ],
+      "params": {
+        "type": 3,
+        "uniform": {
+          "amp": 1.0
+        },
+        "cosine": {
+          "amp": 1.0,
+          "ph0": 0.0,
+          "step": 45.0
+        },
+        "gaussian": {
+          "amp": 1.0,
+          "sig": 0.2,
+          "off": 0.0,
+          "base": 0.0
+        },
+        "mexican_hat": {
+          "exc": 2.0000000000000004,
+          "sige": 0.2,
+          "inh": 1.5000000000000004,
+          "sigi": 0.5
+        },
+        "one_to_one": {
+          "amp": 1.0,
+          "off": 0
+        },
+        "expression": {
+          "code": ""
+        }
+      }
+    },
+    {
+      "src": "sensor0",
+      "tgt": "layer1",
+      "W": [
+        [
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "params": {
+        "type": 4,
+        "uniform": {
+          "amp": 1.0
+        },
+        "cosine": {
+          "amp": 1.0,
+          "ph0": 0.0,
+          "step": 45.0
+        },
+        "gaussian": {
+          "amp": 1.0,
+          "sig": 0.2,
+          "off": 0.0,
+          "base": 0.0
+        },
+        "mexican_hat": {
+          "exc": 2.0,
+          "sige": 0.17,
+          "inh": 1.0,
+          "sigi": 0.38
+        },
+        "one_to_one": {
+          "amp": 1.0,
+          "off": 0
+        },
+        "expression": {
+          "code": ""
+        }
+      }
+    }
+  ],
+  "bodies": [
+    {
+      "id": "root",
+      "name": "root",
+      "radius": 0.2
+    },
+    {
+      "id": "d1c34341",
+      "name": "wheel_L",
+      "radius": 0.06999999999999999
+    },
+    {
+      "id": "2129af28",
+      "name": "wheel_R",
+      "radius": 0.06999999999999999
+    }
+  ],
+  "joints": [
+    {
+      "parent_id": "root",
+      "child_id": "d1c34341",
+      "attach_dist": 0.18000000000000002,
+      "attach_angle": 1.5707963267948966,
+      "angle": 0.0,
+      "angle_min": 0.0,
+      "angle_max": 0.0,
+      "motor_layer_name": "motor",
+      "motor_output_idx": 0
+    },
+    {
+      "parent_id": "root",
+      "child_id": "2129af28",
+      "attach_dist": 0.18000000000000002,
+      "attach_angle": -1.5707963267948966,
+      "angle": 0.0,
+      "angle_min": 0.0,
+      "angle_max": 0.0,
+      "motor_layer_name": "motor",
+      "motor_output_idx": 1
+    }
+  ]
+}

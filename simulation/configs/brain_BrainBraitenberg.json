@@ -1,0 +1,13 @@
+{
+    "params": {
+        "speed_base": 100.0,
+        "gain_ipsi": -60.0,
+        "gain_contra": 0.0
+    },
+    "multipliers": {
+        "sL": 0.0,
+        "sR": 0.0,
+        "mL": 1.0,
+        "mR": 1.0
+    }
+}

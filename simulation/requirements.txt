@@ -1,0 +1,13 @@
+PySide6>=6.5
+pyqtgraph>=0.13
+numpy>=1.24
+torch>=2.0
+
+# Optional — in-app help renderer (falls back to system browser if absent)
+# PySide6-WebEngine>=6.5
+
+# Optional — multi-body physics
+# mujoco>=3.0
+
+# Developer tools (scripts/)
+libcst>=1.1

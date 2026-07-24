@@ -1,0 +1,23 @@
+{
+    "params": {
+        "dt": 0.05,
+        "arena_scale": 2.0,
+        "motor_gain": 1.0,
+        "sense_radius": 1.0,
+        "init_x": -2.0,
+        "init_y": 0.0,
+        "stim_radius": 0.5,
+        "body_radius": 0.1,
+        "sensor_angle": 0.0,
+        "toggle_stim": 1.0,
+        "fixate_robot": 0.0
+    },
+    "patches": [
+        {
+            "x": 0.06085799800465597,
+            "y": 0.5914998337213169,
+            "r": 0.8904870404883338
+        }
+    ],
+    "last_brain": "BrainTemporalBraitenberg"
+}

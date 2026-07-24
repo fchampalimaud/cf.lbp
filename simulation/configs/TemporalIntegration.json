@@ -1,0 +1,97 @@
+{
+    "module_name": "BrainTemporalBraitenberg",
+    "class_name": "BrainTemporalBraitenberg",
+    "sim_params": {
+        "dt": 0.001,
+        "arena_scale": 5.6000000000000005,
+        "motor_gain": 1.0,
+        "sense_radius": 1.0,
+        "init_x": 0.6000000000000014,
+        "init_y": -2.0,
+        "stim_radius": 0.5,
+        "body_radius": 0.2,
+        "sensor_angle": 0.14,
+        "toggle_stim": 1,
+        "fixate_robot": 0.0
+    },
+    "brain_params": {
+        "speed_base": 16.0,
+        "osc_gain": 43.0,
+        "osc_drive": 6.6000000000000005,
+        "m_tau": 0.191,
+        "f_tau": 0.901,
+        "f_gain": 7.7,
+        "w_ihn": 2.0,
+        "ds_gain": 229.0
+    },
+    "plot_multipliers": {
+        "mL": 0.1,
+        "mR": 0.1,
+        "oscL": 0.1,
+        "oscR": 0.1,
+        "biasL": 0.1,
+        "biasR": 0.1,
+        "ds": 0.1
+    },
+    "patches": [
+        {
+            "x": -2.0979756375427234,
+            "y": 2.462974323021646,
+            "r": 1.6945395287769633,
+            "color": [
+                1.0,
+                0.0,
+                0.0
+            ],
+            "label": "A"
+        },
+        {
+            "x": -2.255718166681274,
+            "y": -1.8749452282884937,
+            "r": 2.2754325655218675,
+            "color": [
+                0.0,
+                1.0,
+                0.0
+            ],
+            "label": "B"
+        },
+        {
+            "x": 1.1433333333333326,
+            "y": 0.08166666666666611,
+            "r": 0.7207465693875692,
+            "color": [
+                1.0,
+                0.0,
+                0.0
+            ],
+            "label": "A"
+        },
+        {
+            "x": 0.8438888888888894,
+            "y": -3.920000000000001,
+            "r": 1.3349995376149384,
+            "color": [
+                1.0,
+                0.0,
+                0.0
+            ],
+            "label": "A"
+        },
+        {
+            "x": 3.974444444444444,
+            "y": -0.6533333333333342,
+            "r": 1.8875819007658359,
+            "color": [
+                1.0,
+                0.0,
+                0.0
+            ],
+            "label": "A"
+        }
+    ],
+    "objects": [],
+    "speed_mult": 100,
+    "trail_length": 5000,
+    "arena_round": true
+}

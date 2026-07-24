@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "motor_layer": "motor",
+  "hidden_groups": [],
+  "disabled_groups": [],
+  "sensors": [],
+  "layers": [
+    {
+      "type": "SumLayer",
+      "name": "motor",
+      "layer": 4,
+      "activation": "linear",
+      "scale": 1.0,
+      "n": 2
+    }
+  ],
+  "connections": []
+}

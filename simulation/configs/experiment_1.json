@@ -1,0 +1,34 @@
+{
+    "module_name": "BrainGUI",
+    "class_name": "BrainGUI",
+    "sim_params": {
+        "dt": 0.001,
+        "arena_scale": 5.0,
+        "motor_gain": 1.0,
+        "sense_radius": 1.0,
+        "init_x": 0.0,
+        "init_y": 0.0,
+        "stim_radius": 0.5,
+        "body_radius": 0.2,
+        "sensor_angle": 0.2,
+        "toggle_stim": 1,
+        "fixate_robot": 0.0
+    },
+    "brain_params": {
+        "network_file": ""
+    },
+    "plot_multipliers": {
+        "mL": 0.1,
+        "mR": 0.1
+    },
+    "patches": [],
+    "objects": [],
+    "walls": [],
+    "sky": {
+        "enabled": false,
+        "angle": 0.0
+    },
+    "speed_mult": 1,
+    "trail_length": 500,
+    "arena_round": true
+}

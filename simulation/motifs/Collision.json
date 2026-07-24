@@ -1,0 +1,156 @@
+{
+  "sensors": [
+    {
+      "type": "CollisionSensor",
+      "name": "bumper",
+      "osc_path": "/bumpers",
+      "n": 2,
+      "angle_spread_deg": 90.0,
+      "arc_angle_deg": 40.0,
+      "radius": 1.2,
+      "scale": 100.0,
+      "bias": 0.0,
+      "noise_std": 20.0,
+      "activation": "linear",
+      "viz_layer": 1
+    }
+  ],
+  "layers": [
+    {
+      "type": "ConstantLayer",
+      "name": "Drive",
+      "layer": 2,
+      "value": 50.0,
+      "n": 2,
+      "noise_std": 0.0
+    },
+    {
+      "type": "LeakyLayer",
+      "name": "bumper_short",
+      "layer": 2,
+      "tau_rise": 0.1,
+      "tau_decay": 0.5,
+      "bias": 0.0,
+      "activation": "relu",
+      "n": 2,
+      "derivative": false,
+      "noise_std": 0.0,
+      "noise_tau": 0.0,
+      "scale": 1.0
+    },
+    {
+      "type": "LeakyLayer",
+      "name": "bumper_long",
+      "layer": 2,
+      "tau_rise": 0.1,
+      "tau_decay": 1.0,
+      "bias": 0.0,
+      "activation": "relu",
+      "n": 2,
+      "derivative": false,
+      "noise_std": 0.0,
+      "noise_tau": 0.0,
+      "scale": 1.0
+    },
+    {
+      "type": "LeakyLayer",
+      "name": "fw",
+      "layer": 3,
+      "tau_rise": 0.1,
+      "tau_decay": 0.1,
+      "bias": 0.0,
+      "activation": "relu",
+      "n": 2,
+      "derivative": false,
+      "noise_std": 0.0,
+      "noise_tau": 0.0,
+      "scale": 1.0
+    },
+    {
+      "type": "LeakyLayer",
+      "name": "bw",
+      "layer": 3,
+      "tau_rise": 0.1,
+      "tau_decay": 0.1,
+      "bias": 0.0,
+      "activation": "relu",
+      "n": 2,
+      "derivative": false,
+      "noise_std": 0.0,
+      "noise_tau": 0.0,
+      "scale": 1.0
+    }
+  ],
+  "connections": [
+    {
+      "src": "bumper",
+      "tgt": "bumper_short",
+      "W": [
+        [
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    {
+      "src": "bumper",
+      "tgt": "bumper_long",
+      "W": [
+        [
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    {
+      "src": "bumper_long",
+      "tgt": "bw",
+      "W": [
+        [
+          0.0,
+          1.0
+        ],
+        [
+          1.0,
+          0.0
+        ]
+      ]
+    },
+    {
+      "src": "bumper_short",
+      "tgt": "bw",
+      "W": [
+        [
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ]
+    },
+    {
+      "src": "Drive",
+      "tgt": "fw",
+      "W": [
+        [
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ]
+    }
+  ]
+}

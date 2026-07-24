@@ -1,0 +1,53 @@
+site_name: 2D Braitenberg Simulator
+site_description: Build and run neural-circuit behaviours on a simulated robot
+
+theme:
+  name: material
+  palette:
+    scheme: slate
+    primary: deep purple
+    accent: teal
+  font:
+    text: Inter
+    code: JetBrains Mono
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - content.code.annotate
+    - toc.follow
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - attr_list
+  - md_in_html
+  - tables
+
+nav:
+  - Home: index.md
+  - Tour of the Simulator: simulator/tour.md
+  - Braitenberg with Code: simulator/braitenberg-code.md
+  - Braitenberg with Layers: simulator/braitenberg-neural.md
+  - Architecture: simulator/architecture.md
+  - Timing: simulator/timing.md
+  - Vehicles:
+      - FeedingBrain: simulator/feedingbrain.md
+      - RingAttractorBrain: simulator/ringattractorbrain.md
+  - Real Robot: simulator/real-robot.md
+
+docs_dir: docs
+site_dir: site

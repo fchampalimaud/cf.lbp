@@ -1,0 +1,23 @@
+{
+    "params": {
+        "speed_base": 20.0,
+        "osc_gain": 10.0,
+        "osc_drive": 3.0,
+        "m_tau": 0.05,
+        "f_tau": 0.1,
+        "f_gain": 5.0,
+        "w_ihn": 2.0,
+        "ds_gain": 40.0
+    },
+    "multipliers": {
+        "sL": 1.0,
+        "sR": 1.0,
+        "mL": 0.1,
+        "mR": 0.1,
+        "oscL": 0.1,
+        "oscR": 0.1,
+        "biasL": 0.1,
+        "biasR": 0.1,
+        "ds": 0.1
+    }
+}

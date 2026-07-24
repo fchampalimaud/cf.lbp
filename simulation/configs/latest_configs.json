@@ -1,0 +1,93 @@
+{
+    "module_name": "BrainGUI",
+    "class_name": "BrainGUI",
+    "sim_params": {
+        "dt": 0.01,
+        "arena_scale": 2.0,
+        "motor_gain": 1.0,
+        "sense_radius": 1.0,
+        "init_x": -1.0,
+        "init_y": 0.0,
+        "stim_radius": 0.5,
+        "body_radius": 0.1,
+        "sensor_angle": 0.14,
+        "toggle_stim": 1,
+        "fixate_robot": 0.0
+    },
+    "brain_params": {
+        "network_project": "Temp",
+        "network_file": "Visual.json"
+    },
+    "plot_multipliers": {
+        "mL": 1.0,
+        "mR": 1.0
+    },
+    "patches": [
+        {
+            "x": -0.20404858299595152,
+            "y": 0.34858299595141706,
+            "r": 0.6738625289540429,
+            "color": [
+                1.0,
+                0.0,
+                0.0
+            ],
+            "label": "A"
+        },
+        {
+            "x": 0.9607287449392712,
+            "y": 0.6631578947368422,
+            "r": 0.5191110736387832,
+            "color": [
+                0.0,
+                1.0,
+                0.0
+            ],
+            "label": "B"
+        }
+    ],
+    "objects": [
+        {
+            "x": 0.23805668016194304,
+            "y": -0.18704453441295543,
+            "r": 0.1447842565524106,
+            "color": [
+                1.0,
+                0.0,
+                0.0
+            ],
+            "external": true
+        },
+        {
+            "x": 0.3145748987854251,
+            "y": 0.4421052631578948,
+            "r": 0.3005919515165484,
+            "color": [
+                0.0,
+                0.7,
+                0.0
+            ],
+            "external": true
+        }
+    ],
+    "walls": [],
+    "sky": {
+        "enabled": false,
+        "angle": 0.0
+    },
+    "speed_mult": 200,
+    "trail_length": 1000,
+    "arena_round": true,
+    "agents": [
+        {
+            "module_name": "BrainGUI",
+            "name": "Group 1",
+            "color": "#4a7fcb",
+            "n": 1,
+            "brain_params": {
+                "network_project": "Temp",
+                "network_file": "Visual.json"
+            }
+        }
+    ]
+}

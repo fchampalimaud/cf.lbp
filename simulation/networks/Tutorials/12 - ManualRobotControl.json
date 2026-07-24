@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "motor_layer": "motor",
+  "hidden_cols": [],
+  "disabled_cols": [],
+  "col_labels": {},
+  "sensors": [
+    {
+      "type": "CollisionSensor",
+      "name": "bumper",
+      "robot_address": "192.168.0.224:2390/bumpers[iiiii](1,2)",
+      "n": 2,
+      "angle_spread_deg": 90.0,
+      "arc_angle_deg": 40.0,
+      "radius": 1.2,
+      "scale": 100.0,
+      "bias": 0.0,
+      "noise_std": 20.0,
+      "activation": "linear",
+      "viz_layer": 1
+    }
+  ],
+  "layers": [
+    {
+      "type": "MotorLayer",
+      "name": "motor",
+      "layer": 2,
+      "activation": "linear",
+      "n": 2,
+      "scale": 1.0,
+      "robot_address": "192.168.0.224:2390/wheels"
+    }
+  ],
+  "connections": []
+}

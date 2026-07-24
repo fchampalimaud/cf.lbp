@@ -1,0 +1,87 @@
+{
+    "module_name": "BrainObstacleAvoidance",
+    "class_name": "BrainObstacleAvoidance",
+    "sim_params": {
+        "dt": 0.01,
+        "arena_scale": 2.0,
+        "motor_gain": 1.0,
+        "sense_radius": 1.0,
+        "init_x": -2.0,
+        "init_y": 0.0,
+        "stim_radius": 0.5,
+        "body_radius": 0.1,
+        "sensor_angle": 0.2,
+        "toggle_stim": 1.0,
+        "fixate_robot": 0.0
+    },
+    "brain_params": {
+        "speed_base": 50.0,
+        "gain_ipsi": -50.0,
+        "gain_contra": 30.0,
+        "use_gradient": 0.0
+    },
+    "plot_multipliers": {
+        "light_0": 0.1,
+        "light_1": 0.1,
+        "distance_0": 0.1,
+        "distance_1": 0.1,
+        "mL": 0.1,
+        "mR": 0.1
+    },
+    "patches": [],
+    "objects": [
+        {
+            "x": -1.2870174145397584,
+            "y": -0.10190730673546478,
+            "r": 0.14549739964629263,
+            "color": [
+                1.0,
+                0.0,
+                0.0
+            ]
+        },
+        {
+            "x": -1.1875057587763749,
+            "y": 0.8135999262876616,
+            "r": 0.24339139696024636,
+            "color": [
+                1.0,
+                0.5,
+                0.0
+            ]
+        },
+        {
+            "x": -0.14595042845296202,
+            "y": 0.6212107251451213,
+            "r": 0.2729676447109097,
+            "color": [
+                0.6,
+                0.0,
+                0.8
+            ]
+        },
+        {
+            "x": -0.0398046623053534,
+            "y": -0.21468718326729963,
+            "r": 0.237534505275538,
+            "color": [
+                0.0,
+                0.0,
+                1.0
+            ]
+        },
+        {
+            "x": 1.010301349325338,
+            "y": 1.4549783931563627,
+            "r": 0.17061858658844642,
+            "color": [
+                0.0,
+                0.7,
+                0.0
+            ]
+        }
+    ],
+    "speed_mult": 8,
+    "trail_length": 1000,
+    "arena_round": true
+}
