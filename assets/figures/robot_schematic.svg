@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="280" height="255" viewBox="0 0 280 255">
+  <defs>
+    <radialGradient id="rg_light" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f5c842" stop-opacity="0.75"/>
+      <stop offset="100%" stop-color="#f5c842" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="280" height="255" fill="#f5f0ea"/>
+
+  <!-- Gradient patch -->
+  <text x="105" y="47" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="9" fill="#9a8070" font-style="italic">gradient patch</text>
+  <circle cx="105" cy="90" r="44" fill="url(#rg_light)"/>
+  <circle cx="105" cy="90" r="5"  fill="#e8b020" opacity="0.9"/>
+
+  <!-- Robot — exact same circle + polygon as world_obstacles.svg, r=18,
+       pattern: tip=(cx,cy-r), base=(cx±5.1, cy+7.4) -->
+  <circle cx="155" cy="190" r="18" fill="#e2d8cc" stroke="#5c4a3a" stroke-width="1.5"/>
+  <polygon points="155,172 149.9,197.4 160.1,197.4" fill="#5c4a3a" fill-opacity="0.35"/>
+
+  <!-- Sensor rays -->
+  <line x1="147" y1="174" x2="113" y2="105" stroke="#9a6840" stroke-width="1.5"/>
+  <line x1="163" y1="174" x2="191" y2="119" stroke="#9a6840" stroke-width="1.5"/>
+
+  <!-- Sensor tip dots -->
+  <circle cx="113" cy="105" r="4.5" fill="#c07848"/>
+  <circle cx="191" cy="119" r="4.5" fill="#4878a0"/>
+
+  <!-- Sensor labels -->
+  <text x="104" y="101" text-anchor="end"   font-family="Inter,Arial,sans-serif" font-size="10" font-weight="700" fill="#c07848">light[0]</text>
+  <text x="200" y="115" text-anchor="start"  font-family="Inter,Arial,sans-serif" font-size="10" font-weight="700" fill="#4878a0">light[1]</text>
+
+  <!-- Motor labels (outside body, at sides) -->
+  <text x="129" y="194" text-anchor="end"   font-family="Inter,Arial,sans-serif" font-size="9" fill="#5c4a3a">mL</text>
+  <text x="181" y="194" text-anchor="start"  font-family="Inter,Arial,sans-serif" font-size="9" fill="#5c4a3a">mR</text>
+
+  <!-- Caption -->
+  <text x="155" y="248" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="9" fill="#7a6050" font-style="italic">two light sensors · two wheel motors</text>
+</svg>

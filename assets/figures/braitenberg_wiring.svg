@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="240" viewBox="0 0 560 240">
+  <rect width="560" height="240" fill="#f5f0ea"/>
+  <!-- Panel divider -->
+  <line x1="280" y1="0" x2="280" y2="240" stroke="#d4cfc8" stroke-width="1"/>
+
+  <!-- ===== LEFT PANEL: AVOIDANCE ===== -->
+  <text x="140" y="22" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="700" fill="#3a2e28">Avoidance</text>
+  <text x="140" y="34" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="9" fill="#7a6050" font-style="italic">same-side connections</text>
+
+  <!-- Sensor column -->
+  <rect x="15" y="43" width="90" height="158" rx="6" fill="#E8F4E8" stroke="#A8CCA8" stroke-width="1.2"/>
+  <text x="60" y="55" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="8" fill="#5a8a5a">Sensors</text>
+  <!-- Motor column -->
+  <rect x="175" y="43" width="90" height="158" rx="6" fill="#D4E4F4" stroke="#A0C0DC" stroke-width="1.2"/>
+  <text x="220" y="55" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="8" fill="#3A6FA8">Motors</text>
+
+  <!-- Neurons -->
+  <circle cx="60"  cy="95"  r="14" fill="#d8eed8" stroke="#5a8a5a" stroke-width="1.5"/>
+  <text x="60"  y="118" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="8" fill="#3a2e28">sL</text>
+  <circle cx="60"  cy="165" r="14" fill="#d8eed8" stroke="#5a8a5a" stroke-width="1.5"/>
+  <text x="60"  y="188" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="8" fill="#3a2e28">sR</text>
+  <circle cx="220" cy="95"  r="14" fill="#c4d8f0" stroke="#3A6FA8" stroke-width="1.5"/>
+  <text x="220" y="118" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="8" fill="#3a2e28">mL</text>
+  <circle cx="220" cy="165" r="14" fill="#c4d8f0" stroke="#3A6FA8" stroke-width="1.5"/>
+  <text x="220" y="188" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="8" fill="#3a2e28">mR</text>
+
+  <!-- sL → mL: solid arc + filled terminal circle (excitatory) -->
+  <path d="M74,95 Q135,80 206,95" stroke="#3A6FA8" stroke-width="1.8" fill="none"/>
+  <circle cx="206" cy="95"  r="5" fill="#3A6FA8"/>
+  <!-- sR → mR: solid arc + filled terminal circle (excitatory) -->
+  <path d="M74,165 Q135,180 206,165" stroke="#3A6FA8" stroke-width="1.8" fill="none"/>
+  <circle cx="206" cy="165" r="5" fill="#3A6FA8"/>
+
+  <text x="140" y="222" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="9" fill="#7a6050" font-style="italic">sL → mL · sR → mR</text>
+
+  <!-- ===== RIGHT PANEL: ATTRACTION ===== -->
+  <text x="420" y="22" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="700" fill="#3a2e28">Attraction</text>
+  <text x="420" y="34" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="9" fill="#7a6050" font-style="italic">crossed connections</text>
+
+  <!-- Sensor column -->
+  <rect x="295" y="43" width="90" height="158" rx="6" fill="#E8F4E8" stroke="#A8CCA8" stroke-width="1.2"/>
+  <text x="340" y="55" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="8" fill="#5a8a5a">Sensors</text>
+  <!-- Motor column -->
+  <rect x="455" y="43" width="90" height="158" rx="6" fill="#D4E4F4" stroke="#A0C0DC" stroke-width="1.2"/>
+  <text x="500" y="55" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="8" fill="#3A6FA8">Motors</text>
+
+  <!-- Neurons -->
+  <circle cx="340" cy="95"  r="14" fill="#d8eed8" stroke="#5a8a5a" stroke-width="1.5"/>
+  <text x="340" y="118" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="8" fill="#3a2e28">sL</text>
+  <circle cx="340" cy="165" r="14" fill="#d8eed8" stroke="#5a8a5a" stroke-width="1.5"/>
+  <text x="340" y="188" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="8" fill="#3a2e28">sR</text>
+  <circle cx="500" cy="95"  r="14" fill="#c4d8f0" stroke="#3A6FA8" stroke-width="1.5"/>
+  <text x="500" y="118" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="8" fill="#3a2e28">mL</text>
+  <circle cx="500" cy="165" r="14" fill="#c4d8f0" stroke="#3A6FA8" stroke-width="1.5"/>
+  <text x="500" y="188" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="8" fill="#3a2e28">mR</text>
+
+  <!-- sL → mR: solid S-curve + filled terminal circle (excitatory) -->
+  <path d="M354,95 C415,95 415,165 486,165" stroke="#3A6FA8" stroke-width="1.8" fill="none"/>
+  <circle cx="486" cy="165" r="5" fill="#3A6FA8"/>
+  <!-- sR → mL: solid S-curve + filled terminal circle (excitatory) -->
+  <path d="M354,165 C415,165 415,95 486,95" stroke="#3A6FA8" stroke-width="1.8" fill="none"/>
+  <circle cx="486" cy="95"  r="5" fill="#3A6FA8"/>
+
+  <text x="420" y="222" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="9" fill="#7a6050" font-style="italic">sL → mR · sR → mL</text>
+</svg>

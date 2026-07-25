@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="540" height="200" viewBox="0 0 540 200">
+  <defs>
+    <radialGradient id="rg_grad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f5c842" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#f5c842" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="wg_wall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f5c842" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#f5c842" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="540" height="200" rx="8" fill="#f5f0ea"/>
+  <line x1="180" y1="0" x2="180" y2="200" stroke="#d4cfc8" stroke-width="1"/>
+  <line x1="360" y1="0" x2="360" y2="200" stroke="#d4cfc8" stroke-width="1"/>
+
+  <!-- Panel 1: Gradient circle -->
+  <circle cx="90" cy="88" r="64" fill="url(#rg_grad)"/>
+  <text x="90" y="170" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="13" font-weight="700" fill="#3a2e28">Gradient</text>
+  <text x="90" y="186" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="10" fill="#7a6050" font-style="italic">signal decays with distance</text>
+
+  <!-- Panel 2: Continuous circle -->
+  <circle cx="270" cy="88" r="64" fill="#f5c842" fill-opacity="0.62"/>
+  <text x="270" y="170" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="13" font-weight="700" fill="#3a2e28">Continuous</text>
+  <text x="270" y="186" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="10" fill="#7a6050" font-style="italic">uniform inside, zero outside</text>
+
+  <!-- Panel 3: Wall band -->
+  <text x="450" y="18" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="10" fill="#9a8070">arena boundary</text>
+  <rect x="388" y="21" width="124" height="8" rx="2" fill="#9a8070" opacity="0.55"/>
+  <rect x="388" y="29" width="124" height="70" fill="url(#wg_wall)"/>
+  <text x="450" y="170" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="13" font-weight="700" fill="#3a2e28">Wall band</text>
+  <text x="450" y="186" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="10" fill="#7a6050" font-style="italic">gradient from boundary inward</text>
+</svg>

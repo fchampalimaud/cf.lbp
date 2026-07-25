@@ -1,0 +1,2010 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Build and run neural-circuit behaviours on a simulated robot">
+      
+      
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/logo.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>RingAttractorBrain - Little Brain Project Simulator</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#ringattractorbrain" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Little Brain Project Simulator" class="md-header__button md-logo" aria-label="Little Brain Project Simulator" data-md-component="logo">
+      
+  <img src="../../assets/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Little Brain Project Simulator
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              RingAttractorBrain
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../.." class="md-tabs__link">
+          
+  
+  
+  Home
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../creating-worlds/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Creating Worlds
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../coding-brains/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Coding Brains
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../wiring-brains/" class="md-tabs__link">
+          
+  
+  
+  Wiring Brains
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Little Brain Project Simulator" class="md-nav__button md-logo" aria-label="Little Brain Project Simulator" data-md-component="logo">
+      
+  <img src="../../assets/logo.svg" alt="logo">
+
+    </a>
+    Little Brain Project Simulator
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_1" id="__nav_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Home
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tour/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Simulator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../creating-worlds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Creating Worlds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../coding-brains/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Coding Brains
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Wiring Brains
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Wiring Brains
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../wiring-brains/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Introduction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_2" id="__nav_4_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sensor types
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Sensor types
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/gradient/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GradientSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/color/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ColorSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/collision/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CollisionSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/distance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DistanceSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/interoceptive/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    InteroceptiveSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/proprioceptive/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ProprioceptiveSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/whisker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WhiskerSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/skycompass/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SkyCompassSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/graycamera/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GrayCameraSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/rgbcamera/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RGBCameraSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_3" id="__nav_4_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neuron types
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Neuron types
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/sum/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SumLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/motor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MotorLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/constant/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ConstantLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/leaky/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LeakyLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/adaptive/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AdaptiveLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/pulse/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PulseLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/sine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SineLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/ring_attractor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RingAttractorLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/conv2d/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Conv2dLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/leaky2d/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Leaky2dLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/reichardt2d/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reichardt2dLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/td/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TDLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/delta/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DeltaLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/three_factor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ThreeFactorLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/matsuoka/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MatsuokaLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#network-diagram" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network diagram
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sensors-and-layers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sensors and layers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-the-circuit-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the circuit works
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How the circuit works">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ring-attractor-the-bump" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ring attractor — the bump
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#path-integration-shifting-the-bump-with-rotation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Path integration — shifting the bump with rotation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#motor-decoding-heading-to-motor-command" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Motor decoding — heading to motor command
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bump-formation-conditions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bump formation conditions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Bump formation conditions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-negative-row-sums-the-most-important-one" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Negative row sums (the most important one)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-input-drive-must-be-small" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Input drive must be small
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-excitatory-width-vs-neuron-spacing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Excitatory width vs. neuron spacing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-two-bump-problem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Two-bump problem
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#behaviour-to-observe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Behaviour to observe
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parameter-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameter reference
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Parameter reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bump-formation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bump formation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bump-stability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bump stability
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rotation-speed-and-angular-contingency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rotation speed and angular contingency
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#linear-regime-condition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Linear regime condition
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="ringattractorbrain">RingAttractorBrain</h1>
+<p><strong>RingAttractorBrain</strong> is a heading-direction vehicle. It maintains an internal compass — a stable activity bump in a ring attractor layer (<code>EPG</code>) — and keeps it anchored in world coordinates by integrating wheel velocity. The motor output is decoded from the bump position, producing a turn tendency proportional to the robot's current heading.</p>
+<p>Load it from <code>simulation/2d/networks/RingAttractorBrain.json</code> via the network editor.</p>
+<hr />
+<h2 id="network-diagram">Network diagram</h2>
+<p><img alt="RingAttractorBrain network architecture" src="../../assets/figures/ringattractorbrain_network.svg" /></p>
+<hr />
+<h2 id="sensors-and-layers">Sensors and layers</h2>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>n</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sensor0</code></td>
+<td>ProprioceptiveSensor</td>
+<td>2</td>
+<td>Reads wheel velocity (left, right) from the <code>motor</code> joint; scale 0.01</td>
+</tr>
+<tr>
+<td><code>Omega</code></td>
+<td>SumLayer</td>
+<td>2</td>
+<td>Computes differential velocity: Ω[0] = v_L − v_R, Ω[1] = v_R − v_L</td>
+</tr>
+<tr>
+<td><code>PEN</code></td>
+<td>LeakyLayer</td>
+<td>16</td>
+<td>Path-integration neurons split into two halves: neurons 0–7 shift the bump CCW, neurons 8–15 shift it CW</td>
+</tr>
+<tr>
+<td><code>EPG</code></td>
+<td>RingAttractorLayer</td>
+<td>8</td>
+<td>The heading-direction ring; supports one stable activity bump via Mexican-hat recurrent weights</td>
+</tr>
+<tr>
+<td><code>motor</code></td>
+<td>SumLayer</td>
+<td>2</td>
+<td>Left/right motor outputs; driven by EPG decoding</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="how-the-circuit-works">How the circuit works</h2>
+<h3 id="ring-attractor-the-bump">Ring attractor — the bump</h3>
+<p><code>EPG</code> is a ring of 8 leaky-integrator neurons. The recurrent <code>EPG → EPG</code> connection has a Mexican-hat profile:</p>
+<table>
+<thead>
+<tr>
+<th>Angular distance</th>
+<th>Weight</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>±1 (nearest neighbour)</td>
+<td>+0.215 (excitation)</td>
+</tr>
+<tr>
+<td>±2</td>
+<td>−0.577 (inhibition)</td>
+</tr>
+<tr>
+<td>±3</td>
+<td>−0.599 (inhibition)</td>
+</tr>
+<tr>
+<td>±4 (antipodal)</td>
+<td>−0.420 (inhibition)</td>
+</tr>
+</tbody>
+</table>
+<p>This kernel supports exactly one localised activity bump. A small additive noise (<code>noise_std = 0.0025</code>) breaks the initial symmetry so the bump settles at a random position on first run. Once formed, the bump is stable and represents the robot's estimate of its heading direction relative to the starting orientation.</p>
+<h3 id="path-integration-shifting-the-bump-with-rotation">Path integration — shifting the bump with rotation</h3>
+<p>When the robot turns, the bump must rotate to stay fixed in world coordinates:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>sensor0  ──×0.01──►  Omega  ──×5──►  PEN  ──×0.1──►  EPG (shift)
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>              velocity diff         L / R halves    +1 / −1 step
+</span></code></pre></div>
+<ol>
+<li><code>sensor0</code> reads the wheel joint velocities [v_L, v_R].</li>
+<li><code>Omega</code> computes the signed angular velocity: Ω[0] = v_L − v_R (left-turn signal), Ω[1] = v_R − v_L (right-turn signal). Only the positive half is active at any moment (the <code>SumLayer</code> output passes through without a nonlinearity, but PEN has a ReLU and bias −0.3 which gates small inputs).</li>
+<li><code>Omega → PEN</code> (weight 5): Ω[0] drives PEN neurons 0–7, Ω[1] drives PEN neurons 8–15.</li>
+<li><code>EPG → PEN</code> (stacked identity): each PEN neuron also receives the current EPG activity of its corresponding ring cell. PEN thus tracks both the angular-velocity command and the current bump position.</li>
+<li><code>PEN → EPG</code> (shifted identity, weight 0.1): PEN[0–7] drives EPG with a +1-step cyclic shift (CCW); PEN[8–15] drives EPG with a −1-step shift (CW). A left turn activates the CCW shifters, a right turn activates the CW shifters. The bump tracks the robot's heading through space.</li>
+</ol>
+<h3 id="motor-decoding-heading-to-motor-command">Motor decoding — heading to motor command</h3>
+<p><code>EPG → motor</code> applies a 2×8 weight matrix that projects the bump position onto two sinusoidal bases (one per motor):</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>mL = Σ_k  EPG[k] · cos(k·45° + φ_L)
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>mR = Σ_k  EPG[k] · cos(k·45° + φ_R)
+</span></code></pre></div>
+<p>The two rows are phase-shifted copies of a cosine, so the motor output is a 2D vector that rotates with the bump. When the bump points "forward" (initial heading), the difference mL − mR is zero and the robot drives straight. If the robot has turned and the bump has rotated accordingly, the decoding produces a left-right imbalance that steers the robot back toward the stored heading — a heading-hold behaviour.</p>
+<hr />
+<h2 id="bump-formation-conditions">Bump formation conditions</h2>
+<p>Getting a ring attractor to form a single clean bump requires three conditions, all checkable in the weight editor:</p>
+<h3 id="1-negative-row-sums-the-most-important-one">1. Negative row sums (the most important one)</h3>
+<p>Every row of the <code>EPG → EPG</code> matrix must sum to a <strong>negative</strong> value. This ensures that globally uniform activity is suppressed: if all neurons fire equally, each receives net inhibitory input and activity falls until a localised bump is favoured.</p>
+<p>Check the coloured row-sum strip on the right edge of the weight heatmap — all squares must be blue. Any red square means that row is net excitatory and the bump will not form.</p>
+<p>In this network each row sums to ≈ −2.34. ✓</p>
+<h3 id="2-input-drive-must-be-small">2. Input drive must be small</h3>
+<p>The tonic input reaching each ring neuron (= row sum of the driving weight matrix × driving amplitude) should be in the range 0.1–1.0. In this circuit <code>EPG</code> receives no external tonic drive; its <code>bias = 0.5</code> plays that role. PEN drives EPG only when the robot is actually turning.</p>
+<p>A common failure: connecting a large ConstantLayer to EPG with an identity matrix of amplitude 1. Each ring neuron then receives a drive of <strong>n × amplitude</strong> (sum over the entire column), which overwhelms inhibition and pins all neurons to a uniform active state.</p>
+<h3 id="3-excitatory-width-vs-neuron-spacing">3. Excitatory width vs. neuron spacing</h3>
+<p>For a bump to exist, nearest-neighbour pairs must receive net excitatory input from each other. The nearest-neighbour spacing on a ring of n neurons is 2π/n radians. If the excitatory lobe of the kernel (sigma_exc of the Mexican hat) is narrower than this spacing, no excitation reaches immediate neighbours — the kernel becomes purely inhibitory and no bump is possible.</p>
+<p><strong>Rule of thumb for n = 8:</strong> spacing = 2π/8 ≈ 0.785 rad, so sigma_exc should be ≥ 0.9 rad (roughly 1.0–1.5 × spacing).</p>
+<p>In this network the Mexican-hat was tuned to give +0.215 at distance 1, which is positive — condition satisfied. ✓</p>
+<h3 id="4-two-bump-problem">4. Two-bump problem</h3>
+<p>If two bumps appear instead of one, the k = 2 Fourier mode of the kernel dominates k = 1. This happens when sigma_exc is so narrow that nearest-neighbour excitation is weak while the second-neighbour inhibition is strong. The fix is to widen sigma_exc until the nearest-neighbour weight becomes clearly positive.</p>
+<p><strong>Quick diagnostic:</strong> open the Mexican-hat editor on the <code>EPG → EPG</code> connection, increase <code>sig_exc</code> in small steps and re-apply. When the nearest-neighbour weight turns positive (non-zero in the first off-diagonal), one-bump behaviour is restored.</p>
+<hr />
+<h2 id="behaviour-to-observe">Behaviour to observe</h2>
+<ol>
+<li>Start the simulation. Within 1–2 s a single bump of activity appears in the EPG ring (visible in the network visualiser).</li>
+<li>Drive the robot in a circle (use the WASD keys if a keyboard brain is active, or set <code>motor</code> to a constant left-right offset). The bump rotates in the EPG ring to counter-track the robot's turn.</li>
+<li>Stop turning. The bump holds its world-fixed position — path integration has succeeded.</li>
+<li>Enable noise on the <code>sensor0</code> sensor and watch the bump slowly drift over long runs (proprioceptive integration error accumulates).</li>
+</ol>
+<hr />
+<h2 id="parameter-reference">Parameter reference</h2>
+<h3 id="bump-formation">Bump formation</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Current value</th>
+<th>Effect</th>
+<th>Risk if wrong</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>EPG.bias</code></td>
+<td>0.5</td>
+<td>Tonic drive; sets uniform fixed point x* ≈ 0.15</td>
+<td>Too low: no bump. Too high: stuck at uniform state</td>
+</tr>
+<tr>
+<td><code>EPG→EPG</code> near-neighbour weight</td>
+<td>+0.215</td>
+<td>Excites immediate neighbours; controls bump width</td>
+<td>Too narrow: two-bump mode wins</td>
+</tr>
+<tr>
+<td><code>EPG→EPG</code> row sum</td>
+<td>−2.34</td>
+<td>Net inhibition; keeps bump amplitude bounded</td>
+<td>Too weak: runaway growth</td>
+</tr>
+<tr>
+<td><code>EPG.noise_std</code></td>
+<td>0.0025</td>
+<td>Breaks symmetry from uniform state; seeds bump spontaneously</td>
+<td>Too high: bump wanders. Zero: never forms</td>
+</tr>
+</tbody>
+</table>
+<h3 id="bump-stability">Bump stability</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Current value</th>
+<th>Effect</th>
+<th>Risk if wrong</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PEN→EPG</code> weight</td>
+<td>0.1</td>
+<td>Recurrent excitation fed back through PEN</td>
+<td>Too large: exponential growth. Too small: no rotation</td>
+</tr>
+<tr>
+<td><code>PEN.bias</code></td>
+<td>−0.3</td>
+<td>Firing threshold — PEN only active when EPG &gt; 0.3</td>
+<td>Too negative: PEN silent, no rotation possible</td>
+</tr>
+<tr>
+<td><code>EPG→PEN</code> weight</td>
+<td>1.0</td>
+<td>How faithfully PEN reads the bump</td>
+<td>&gt; 1 risks amplifying the EPG→PEN→EPG loop</td>
+</tr>
+</tbody>
+</table>
+<h3 id="rotation-speed-and-angular-contingency">Rotation speed and angular contingency</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Current value</th>
+<th>Effect</th>
+<th>Calibration direction</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>EPG.tau</code></td>
+<td>0.025 s</td>
+<td>Fundamental rotation timescale</td>
+<td>↓ faster ring rotation, ↑ slower</td>
+</tr>
+<tr>
+<td><code>PEN.tau_rise</code> / <code>tau_decay</code></td>
+<td>0.1 s</td>
+<td>PEN response lag — currently 4× slower than EPG, acts as bottleneck in the shift loop</td>
+<td>Reduce toward <code>EPG.tau</code> for cleaner rotation</td>
+</tr>
+<tr>
+<td><code>Omega.scale</code></td>
+<td>0.2</td>
+<td>Overall amplitude of angular velocity entering PEN</td>
+<td>↑ larger Omega drive</td>
+</tr>
+<tr>
+<td><code>Omega→PEN</code> weight</td>
+<td>5.0</td>
+<td><strong>Angular contingency knob</strong> — sensitivity of the ring to turning; sets the threshold speed at which rotation activates</td>
+<td>↑ ring responds to slower turns; ↓ requires faster turns</td>
+</tr>
+<tr>
+<td><code>sensor0.scale</code></td>
+<td>0.01</td>
+<td>Converts raw wheel velocity to sensor units</td>
+<td>Part of the overall Omega chain gain</td>
+</tr>
+</tbody>
+</table>
+<p>The combined Omega chain gain is:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>sensor_scale × Omega_scale × W_Omega_PEN = 0.01 × 0.2 × 5.0 = 0.01
+</span></code></pre></div>
+<h3 id="linear-regime-condition">Linear regime condition</h3>
+<p>For bump rotation speed to be <strong>proportional</strong> to turning speed (rather than on/off), the Omega drive at PEN must not fully silence the inhibited group:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>Omega_drive at PEN  &lt;  EPG_peak − |PEN_bias|  ≈  0.68 − 0.3  =  0.38
+</span></code></pre></div>
+<p>At typical turning speeds the inhibited PEN group is fully silenced (system in saturation), so rotation speed is set by <code>EPG.tau</code> rather than Omega amplitude. This is biologically normal — the 8-neuron ring hops between discrete positions, and <code>Omega→PEN</code> acts as a sensitivity threshold. For analogue proportional control, either reduce <code>Omega.scale</code> so the inhibited group retains some activity, or increase <code>PEN.bias</code> to raise the threshold.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.top", "content.code.copy", "content.code.annotate", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    var markup =
+      '<span class="lbp-title-project">little brain project</span>' +
+      '<span class="lbp-title-sim">SIMULATOR</span>';
+    document.querySelectorAll(
+      ".md-header__title .md-header__topic .md-ellipsis"
+    ).forEach(function (el) {
+      el.innerHTML = markup;
+    });
+  });
+</script>
+
+  </body>
+</html>
