@@ -94,7 +94,7 @@ class WorldEditor:
         if button == 1 and self.draw_mode == 'object':
             self._place_polygon_vertex(x, y)
         elif button == 1 and self.draw_mode == 'wall_paint':
-            self._paint_nearest_wall(x, y)
+            self._paint_nearest_element(x, y)
         elif button == 2:
             self._right_click(x, y)
 
@@ -105,7 +105,7 @@ class WorldEditor:
             self._drag_move(x, y, is_start, is_finish)
         elif self.draw_mode == 'wall_paint':
             if is_finish:
-                self._paint_nearest_wall(x, y)
+                self._paint_nearest_element(x, y)
             return
         elif self.draw_mode == 'object' and self._poly_vertices:
             return  # polygon in progress — ignore drags
@@ -167,9 +167,25 @@ class WorldEditor:
             self._poly_vertices.append([snap_x, snap_y])
             self._arena.update_poly_preview(self._poly_vertices, self._hover_pos)
 
-    def _paint_nearest_wall(self, x, y):
+    def _paint_nearest_element(self, x, y):
+        """Repaint the closest world element (object, patch, or polygon wall)."""
         best = None
         best_dist = float('inf')
+
+        for obj in self._world.objects:
+            d = max(0.0, np.hypot(x - obj['x'], y - obj['y']) - obj['r'])
+            if d < best_dist:
+                best_dist = d
+                best = obj
+
+        for p in self._world.patches:
+            if p.get('type') == 'wall' or 'x' not in p:
+                continue
+            d = max(0.0, np.hypot(x - p['x'], y - p['y']) - p.get('r', 0.1))
+            if d < best_dist:
+                best_dist = d
+                best = p
+
         for w in self._world.walls:
             pts = w['points']
             for i in range(len(pts)):
@@ -185,7 +201,9 @@ class WorldEditor:
                 if d < best_dist:
                     best_dist = d
                     best = w
-        if best is not None and best_dist < 1.0:
+
+        threshold = max(1.0, self._sim_cfg.body_radius * 3)
+        if best is not None and best_dist < threshold:
             best['color'] = list(self.object_color)
             self._setup_world()
 

@@ -415,18 +415,23 @@ class MuJoCoEngine:
         cam_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_CAMERA, cam_name)
         if cam_id >= 0:
             self.model.cam_fovy[cam_id] = float(np.degrees(sensor.fov))
-            # Yaw by center_angle around robot Z, then pitch down by vertical_angle.
-            # Rows are [cam_right, cam_up, cam_backward] expressed in body frame.
-            # Baseline (ca=0, va=0): cam_X=(0,-1,0), cam_Y=(0,0,1), cam_Z=(-1,0,0) → looks +X_body.
+            # Build camera orientation [right, up, backward] in body frame:
+            # yaw by center_angle around body-Z, then pitch-down by vertical_angle.
+            # Baseline (ca=0, va=0): looks +X_body, up = +Z_body.
             ca   = float(sensor.center_angle)
             va   = float(getattr(sensor, 'vertical_angle', 0.0))
             c,  s  = np.cos(ca), np.sin(ca)
             cv, sv = np.cos(va), np.sin(va)
-            self.model.cam_mat0[cam_id] = np.array([
+            cam_body_mat = np.array([
                 [ s,        -c,         0 ],   # right  (yaw only)
                 [ c * sv,    s * sv,    cv],   # up     (tilts back as camera noses down)
                 [-c * cv,   -s * cv,    sv],   # back   (at va=90° → [0,0,1] = looks down)
-            ], dtype=np.float64).flatten()
+            ], dtype=np.float64)
+            # renderer.update_scene reads data.cam_xmat (world-frame rows), NOT model.cam_mat0.
+            # Convert body-frame rows → world-frame rows and write directly.
+            body_id   = int(self.model.cam_bodyid[cam_id])
+            body_xmat = self.data.xmat[body_id].reshape(3, 3)  # cols = body axes in world (v_world = xmat @ v_body)
+            self.data.cam_xmat[cam_id] = (cam_body_mat @ body_xmat.T).flatten()
 
         renderer.update_scene(self.data, camera=cam_name)
         return renderer.render()[::-1].copy().astype(np.float32) / 255.0
