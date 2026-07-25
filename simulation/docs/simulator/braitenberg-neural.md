@@ -130,5 +130,5 @@ Once the brain is running, open the **Network editor** (the graph icon in the to
 ## What to try next
 
 - Add a second layer between `smooth` and `motor` and give it `activation='relu'` — observe how the threshold changes the robot's sensitivity near the edge of a patch.
-- Explore `MatsuokaLayer`, which oscillates autonomously. Wire a light sensor to its input and watch the oscillation frequency change with stimulus intensity.
+- Explore `AdaptiveLayer` with `w > 0` and `n=2`, which oscillates autonomously (half-centre oscillator). Wire a light sensor to its input and watch the oscillation frequency change with stimulus intensity.
 - Once you have a circuit you like, use **Copy Bonsai** to export the network to a LBP.Torch workflow and run it on the real robot.

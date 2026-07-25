@@ -1,18 +1,21 @@
-site_name: 2D Braitenberg Simulator
+site_name: Little Brain Project Simulator
 site_description: Build and run neural-circuit behaviours on a simulated robot
 
 theme:
   name: material
+  custom_dir: overrides
   palette:
     scheme: slate
-    primary: deep purple
-    accent: teal
+    primary: custom
+    accent: custom
   font:
     text: Inter
     code: JetBrains Mono
+  logo: assets/logo.svg
+  favicon: assets/logo.svg
   features:
     - navigation.tabs
-    - navigation.sections
+    - navigation.tabs.sticky
     - navigation.top
     - content.code.copy
     - content.code.annotate
@@ -36,18 +39,54 @@ markdown_extensions:
   - attr_list
   - md_in_html
   - tables
+  - pymdownx.arithmatex:
+      generic: true
 
 nav:
-  - Home: index.md
-  - Tour of the Simulator: simulator/tour.md
-  - Braitenberg with Code: simulator/braitenberg-code.md
-  - Braitenberg with Layers: simulator/braitenberg-neural.md
-  - Architecture: simulator/architecture.md
-  - Timing: simulator/timing.md
-  - Vehicles:
-      - FeedingBrain: simulator/feedingbrain.md
-      - RingAttractorBrain: simulator/ringattractorbrain.md
-  - Real Robot: simulator/real-robot.md
+  - Home:
+    - Overview: index.md
+    - Install: simulator/install.md
+    - Simulator: simulator/tour.md
+    - Architecture: simulator/architecture.md
+  - Creating Worlds: simulator/creating-worlds.md
+  - Coding Brains: simulator/coding-brains.md
+  - Wiring Brains:
+    - Introduction: simulator/wiring-brains.md
+    - Sensor types:
+      - Overview: simulator/sensors/index.md
+      - GradientSensor: simulator/sensors/gradient.md
+      - ColorSensor: simulator/sensors/color.md
+      - CollisionSensor: simulator/sensors/collision.md
+      - DistanceSensor: simulator/sensors/distance.md
+      - InteroceptiveSensor: simulator/sensors/interoceptive.md
+      - ProprioceptiveSensor: simulator/sensors/proprioceptive.md
+      - WhiskerSensor: simulator/sensors/whisker.md
+      - SkyCompassSensor: simulator/sensors/skycompass.md
+      - GrayCameraSensor: simulator/sensors/graycamera.md
+      - RGBCameraSensor: simulator/sensors/rgbcamera.md
+    - Neuron types:
+      - SumLayer: simulator/layers/sum.md
+      - MotorLayer: simulator/layers/motor.md
+      - ConstantLayer: simulator/layers/constant.md
+      - LeakyLayer: simulator/layers/leaky.md
+      - AdaptiveLayer: simulator/layers/adaptive.md
+      - PulseLayer: simulator/layers/pulse.md
+      - SineLayer: simulator/layers/sine.md
+      - RingAttractorLayer: simulator/layers/ring_attractor.md
+      - Conv2dLayer: simulator/layers/conv2d.md
+      - Leaky2dLayer: simulator/layers/leaky2d.md
+      - Reichardt2dLayer: simulator/layers/reichardt2d.md
+      - TDLayer: simulator/layers/td.md
+      - DeltaLayer: simulator/layers/delta.md
+      - ThreeFactorLayer: simulator/layers/three_factor.md
+      - MatsuokaLayer: simulator/layers/matsuoka.md
+  # - Real Robot: simulator/real-robot.md
+
+extra_css:
+  - extra.css
+
+extra_javascript:
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
 
 docs_dir: docs
 site_dir: site

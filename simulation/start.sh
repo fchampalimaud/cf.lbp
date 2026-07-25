@@ -20,4 +20,4 @@ fi
 cd "$(dirname "$0")"
 echo "Starting simulator..."
 echo
-uv run --python 3.11 --with-requirements requirements.txt python BraitenbergSimulator.py
+uv run --python 3.11 --with-requirements requirements.txt python LBPSimulator.py

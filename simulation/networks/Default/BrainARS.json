@@ -1,177 +1,208 @@
 {
-  "version": 1,
-  "motor_layer": "motor",
-  "hidden_groups": [],
-  "disabled_groups": [],
-  "sensors": [
-    {
-      "type": "GradientSensor",
-      "name": "light",
-      "n": 2,
-      "angle_spread_deg": 22.9,
-      "center_angle_deg": 0.0,
-      "dist": 0.12,
-      "gradient": "A",
-      "scale": 1.0,
-      "activation": "linear"
-    },
-    {
-      "type": "CollisionSensor",
-      "name": "bump",
-      "n": 1,
-      "angle_spread_deg": 0.0,
-      "arc_angle_deg": 360.0,
-      "radius": 1.2,
-      "scale": 1.0,
-      "activation": "linear"
-    }
-  ],
-  "layers": [
-    {
-      "type": "ConstantLayer",
-      "name": "drive",
-      "layer": 1,
-      "n": 2,
-      "value": 40.0,
-      "viz_row": 0
-    },
-    {
-      "type": "AdaptiveLayer",
-      "name": "inter",
-      "layer": 2,
-      "n": 2,
-      "tau_rise": 0.1,
-      "tau_decay": 0.1,
-      "tau_a": 20.0,
-      "beta": 2.5,
-      "w": 2.0,
-      "noise_std": 10.0,
-      "noise_tau": 0.3
-    },
-    {
-      "type": "SumLayer",
-      "name": "motor",
-      "layer": 3,
-      "n": 2,
-      "activation": "linear"
-    },
-    {
-      "type": "LeakyLayer",
-      "name": "layer5",
-      "layer": 1,
-      "n": 2,
-      "tau_rise": 1.0,
-      "tau_decay": 50.0,
-      "derivative": true,
-      "viz_row": 2
-    },
-    {
-      "type": "PulseLayer",
-      "name": "pulse",
-      "layer": 1,
-      "n": 2,
-      "tau_rise": 0.05,
-      "tau_decay": 0.1,
-      "tau_hold": 5.0,
-      "viz_row": 1
-    }
-  ],
-  "connections": [
-    {
-      "src": "drive",
-      "tgt": "motor",
-      "W": [
-        [
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0
-        ]
-      ]
-    },
-    {
-      "src": "inter",
-      "tgt": "motor",
-      "W": [
-        [
-          40.0,
-          -40.0
-        ],
-        [
-          -40.0,
-          40.0
-        ]
-      ]
-    },
-    {
-      "src": "bump",
-      "tgt": "motor",
-      "W": [
-        [
-          -35.0
-        ],
-        [
-          35.0
-        ]
-      ]
-    },
-    {
-      "src": "light",
-      "tgt": "layer5",
-      "W": [
-        [
-          1.0,
-          1.0
-        ],
-        [
-          1.0,
-          1.0
-        ]
-      ]
-    },
-    {
-      "src": "pulse",
-      "tgt": "inter",
-      "W": [
-        [
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0
-        ]
-      ]
-    },
-    {
-      "src": "light",
-      "tgt": "motor",
-      "W": [
-        [
-          -30.0,
-          30.0
-        ],
-        [
-          30.0,
-          -30.0
-        ]
-      ]
-    },
-    {
-      "src": "layer5",
-      "tgt": "pulse",
-      "W": [
-        [
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0
-        ]
-      ]
-    }
-  ]
+    "version": 1,
+    "motor_layer": "motor",
+    "hidden_cols": [],
+    "disabled_cols": [],
+    "col_labels": {},
+    "sensors": [
+        {
+            "type": "GradientSensor",
+            "name": "light",
+            "n": 2,
+            "angle_spread_deg": 22.9,
+            "center_angle_deg": 0.0,
+            "dist": 0.12,
+            "color_channel": "",
+            "gradient": "A",
+            "scale": 1.0,
+            "tau_rise": null,
+            "tau_decay": null,
+            "activation": "linear",
+            "differential": false,
+            "noise_std": 0.0,
+            "robot_address": ""
+        },
+        {
+            "type": "CollisionSensor",
+            "name": "bump",
+            "n": 1,
+            "angle_spread_deg": 0.0,
+            "arc_angle_deg": 360.0,
+            "radius": 1.2,
+            "scale": 1.0,
+            "bias": 0.0,
+            "noise_std": 0.0,
+            "tau_rise": null,
+            "tau_decay": null,
+            "activation": "linear",
+            "differential": false,
+            "robot_address": ""
+        }
+    ],
+    "layers": [
+        {
+            "type": "ConstantLayer",
+            "name": "drive",
+            "layer": 1,
+            "value": 40.0,
+            "n": 2,
+            "noise_std": 0.0,
+            "viz_row": 0
+        },
+        {
+            "type": "AdaptiveLayer",
+            "name": "inter",
+            "layer": 2,
+            "tau_rise": 0.1,
+            "tau_decay": 0.1,
+            "tau_a": 20.0,
+            "beta": 2.5,
+            "w": 2.0,
+            "bias": 0.0,
+            "activation": "relu",
+            "noise_std": 10.0,
+            "noise_tau": 0.3,
+            "scale": 1.0,
+            "n": 2
+        },
+        {
+            "type": "SumLayer",
+            "name": "motor",
+            "layer": 3,
+            "activation": "linear",
+            "scale": 1.0,
+            "n": 2
+        },
+        {
+            "type": "LeakyLayer",
+            "name": "layer5",
+            "layer": 1,
+            "tau_rise": 1.0,
+            "tau_decay": 50.0,
+            "bias": 0.0,
+            "activation": "relu",
+            "n": 2,
+            "derivative": true,
+            "noise_std": 0.0,
+            "noise_tau": 0.0,
+            "scale": 1.0,
+            "viz_row": 2
+        },
+        {
+            "type": "PulseLayer",
+            "name": "pulse",
+            "layer": 1,
+            "tau_rise": 0.05,
+            "tau_decay": 0.1,
+            "tau_hold": 5.0,
+            "theta": 0.0,
+            "w_s": 1.0,
+            "drain": 1.0,
+            "bias": 0.0,
+            "activation": "relu",
+            "scale": 1.0,
+            "n": 2,
+            "viz_row": 1
+        }
+    ],
+    "connections": [
+        {
+            "src": "drive",
+            "tgt": "motor",
+            "W": [
+                [
+                    1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    1.0
+                ]
+            ]
+        },
+        {
+            "src": "inter",
+            "tgt": "motor",
+            "W": [
+                [
+                    40.0,
+                    -40.0
+                ],
+                [
+                    -40.0,
+                    40.0
+                ]
+            ]
+        },
+        {
+            "src": "bump",
+            "tgt": "motor",
+            "W": [
+                [
+                    -35.0
+                ],
+                [
+                    35.0
+                ]
+            ]
+        },
+        {
+            "src": "light",
+            "tgt": "layer5",
+            "W": [
+                [
+                    1.0,
+                    1.0
+                ],
+                [
+                    1.0,
+                    1.0
+                ]
+            ]
+        },
+        {
+            "src": "pulse",
+            "tgt": "inter",
+            "W": [
+                [
+                    1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    1.0
+                ]
+            ]
+        },
+        {
+            "src": "light",
+            "tgt": "motor",
+            "W": [
+                [
+                    -30.0,
+                    30.0
+                ],
+                [
+                    30.0,
+                    -30.0
+                ]
+            ]
+        },
+        {
+            "src": "layer5",
+            "tgt": "pulse",
+            "W": [
+                [
+                    1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    1.0
+                ]
+            ]
+        }
+    ],
+    "hidden_groups": [],
+    "disabled_groups": []
 }

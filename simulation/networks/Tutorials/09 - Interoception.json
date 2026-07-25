@@ -1,55 +1,64 @@
 {
-  "version": 1,
-  "motor_layer": "motor",
-  "hidden_cols": [],
-  "disabled_cols": [],
-  "col_labels": {},
-  "sensors": [
-    {
-      "type": "InteroceptiveSensor",
-      "name": "sensor0",
-      "gradient": "A",
-      "scale": 100.0,
-      "max_val": 100.0,
-      "start_val": 0.0,
-      "bias": -1.0,
-      "tau_rise": 1.0,
-      "tau_decay": 1.0,
-      "neuromodulator_transmitter": "insulin",
-      "neuromodulator_color": "#FF0000",
-      "viz_layer": 3
-    },
-    {
-      "type": "GradientSensor",
-      "name": "sensor1",
-      "n": 2,
-      "angle_spread_deg": 30.0,
-      "center_angle_deg": 0.0,
-      "dist": 0.12,
-      "color_channel": "None",
-      "gradient": "A",
-      "scale": 100.0,
-      "activation": "relu",
-      "modulators": [
-        [
-          "insulin",
-          -1.0,
-          "pre"
-        ]
-      ],
-      "viz_layer": 3
-    }
-  ],
-  "layers": [
-    {
-      "type": "MotorLayer",
-      "name": "motor",
-      "layer": 4,
-      "activation": "linear",
-      "n": 2,
-      "scale": 1.0,
-      "robot_address": ""
-    }
-  ],
-  "connections": []
+    "version": 1,
+    "motor_layer": "motor",
+    "hidden_cols": [],
+    "disabled_cols": [],
+    "col_labels": {},
+    "sensors": [
+        {
+            "type": "InteroceptiveSensor",
+            "name": "sensor0",
+            "gradient": "A",
+            "scale": 100.0,
+            "max_val": 100.0,
+            "start_val": 0.0,
+            "bias": 0.0,
+            "tau_rise": 1.0,
+            "tau_decay": 1.0,
+            "differential": false,
+            "noise_std": 0.0,
+            "activation": "linear",
+            "robot_address": "",
+            "neuromodulator_transmitter": "insulin",
+            "neuromodulator_color": "#FF0000",
+            "viz_layer": 3
+        },
+        {
+            "type": "GradientSensor",
+            "name": "sensor1",
+            "n": 2,
+            "angle_spread_deg": 30.0,
+            "center_angle_deg": 0.0,
+            "dist": 0.12,
+            "color_channel": "None",
+            "gradient": "A",
+            "scale": 100.0,
+            "tau_rise": null,
+            "tau_decay": null,
+            "activation": "relu",
+            "differential": false,
+            "noise_std": 0.0,
+            "robot_address": "",
+            "modulators": [
+                [
+                    "insulin",
+                    -1.0,
+                    "pre"
+                ]
+            ],
+            "viz_layer": 3
+        }
+    ],
+    "layers": [
+        {
+            "type": "MotorLayer",
+            "name": "motor",
+            "layer": 4,
+            "activation": "linear",
+            "n": 2,
+            "scale": 1.0,
+            "robot_address": ""
+        }
+    ],
+    "connections": []
 }

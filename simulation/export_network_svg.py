@@ -92,7 +92,7 @@ def main():
         joints=joints,
     )
 
-    # Replicate what BraitenbergSimulator._resolve_joint_sensor_refs() does:
+    # Replicate what LBPSimulator._resolve_joint_sensor_refs() does:
     # ProprioceptiveSensor.n defaults to 1 and is updated at runtime based on
     # how many joints share its joint_id.  Do the same here so the SVG shows
     # the correct number of sensor nodes.

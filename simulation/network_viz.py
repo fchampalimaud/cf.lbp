@@ -19,8 +19,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer, QPointF, QEvent, QMimeData, QObject
 from PySide6.QtGui import QColor, QFont, QDrag, QPainter
 
-from sim_constants import C, _CHAN_PALETTE
-from neurons import SumLayer, Conv2dLayer
+from sim_constants import C, _CHAN_PALETTE, _IDX_MANUAL
+from neurons import SumLayer, ConstantLayer
 from brain_base import DataBrain
 
 MOTIFS_DIR = os.path.join(os.path.dirname(__file__), 'motifs')
@@ -117,11 +117,12 @@ class _SplitHalf:
     viz_layout = None
 
     def __init__(self, sensor, side):
-        self.name       = f'{sensor.name}_{side}'
-        self._viz_color = getattr(sensor, '_viz_color', '#888888')
+        self.name         = f'{sensor.name}_{side}'
+        self._viz_color   = getattr(sensor, '_viz_color', '#888888')
+        self.viz_color    = self._viz_color
         self._sensor      = sensor
         self._side        = side
-        self.is_image     = hasattr(sensor, 'width')
+        self.is_image_node = sensor.is_image_node
         self.lateral_pair = f'{sensor.name}_{"R" if side == "L" else "L"}'
         if hasattr(sensor, 'width'):
             # Camera sensor: pixel-split half
@@ -142,27 +143,7 @@ class _SplitHalf:
 
 
 def _sensor_is_lateralized(sensor, circuit=None):
-    """Return True when sensor has a lateralized L/R structure.
-
-    Covers two cases:
-      1. CameraSensor with lateralized=True (explicit attribute)
-      2. Any sensor with exactly 2 body_ids from the same mirror_group (joint-pair sensor)
-    """
-    if getattr(sensor, 'lateralized', False):
-        return True
-    body_ids = getattr(sensor, 'body_ids', ['root'])
-    if len(body_ids) != 2:
-        return False
-    if circuit is None:
-        return True   # no circuit info — assume pair
-    body_map = {b.id: b for b in getattr(circuit, 'bodies', [])}
-    b0 = body_map.get(body_ids[0])
-    b1 = body_map.get(body_ids[1])
-    if b0 is None or b1 is None:
-        return False
-    mg0 = getattr(b0, 'mirror_group', None)
-    mg1 = getattr(b1, 'mirror_group', None)
-    return bool(mg0 and mg0 == mg1)
+    return sensor.is_lateralized(circuit)
 
 
 # ============================================================
@@ -731,14 +712,14 @@ class WeightMatrixDialog(QDialog):
             if 'code' in e: self._expr_edit.setPlainText(e['code'])
             self._pattern_cb.setCurrentIndex(p.get('type', 8))
         else:
-            self._pattern_cb.setCurrentIndex(8)
+            self._pattern_cb.setCurrentIndex(_IDX_MANUAL)
 
         self.resize(max(520, ns * 35 + 320), 520)
 
     def _compute_W(self):
         ns, nt = self._ns, self._nt
         idx = self._pattern_cb.currentIndex()
-        if idx == 8:
+        if idx == _IDX_MANUAL:
             return None
         try:
             if idx == 0:
@@ -792,6 +773,17 @@ class WeightMatrixDialog(QDialog):
     def _apply(self):
         W = self._compute_W()
         if W is None:
+            # Manual mode: preview current cell values without overwriting them
+            ns, nt = self._ns, self._nt
+            W_cur = np.zeros((nt, ns))
+            for ii in range(nt):
+                for jj in range(ns):
+                    it = self._table.item(ii, jj)
+                    try:
+                        W_cur[ii, jj] = float(it.text()) if it else 0.0
+                    except ValueError:
+                        pass
+            self._hmap.set_matrix(W_cur)
             return
         self._hmap.set_matrix(W)
         ns, nt = self._ns, self._nt
@@ -805,7 +797,7 @@ class WeightMatrixDialog(QDialog):
 
     def accept(self):
         """Auto-apply the selected pattern before accepting, so OK without Apply works."""
-        if self._pattern_cb.currentIndex() != 8:  # 8 = Manual (preserve table as-is)
+        if self._pattern_cb.currentIndex() != _IDX_MANUAL:
             self._apply()
         super().accept()
 
@@ -846,7 +838,7 @@ class WeightMatrixDialog(QDialog):
                     it = QTableWidgetItem()
                     self._table.setItem(ii, jj, it)
                 it.setText(f'{W_flat[ii, jj]:g}')
-        self._pattern_cb.setCurrentIndex(8)  # switch to Manual to preserve preset
+        self._pattern_cb.setCurrentIndex(_IDX_MANUAL)  # switch to Manual to preserve preset
 
 
 # ============================================================
@@ -1266,17 +1258,43 @@ class NetworkVisualizerWindow(QWidget):
     _RING_SCALE        = 0.82   # ring node size and ring radius relative to _NODE_R
     _DENSE_NODE_SCALE  = 0.68   # node size scale when layer has more than 4 neurons
     _MIDLINE_GAP       = 0.05   # extra gap inserted at y=0.5 for even-n layers
-    _CAM_H_DATA        = 0.135  # camera thumbnail height in data coords (must match _build_inner)
+    _CAM_H_DATA        = 0.1125 # camera thumbnail height in data coords (must match _build_inner)
     _DENSE_THRESHOLD = 4   # max(ns, nt) > this → sampled edges + badge
     _DENSE_SAMPLE    = 3   # neurons sampled per side for dense connections
     _PAD_Y        = 0.10
     _CAM_WEIGHT   = 3.0    # slot weight for image nodes (camera thumbnails need extra vertical space)
+
+    # Connection kind tokens — see rules/network_viz.md "Connection classifier".
+    _CK_TD     = 'td'      # target is LearningLayerBase → amber style
+    _CK_CONV4D = 'conv4d'  # 4-D conv kernel → one arc per filter
+    _CK_DENSE  = 'dense'   # max(ns, nt) > _DENSE_THRESHOLD → sampled thin arcs
+    _CK_THIN   = 'thin'    # lw=0.6, no marker
+    _CK_THICK  = 'thick'   # lw=3.0, with marker
 
     @staticmethod
     def _reversed_idx(i: int, n: int, side: str) -> int:
         """Map neuron/filter index i to visual position.
         R-side reverses ordering so R[0] is at visual bottom, R[n-1] near midline."""
         return n - 1 - i if side == 'R' else i
+
+    def _connection_kind(self, src_obj, tgt_obj, W, ns, nt):
+        """Classify a connection for drawing dispatch (see rules/network_viz.md).
+
+        Priority: TD → CONV4D → DENSE → THIN → THICK.
+        src_obj / tgt_obj are the resolved layer or sensor objects (tgt is always a layer).
+        """
+        from neurons import LearningLayerBase as _LLB
+        if isinstance(tgt_obj, _LLB):
+            return self._CK_TD
+        if W.ndim == 4:
+            return self._CK_CONV4D
+        if max(ns, nt) > self._DENSE_THRESHOLD:
+            return self._CK_DENSE
+        if (ns * nt > 4
+                or (getattr(src_obj, 'is_image_node', False)
+                    and getattr(tgt_obj, 'is_image_node', False))):
+            return self._CK_THIN
+        return self._CK_THICK
 
     _PANEL_CFG    = {
         'sensor': ('#D8EED8', '#A8CCA8'),
@@ -1347,7 +1365,8 @@ class NetworkVisualizerWindow(QWidget):
             PaletteChip(t.replace('Layer', ''), t)
             for t in ['LeakyLayer', 'Leaky2dLayer', 'SumLayer', 'ConstantLayer', 'SineLayer',
                       'MatsuokaLayer', 'AdaptiveLayer', 'PulseLayer',
-                      'RingAttractorLayer', 'Conv2dLayer']
+                      'RingAttractorLayer', 'Conv2dLayer', 'Reichardt2dLayer',
+                      'AccumulatorLayer']
         ]))
 
         # Combined row: Body | Learning layers | Motifs (dynamic)
@@ -1548,6 +1567,7 @@ class NetworkVisualizerWindow(QWidget):
         self._sensor_active_rgb = {}      # node_key → (r,g,b) palette colour for activity
         self._camera_items      = {}      # sensor.name → pg.ImageItem (CameraSensor only)
         self._camera_rects      = {}      # same keys → (x, y, w, h) for re-anchoring after setImage
+        self._image_node_items  = {}      # node_key → list of plot items (circle, img, label, …)
         self._highlighted_node  = None
         self._node_just_clicked = False   # prevents scene click from clearing a fresh highlight
         self._multi_selected    = set()   # node keys selected via shift+click
@@ -1596,104 +1616,17 @@ class NetworkVisualizerWindow(QWidget):
                     pass
 
     def _update_camera_nodes(self):
-        from sensors import CameraSensor as _CamSensor
-        from neurons import Leaky2dLayer as _L2d, Conv2dLayer as _Conv2d
-        DISP_H = 32
-
-        # Leaky2dLayer image thumbnails.
-        for lyr in self.gui.circuit.layers:
-            if not isinstance(lyr, _L2d):
+        for obj in list(self.gui.circuit.layers) + list(self.gui.circuit.sensors):
+            if not obj.is_image_node:
                 continue
-            frame = getattr(lyr, '_last_frame', None)
-            if frame is None:
-                continue
-            item = self._camera_items.get(lyr.name)
-            if item is None:
-                continue
-            # Convert to (H, W, 3) uint8.
-            # Derivative mode: fixed [-1, 1] → [0, 255] so zero → mid-gray
-            # and a static scene correctly appears as uniform gray.
-            # Normal mode: fixed [0, 1] → [0, 255].
-            if lyr.in_ch == 3:
-                rgb = frame  # already (H, W, 3)
-            else:
-                g = frame if frame.ndim == 2 else np.mean(frame, axis=-1)
-                rgb = np.stack([g, g, g], axis=-1)
-            if getattr(lyr, 'derivative', False):
-                data = np.clip((rgb + 1.0) * 127.5, 0, 255).astype(np.uint8)
-            else:
-                data = np.clip(rgb * 255, 0, 255).astype(np.uint8)
-            reps = max(1, DISP_H // max(data.shape[0], 1))
-            data = np.repeat(data, reps, axis=0)[:DISP_H]
-            item.setImage(data, axisOrder='row-major')
-            rect = self._camera_rects.get(lyr.name)
-            if rect is not None:
-                item.setRect(*rect)
-
-        # Conv2dLayer pool='none' image thumbnails.
-        for lyr in self.gui.circuit.layers:
-            if not isinstance(lyr, _Conv2d) or getattr(lyr, 'pool', '') != 'none':
-                continue
-            frame = getattr(lyr, '_last_frame', None)
-            if frame is None:
-                continue
-            item = self._camera_items.get(lyr.name)
-            if item is None:
-                continue
-            g = frame if frame.ndim == 2 else np.mean(frame, axis=-1)
-            data = np.clip(g * 255, 0, 255).astype(np.uint8)
-            data = np.stack([data, data, data], axis=-1)
-            reps = max(1, DISP_H // max(data.shape[0], 1))
-            data = np.repeat(data, reps, axis=0)[:DISP_H]
-            item.setImage(data, axisOrder='row-major')
-            rect = self._camera_rects.get(lyr.name)
-            if rect is not None:
-                item.setRect(*rect)
-
-        for sensor in self.gui.circuit.sensors:
-            if not isinstance(sensor, _CamSensor):
-                continue
-            frame = getattr(sensor, '_last_frame', None)
-            if frame is None:
-                continue
-            # Use in_ch (sensor property) rather than frame ndim: MuJoCo always
-            # stores (H, W, 3) in _last_frame even for GrayCameraSensor.
-            if getattr(sensor, 'in_ch', 1) == 3:      # RGB
-                data = (np.clip(frame, 0, 1) * 255).astype(np.uint8)
-            else:                                      # gray — compute luma if needed
-                g = frame if frame.ndim == 2 else np.mean(frame, axis=-1)
-                g = (np.clip(g, 0, 1) * 255).astype(np.uint8)
-                data = np.stack([g, g, g], axis=-1)
-            # Tile rows to a fixed display height.
-            reps = max(1, DISP_H // data.shape[0])
-            data = np.repeat(data, reps, axis=0)[:DISP_H]
-
-            if getattr(sensor, 'lateralized', False):
-                half    = sensor.width // 2
-                ovl     = getattr(sensor, 'overlap', 0)
-                l_end   = int(np.clip(half + ovl, 0, sensor.width))
-                r_start = int(np.clip(half - ovl, 0, sensor.width))
-                key_L = f'{sensor.name}_L'
-                item_L = self._camera_items.get(key_L)
-                if item_L is not None:
-                    item_L.setImage(data[:, :l_end, :], axisOrder='row-major')
-                    rect_L = self._camera_rects.get(key_L)
-                    if rect_L is not None:
-                        item_L.setRect(*rect_L)
-                key_R = f'{sensor.name}_R'
-                item_R = self._camera_items.get(key_R)
-                if item_R is not None:
-                    item_R.setImage(data[:, r_start:, :], axisOrder='row-major')
-                    rect_R = self._camera_rects.get(key_R)
-                    if rect_R is not None:
-                        item_R.setRect(*rect_R)
-            else:
-                item = self._camera_items.get(sensor.name)
-                if item is not None:
-                    item.setImage(data, axisOrder='row-major')
-                    rect = self._camera_rects.get(sensor.name)
-                    if rect is not None:
-                        item.setRect(*rect)
+            for key, data in obj.thumbnail_frames(32):
+                item = self._camera_items.get(key)
+                if item is None:
+                    continue
+                item.setImage(data, axisOrder='row-major')
+                rect = self._camera_rects.get(key)
+                if rect is not None:
+                    item.setRect(*rect)
 
     def _update_anim(self, brain):
         if self._ring_scatter is None:
@@ -1835,7 +1768,8 @@ class NetworkVisualizerWindow(QWidget):
                     m[f'{s.name}_R'] = s.n or 1
             else:
                 m[s.name] = s.n
-        m.update({l.name: l.n for l in circuit.layers if l.n is not None})
+        m.update({l.name: (getattr(l, 'viz_n', None) or l.n)
+                  for l in circuit.layers if l.n is not None})
         return m
 
     def _compute_depth(self):
@@ -1862,7 +1796,7 @@ class NetworkVisualizerWindow(QWidget):
         c = self.gui.circuit
         depth = {s.name: 0 for s in c.sensors}
         for lyr in c.layers:
-            if type(lyr).__name__ == 'ConstantLayer':
+            if isinstance(lyr, ConstantLayer):
                 depth[lyr.name] = 0
         # Iterative relaxation: longest path from any source.
         changed = True
@@ -1888,7 +1822,7 @@ class NetworkVisualizerWindow(QWidget):
         c = self.gui.circuit
         source_names = [s.name for s in c.sensors]
         source_names += [l.name for l in c.layers
-                         if type(l).__name__ == 'ConstantLayer']
+                         if isinstance(l, ConstantLayer)]
 
         # BFS forward reachability from each source
         reachable = {}
@@ -1932,7 +1866,7 @@ class NetworkVisualizerWindow(QWidget):
         # Build reverse label map: z_index → source name for plane tabs
         source_names = [s.name for s in c.sensors]
         source_names += [l.name for l in c.layers
-                         if type(l).__name__ == 'ConstantLayer']
+                         if isinstance(l, ConstantLayer)]
         self._z_labels = {0: 'shared'}
         self._z_labels.update({i + 1: name for i, name in enumerate(source_names)})
 
@@ -2029,24 +1963,22 @@ class NetworkVisualizerWindow(QWidget):
 
     @staticmethod
     def _slot_weight(entry) -> float:
-        """Proportional vertical weight for one slot-list entry.
-        Image nodes (camera halves, viz_n=1 layers) get _CAM_WEIGHT so thumbnails
-        have adequate spacing; all other items get their effective neuron count."""
+        """Proportional vertical weight for one slot-list entry (unused by _layout,
+        kept for reference). Image nodes get _CAM_WEIGHT; others get neuron count."""
         _CAM_W = NetworkVisualizerWindow._CAM_WEIGHT
         if entry[0] == 'pair':
             _, L_ct, L_obj, R_ct, R_obj = entry
-            if (getattr(L_obj, 'is_image', False) or getattr(L_obj, 'viz_n', None) == 1 or
-                    getattr(R_obj, 'is_image', False) or getattr(R_obj, 'viz_n', None) == 1):
+            if (getattr(L_obj, 'is_image_node', False) or getattr(L_obj, 'viz_n', None) == 1 or
+                    getattr(R_obj, 'is_image_node', False) or getattr(R_obj, 'viz_n', None) == 1):
                 return _CAM_W
             return max(_eff_n(L_obj), _eff_n(R_obj), 1)
         else:
             _, ct, obj = entry
-            if getattr(obj, 'is_image', False) or getattr(obj, 'viz_n', None) == 1:
+            if getattr(obj, 'is_image_node', False) or getattr(obj, 'viz_n', None) == 1:
                 return _CAM_W
             return max(_eff_n(obj), 1)
 
     def _layout(self):
-        from sensors import CameraSensor as _CamSensor
         circuit  = self.gui.circuit
         layers   = [l for l in circuit.layers if l.n is not None]
 
@@ -2148,53 +2080,49 @@ class NetworkVisualizerWindow(QWidget):
                 else:
                     slot_list.append(('single', ct, obj))
 
-            # ── Compute total weight and place each slot ──────────────────────
-            total_weight = sum(self._slot_weight(e) for e in slot_list) or 1.0
-            cumulative   = 0.0
-
-            for slot_idx, entry in enumerate(slot_list):
-                w        = self._slot_weight(entry)
-                slot_top = 1.0 - cumulative / total_weight
-                slot_bot = 1.0 - (cumulative + w) / total_weight
-                slot_ctr = (slot_top + slot_bot) / 2
-                slot_h   = slot_top - slot_bot
-
+            # ── Outside-in index assignment ────────────────────────────────────
+            # The first entry claims the outermost positions (top + bottom),
+            # the second entry claims the next-innermost, and so on until all
+            # entries converge to the centre.  Pairs: L→top, R→bottom.
+            # Odd-n entry: ceil(n/2) top, floor(n/2) bottom.
+            total_N = 0
+            for entry in slot_list:
                 if entry[0] == 'pair':
                     _, L_ct, L_obj, R_ct, R_obj = entry
-                    n_L   = max(_eff_n(L_obj), 1)
-                    n_R   = max(_eff_n(R_obj), 1)
-                    L_img = getattr(L_obj, 'is_image', False) or getattr(L_obj, 'viz_n', None) == 1
-                    R_img = getattr(R_obj, 'is_image', False) or getattr(R_obj, 'viz_n', None) == 1
-                    half_h  = slot_h / 2
-                    _h_half = self._CAM_H_DATA / 2
+                    total_N += max(_eff_n(L_obj), 1) + max(_eff_n(R_obj), 1)
+                else:
+                    total_N += max(_eff_n(entry[2]), 1)
+            total_N = total_N or 1
+            d       = 2.0 * self._NODE_R
+            spacing = min(d, 1.0 / total_N)
 
-                    # L in upper half [slot_ctr, slot_top]
-                    if L_img:
-                        positions[f'{L_obj.name}_0'] = (
-                            x, min(slot_top - _h_half, slot_ctr + half_h / 2))
-                    else:
-                        for i in range(n_L):
-                            positions[f'{L_obj.name}_{i}'] = (
-                                x, slot_top - (i + 0.5) * half_h / n_L)
+            def _iy(k):
+                return 0.5 + (total_N - 1 - 2 * k) * spacing / 2
 
-                    # R in lower half [slot_bot, slot_ctr]
-                    if R_img:
-                        positions[f'{R_obj.name}_0'] = (
-                            x, max(slot_bot + _h_half, slot_ctr - half_h / 2))
-                    else:
-                        for i in range(n_R):
-                            positions[f'{R_obj.name}_{i}'] = (
-                                x, slot_bot + (i + 0.5) * half_h / n_R)
+            top_ptr = 0
+            bot_ptr = total_N - 1
 
-                    # Groups and sensor_nodes
+            for slot_idx, entry in enumerate(slot_list):
+                if entry[0] == 'pair':
+                    _, L_ct, L_obj, R_ct, R_obj = entry
+                    n_L = max(_eff_n(L_obj), 1)
+                    n_R = max(_eff_n(R_obj), 1)
+                    t0, b0 = top_ptr, bot_ptr
+                    for i in range(n_L):
+                        positions[f'{L_obj.name}_{i}'] = (x, _iy(top_ptr + i))
+                    top_ptr += n_L
+                    r_start = bot_ptr - n_R + 1
+                    for i in range(n_R):
+                        positions[f'{R_obj.name}_{i}'] = (x, _iy(r_start + i))
+                    bot_ptr -= n_R
+                    slot_top = _iy(t0) + spacing / 2
+                    slot_bot = _iy(b0) - spacing / 2
                     L_nodes = [f'{L_obj.name}_{j}' for j in range(n_L)]
                     R_nodes = [f'{R_obj.name}_{j}' for j in range(n_R)]
                     if L_ct == 'sensor': sensor_nodes.update(L_nodes)
                     if R_ct == 'sensor': sensor_nodes.update(R_nodes)
-                    L_color = (getattr(L_obj, '_viz_color', None) if L_ct == 'sensor'
-                               else getattr(L_obj, 'color', None))
-                    R_color = (getattr(R_obj, '_viz_color', None) if R_ct == 'sensor'
-                               else getattr(R_obj, 'color', None))
+                    L_color = L_obj.viz_color
+                    R_color = R_obj.viz_color
                     groups.append((L_ct, L_obj.name, L_nodes, x, depth_val,
                                    slot_top, slot_bot, L_color))
                     groups.append((R_ct, R_obj.name, R_nodes, x, depth_val,
@@ -2204,44 +2132,26 @@ class NetworkVisualizerWindow(QWidget):
 
                 else:   # 'single'
                     _, ct, obj = entry
-                    en     = max(_eff_n(obj), 1)
-                    is_img = (getattr(obj, 'is_image', False) or
-                              getattr(obj, 'viz_n', None) == 1)
-
-                    if is_img or en == 1:
-                        # Image node or single neuron: centre of slot
-                        positions[f'{obj.name}_0'] = (x, slot_ctr)
-
-                    elif isinstance(obj, _Conv2dLayer) and not getattr(obj, 'lateralized', False):
-                        # Non-lateralized Conv2dLayer: filters stacked top-to-bottom in slot
-                        for j in range(en):
-                            positions[f'{obj.name}_{j}'] = (
-                                x, slot_top - (j + 0.5) * slot_h / en)
-
-                    else:
-                        # Bilateral: n//2 neurons above slot_ctr mirrored below
-                        half        = en // 2
-                        midline_adj = self._MIDLINE_GAP / 2 if en % 2 == 0 else 0.0
-                        usable_h    = slot_h / 2 - midline_adj
-                        y_order     = list(getattr(obj, 'y_order', None) or range(en))
-                        for jl in range(half):
-                            y_left  = slot_top - (jl + 0.5) * usable_h / max(half, 1)
-                            y_right = 2.0 * slot_ctr - y_left   # mirror around slot centre
-                            positions[f'{obj.name}_{y_order[jl]}']          = (x, y_left)
-                            positions[f'{obj.name}_{y_order[en - 1 - jl]}'] = (x, y_right)
-                        if en % 2 == 1:
-                            positions[f'{obj.name}_{y_order[half]}'] = (x, slot_ctr)
-
-                    # Groups and sensor_nodes
+                    en      = max(_eff_n(obj), 1)
+                    n_top   = (en + 1) // 2
+                    n_bot   = en // 2
+                    y_order = list(getattr(obj, 'y_order', None) or range(en))
+                    t0, b0  = top_ptr, bot_ptr
+                    for i in range(n_top):
+                        positions[f'{obj.name}_{y_order[i]}'] = (x, _iy(top_ptr + i))
+                    top_ptr += n_top
+                    b_start = bot_ptr - n_bot + 1
+                    for i in range(n_bot):
+                        positions[f'{obj.name}_{y_order[n_top + i]}'] = (x, _iy(b_start + i))
+                    bot_ptr -= n_bot
+                    slot_top = _iy(t0) + spacing / 2
+                    slot_bot = _iy(b0) - spacing / 2
                     col_nodes = [f'{obj.name}_{j}' for j in range(en)]
                     if ct == 'sensor': sensor_nodes.update(col_nodes)
-                    obj_color = (getattr(obj, '_viz_color', None) if ct == 'sensor'
-                                 else getattr(obj, 'color', None))
+                    obj_color = obj.viz_color
                     groups.append((ct, obj.name, col_nodes, x, depth_val,
                                    slot_top, slot_bot, obj_color))
                     if ct == 'layer': obj.viz_row = slot_idx
-
-                cumulative += w
 
             # Ring layout: neurons arranged in a circle, neuron 0 at the top.
             for _, obj in ring_items:
@@ -2325,17 +2235,16 @@ class NetworkVisualizerWindow(QWidget):
         # Build set of position keys that belong to image-display nodes (cameras,
         # Leaky2dLayer, Conv2dLayer pool='none').  _draw_edge uses this to offset
         # arc endpoints to the image circle rim rather than the neuron-dot rim.
-        from sensors import CameraSensor as _CamSensorDE
         _img_keys: set = set()
         for _s in self.gui.circuit.sensors:
-            if isinstance(_s, _CamSensorDE):
-                if getattr(_s, 'lateralized', False):
+            if _s.is_image_node:
+                if _sensor_is_lateralized(_s, self.gui.circuit):
                     _img_keys.add(f'{_s.name}_L_0')
                     _img_keys.add(f'{_s.name}_R_0')
                 else:
                     _img_keys.add(f'{_s.name}_0')
         for _l in self.gui.circuit.layers:
-            if getattr(_l, 'viz_n', None) == 1:
+            if _l.is_image_node or getattr(_l, 'viz_n', None) == 1:
                 _img_keys.add(f'{_l.name}_0')
         self._img_node_keys = _img_keys
 
@@ -2354,45 +2263,30 @@ class NetworkVisualizerWindow(QWidget):
             src, tgt, W = conn.src, conn.tgt, conn.W
             W  = np.asarray(W, dtype=float)
 
-            # Conv2d 4-D kernel (n_filters, in_ch, kH, kW).
-            # Camera sensor halves are laid out as a single node (n=1), so skip the
-            # per-pixel loop.  Draw one arc per filter from {src}_0; use the
-            # centre-pixel mean to classify ON (>0 → excitatory) vs OFF (→ inhibitory).
-            if W.ndim == 4:
-                from sensors import CameraSensor as _CS4
-                n_filters, in_ch, kH, kW = W.shape
-                p_s = positions.get(f'{src}_0')
-                if p_s is None:
-                    continue
-                # Lateralized camera half → single conv: R side writes to reversed
-                # target neurons so the layout mirrors L (L0…Ln R[n]…R0 ordering).
-                src_sensor_4 = next((s for s in self.gui.circuit.sensors if s.name == src), None)
-                if src_sensor_4 is None:
-                    parent_4 = src.rsplit('_', 1)[0]
-                    src_sensor_4 = next((s for s in self.gui.circuit.sensors if s.name == parent_4), None)
-                is_lat_R = (src.endswith('_R')
-                            and src_sensor_4 is not None
-                            and _sensor_is_lateralized(src_sensor_4, self.gui.circuit))
-                tgt_n = n_map.get(tgt, n_filters)
-                for i in range(n_filters):
-                    tgt_idx = self._reversed_idx(i, tgt_n, 'R' if is_lat_R else 'L')
-                    if sel_idx is not None and tgt == sel_layer and sel_idx != tgt_idx:
-                        continue
-                    tn = f'{tgt}_{tgt_idx}'
-                    p_t = positions.get(tn)
-                    if p_t is None:
-                        continue
-                    cw = abs(float(W[i, :, kH // 2, kW // 2].mean()))
-                    if cw < 1e-10:
-                        cw = float(np.abs(W[i]).max())
-                    mid_y = (p_s[1] + p_t[1]) / 2
-                    sb = self._CROSS_BOW if mid_y >= 0.5 else -self._CROSS_BOW
-                    self._draw_edge(p_s, p_t, cw, sb, sn=f'{src}_0', tn=tn)
-                continue
-
             ns = n_map.get(src, 1)
             nt = n_map.get(tgt, 1)
-            # Detect combined lateralized source: W columns = n_L + n_R.
+
+            # Resolve endpoint objects for the classifier (src may be layer or sensor).
+            src_obj = (next((l for l in self.gui.circuit.layers  if l.name == src), None)
+                       or next((s for s in self.gui.circuit.sensors if s.name == src), None))
+            tgt_obj = next((l for l in self.gui.circuit.layers if l.name == tgt), None)
+
+            kind = self._connection_kind(src_obj, tgt_obj, W, ns, nt)
+
+            if kind == self._CK_TD:
+                self._draw_td_connection(src, tgt, W, ns, nt, positions,
+                                         sel_layer=sel_layer, sel_idx=sel_idx)
+                continue
+            if kind == self._CK_CONV4D:
+                self._draw_conv4d_connection(src, tgt, W, positions, n_map,
+                                             sel_layer, sel_idx)
+                continue
+            if kind == self._CK_DENSE:
+                self._draw_dense_connection(src, tgt, W, ns, nt, positions,
+                                            sel_layer=sel_layer, sel_idx=sel_idx)
+                continue
+
+            # THIN or THICK — detect combined lateralized source then accumulate into by_target.
             # Two cases:
             #   A) Conv2dLayer pair: src has _lateral_pair → partner nodes from partner layer.
             #   B) Joint-pair sensor half: src ends _L/_R from a pair sensor → partner nodes
@@ -2400,15 +2294,15 @@ class NetworkVisualizerWindow(QWidget):
             _src_lyr_d   = next((l for l in self.gui.circuit.layers if l.name == src), None)
             _pair_nm_d   = getattr(_src_lyr_d, 'lateral_pair', None) if _src_lyr_d else None
             _pair_lyr_d  = None
-            _pair_sensor_half_d = None   # partner sensor half name (for case B)
-            _n_L_d       = ns   # neurons from the primary (L) half
+            _pair_sensor_half_d = None
+            _n_L_d       = ns
             if _pair_nm_d and W.ndim == 2:
                 _p = next((l for l in self.gui.circuit.layers if l.name == _pair_nm_d), None)
                 if _p and W.shape[1] == (_src_lyr_d.n or 0) + (_p.n or 0):
                     _pair_lyr_d = _p
                     _n_L_d = _src_lyr_d.n or 0
                     ns = W.shape[1]
-            elif (W.ndim == 2 and (src.endswith('_L') or src.endswith('_R'))):
+            elif W.ndim == 2 and (src.endswith('_L') or src.endswith('_R')):
                 _src_snsr_d = next((s for s in self.gui.circuit.sensors
                                     if s.name == src.rsplit('_', 1)[0]), None)
                 if (_src_snsr_d is not None
@@ -2419,16 +2313,7 @@ class NetworkVisualizerWindow(QWidget):
                     ns = W.shape[1]
             if W.ndim == 2 and (W.shape[0] < nt or W.shape[1] < ns):
                 continue  # stale W matrix; skip rather than IndexError
-            from neurons import LearningLayerBase as _LLB
-            tgt_layer_obj = next((l for l in self.gui.circuit.layers if l.name == tgt), None)
-            if isinstance(tgt_layer_obj, _LLB):
-                self._draw_td_connection(src, tgt, W, ns, nt, positions,
-                                         sel_layer=sel_layer, sel_idx=sel_idx)
-                continue
-            if max(ns, nt) > self._DENSE_THRESHOLD:
-                self._draw_dense_connection(src, tgt, W, ns, nt, positions,
-                                            sel_layer=sel_layer, sel_idx=sel_idx)
-                continue
+            _is_thin = (kind == self._CK_THIN)
             for i in range(nt):
                 if sel_idx is not None and tgt == sel_layer and i != sel_idx:
                     continue
@@ -2459,19 +2344,21 @@ class NetworkVisualizerWindow(QWidget):
                     _p_sn   = positions.get(sn)
                     src_hem = ((_p_sn[1] >= 0.5) if ns > 1 else None) if _p_sn is not None \
                               else self._hemisphere(j, ns)
-                    by_target[tn].append((sn, w, src_hem))
+                    by_target[tn].append((sn, w, src_hem, _is_thin))
 
         for tn, incoming in by_target.items():
             p1      = positions[tn]
             k       = len(incoming)
             tgt_hem = tgt_hem_map[tn]
             incoming_sorted = sorted(incoming, key=lambda t: positions[t[0]][1], reverse=True)
-            for idx, (sn, w, src_hem) in enumerate(incoming_sorted):
+            for idx, (sn, w, src_hem, is_thin) in enumerate(incoming_sorted):
                 p0  = positions[sn]
                 t   = (idx / (k - 1) - 0.5) if k > 1 else 0.0
                 sb  = self._signed_bow(src_hem, tgt_hem, self._CROSS_BOW,
                                        (p0[1] + p1[1]) / 2)
-                self._draw_edge(p0, p1, w, sb, ctrl_perp=0.18 * t, sn=sn, tn=tn)
+                _lw = 0.6 if is_thin else 3.0
+                self._draw_edge(p0, p1, w, sb, ctrl_perp=0.18 * t, sn=sn, tn=tn,
+                                lw=_lw, mark=not is_thin)
 
         for layer in self.gui.circuit.layers:
             if not hasattr(layer, 'internal_edges'):
@@ -2505,7 +2392,43 @@ class NetworkVisualizerWindow(QWidget):
                     sb = self._signed_bow(self._hemisphere(fi, n), self._hemisphere(ti, n),
                                           self._INTERNAL_BOW,
                                           (positions[sn][1] + positions[tn][1]) / 2)
-                self._draw_edge(positions[sn], positions[tn], w, sb, sn=sn, tn=tn)
+                self._draw_edge(positions[sn], positions[tn], w, sb, sn=sn, tn=tn,
+                               lw=0.6, mark=False)
+
+    def _draw_conv4d_connection(self, src, tgt, W, positions, n_map, sel_layer, sel_idx):
+        """Draw a Conv2d 4-D kernel connection: one arc per filter from {src}_0.
+
+        lw=0.6 when n_filters > 4 (THIN rule), lw=3.0 otherwise (THICK rule).
+        Lateralized R-side source reverses the target neuron ordering to mirror the L layout.
+        """
+        n_filters, _, kH, kW = W.shape
+        p_s = positions.get(f'{src}_0')
+        if p_s is None:
+            return
+        src_sensor = next((s for s in self.gui.circuit.sensors if s.name == src), None)
+        if src_sensor is None:
+            parent = src.rsplit('_', 1)[0]
+            src_sensor = next((s for s in self.gui.circuit.sensors if s.name == parent), None)
+        is_lat_R = (src.endswith('_R')
+                    and src_sensor is not None
+                    and _sensor_is_lateralized(src_sensor, self.gui.circuit))
+        tgt_n = n_map.get(tgt, n_filters)
+        lw    = 0.6 if n_filters > 4 else 3.0
+        mark  = n_filters <= 4
+        for i in range(n_filters):
+            tgt_idx = self._reversed_idx(i, tgt_n, 'R' if is_lat_R else 'L')
+            if sel_idx is not None and tgt == sel_layer and sel_idx != tgt_idx:
+                continue
+            tn = f'{tgt}_{tgt_idx}'
+            p_t = positions.get(tn)
+            if p_t is None:
+                continue
+            cw = abs(float(W[i, :, kH // 2, kW // 2].mean()))
+            if cw < 1e-10:
+                cw = float(np.abs(W[i]).max())
+            mid_y = (p_s[1] + p_t[1]) / 2
+            sb = self._CROSS_BOW if mid_y >= 0.5 else -self._CROSS_BOW
+            self._draw_edge(p_s, p_t, cw, sb, sn=f'{src}_0', tn=tn, lw=lw, mark=mark)
 
     def _draw_td_connection(self, src, tgt, W, ns, nt, positions,
                             sel_layer=None, sel_idx=None):
@@ -2735,6 +2658,7 @@ class NetworkVisualizerWindow(QWidget):
                     layer._ensure_n(W.shape[0])
 
     def build(self):
+        self._compact_depths()
         self._building = True
         self._gw.setUpdatesEnabled(False)
         try:
@@ -2781,8 +2705,9 @@ class NetworkVisualizerWindow(QWidget):
         # creation loop.  This avoids the transform/scene detach race that
         # caused stale images to appear at wrong positions on rebuild.
         _old_cam_items = dict(self._camera_items)
-        self._camera_items = {}
-        self._camera_rects = {}
+        self._camera_items      = {}
+        self._camera_rects      = {}
+        self._image_node_items  = {}
         if self._all_scatter is not None:
             try:
                 self._plot.removeItem(self._all_scatter)
@@ -2897,7 +2822,7 @@ class NetworkVisualizerWindow(QWidget):
         for i, sensor in enumerate(self.gui.circuit.sensors):
             col = getattr(sensor, '_viz_color', None) or _CHAN_PALETTE[i % len(_CHAN_PALETTE)]
             if _sensor_is_lateralized(sensor, self.gui.circuit):
-                n_half = 1 if isinstance(sensor, _CamSensor) else (sensor.n or 1)
+                n_half = sensor.n_per_side()
                 for side in ('L', 'R'):
                     for j in range(n_half):
                         key = f'{sensor.name}_{side}_{j}'
@@ -2909,9 +2834,6 @@ class NetworkVisualizerWindow(QWidget):
                     self._sensor_pens[key]       = pg.mkPen(col, width=2.5)
                     self._sensor_active_rgb[key] = self._hex_rgb(col)
 
-        camera_names = {s.name for s in self.gui.circuit.sensors
-                        if isinstance(s, _CamSensor)}
-
         r = self._NODE_R
         _all_objs_init = {l.name: l for l in self.gui.circuit.layers}
         _all_objs_init.update({s.name: s for s in self.gui.circuit.sensors})
@@ -2919,6 +2841,31 @@ class NetworkVisualizerWindow(QWidget):
             if _sensor_is_lateralized(s, self.gui.circuit):
                 _all_objs_init[f'{s.name}_L'] = s
                 _all_objs_init[f'{s.name}_R'] = s
+        # Image nodes — suppress both center spot and center text to avoid overlaying thumbnail.
+        # image_layer_keys: is_image_node layers (Leaky2dLayer, Conv2dLayer pool='none', etc).
+        # image_sensor_keys: camera sensor half nodes (lateralized or not).
+        _image_layer_keys = {
+            f'{l.name}_0' for l in self.gui.circuit.layers
+            if l.is_image_node or getattr(l, 'viz_n', None) == 1
+        }
+        _image_sensor_keys = set()
+        for _s in self.gui.circuit.sensors:
+            if _s.is_image_node:
+                if _sensor_is_lateralized(_s, self.gui.circuit):
+                    _image_sensor_keys.add(f'{_s.name}_L_0')
+                    _image_sensor_keys.add(f'{_s.name}_R_0')
+                else:
+                    _image_sensor_keys.add(f'{_s.name}_0')
+        _image_node_keys = _image_layer_keys | _image_sensor_keys
+
+        # For lateralized sensor halves, compute how many nodes the L half has so that
+        # R indices continue where L left off: sensor_L_j → sensor_j, sensor_R_j → sensor_{n_L+j}.
+        _lat_sensor_n_L = {
+            s.name: s.n_per_side()
+            for s in self.gui.circuit.sensors
+            if _sensor_is_lateralized(s, self.gui.circuit)
+        }
+
         spots = []
         for name, (x, y) in positions.items():
             layer_name = name.rsplit('_', 1)[0]
@@ -2935,6 +2882,17 @@ class NetworkVisualizerWindow(QWidget):
             self._spot_base_rgb[name]  = rgb
             self._spot_alpha[name]     = 1.0
             self._spot_visible[name]   = True
+
+            if name in _image_node_keys:
+                # Image nodes: zero-size invisible scatter spot so hide/show works
+                # identically to regular nodes.  Visual representation (circle +
+                # thumbnail + label) is built in the image drawing blocks below and
+                # stored in _image_node_items for visibility toggling in _redraw_nodes.
+                spots.append({'pos': (x, y), 'size': 0,
+                              'brush': pg.mkBrush(0, 0, 0, 0), 'pen': pg.mkPen(None),
+                              'data': name})
+                continue  # no center text for image nodes
+
             _obj_init  = _all_objs_init.get(layer_name)
             _n_init    = getattr(_obj_init, 'n', 1) or 1
             _is_ring_i = getattr(_obj_init, 'viz_layout', None) == 'ring'
@@ -2943,8 +2901,18 @@ class NetworkVisualizerWindow(QWidget):
             spots.append({'pos': (x, y), 'size': r * _scale_i * 240,
                           'brush': brush, 'pen': pen_s,
                           'data': name})
-
-            txt = pg.TextItem(name, color=C['dark'], anchor=(0.5, 0.5))
+            # Lateralized sensor halves: relabel sensor_L/R_j → sensor_j / sensor_{n_L+j}.
+            _parts = name.rsplit('_', 2)
+            if (name in sensor_nodes and len(_parts) == 3
+                    and _parts[1] in ('L', 'R')):
+                _sbase, _side, _sidx = _parts
+                _j = int(_sidx)
+                if _side == 'R':
+                    _j += _lat_sensor_n_L.get(_sbase, 1)
+                display_name = f'{_sbase}_{_j}'
+            else:
+                display_name = name
+            txt = pg.TextItem(display_name, color=C['dark'], anchor=(0.5, 0.5))
             txt.setPos(x, y)
             txt.setFont(QFont('Segoe UI', 6))
             txt.setZValue(8)
@@ -2961,7 +2929,7 @@ class NetworkVisualizerWindow(QWidget):
         # Camera image nodes — one pg.ImageItem per CameraSensor (or two for split).
         # W_DATA / H_DATA are display sizes in data coords, independent of sensor dims.
         # DISP_H must match the constant used in _update_camera_nodes.
-        W_DATA, H_DATA, DISP_H = 0.18, 0.135, 32
+        W_DATA, H_DATA, DISP_H = 0.15, 0.1125, 32
         for sensor in self.gui.circuit.sensors:
             if not isinstance(sensor, _CamSensor):
                 continue
@@ -2973,7 +2941,8 @@ class NetworkVisualizerWindow(QWidget):
                     'R': (int(np.clip(half - ovl, 0, sensor.width)), sensor.width),
                 }
                 for side, (px0, px1) in slices.items():
-                    pos = positions.get(f'{sensor.name}_{side}_0')
+                    node_key = f'{sensor.name}_{side}_0'
+                    pos = positions.get(node_key)
                     if pos is None:
                         continue
                     cx, cy = pos
@@ -3002,12 +2971,15 @@ class NetworkVisualizerWindow(QWidget):
                     img_item.setRect(*cam_rect)
                     self._camera_items[key] = img_item
                     self._camera_rects[key] = cam_rect
-                    lbl = pg.TextItem(key, color=C['dark'], anchor=(0.5, 1.0))
-                    lbl.setPos(cx, cy + H_DATA / 2 + 0.02)
+                    _idx  = 0 if side == 'L' else 1
+                    _dlbl = f'{sensor.name}_{_idx}'
+                    lbl = pg.TextItem(_dlbl, color=C['dark'], anchor=(0.5, 1.0))
+                    lbl.setPos(cx, cy + _r + 0.01)
                     lbl.setFont(QFont('Segoe UI', 6))
                     lbl.setZValue(8)
                     self._plot.addItem(lbl)
                     self._text_items.append(lbl)
+                    self._image_node_items[node_key] = [_circ, img_item, lbl]
             else:
                 pos = positions.get(f'{sensor.name}_0')
                 if pos is None:
@@ -3038,11 +3010,12 @@ class NetworkVisualizerWindow(QWidget):
                 self._camera_items[key] = img_item
                 self._camera_rects[key] = cam_rect
                 lbl = pg.TextItem(sensor.name, color=C['dark'], anchor=(0.5, 1.0))
-                lbl.setPos(cx, cy + H_DATA / 2 + 0.02)
+                lbl.setPos(cx, cy + _r + 0.01)
                 lbl.setFont(QFont('Segoe UI', 6))
                 lbl.setZValue(8)
                 self._plot.addItem(lbl)
                 self._text_items.append(lbl)
+                self._image_node_items[f'{sensor.name}_0'] = [_circ, img_item, lbl]
 
         # Leaky2dLayer image nodes — displayed like cameras (single image thumbnail).
         from neurons import Leaky2dLayer as _L2d
@@ -3078,12 +3051,25 @@ class NetworkVisualizerWindow(QWidget):
             img_item.setRect(*cam_rect)
             self._camera_items[key] = img_item
             self._camera_rects[key] = cam_rect
-            lbl = pg.TextItem(lyr.name, color=C['dark'], anchor=(0.5, 1.0))
-            lbl.setPos(cx, cy + H_DATA / 2 + 0.02)
+            _dlbl = _mirror_name(lyr.name)  # None if not lateralized
+            _dlbl = (lyr.name[:-2] + ('_0' if lyr.name.endswith('_L') else '_1')
+                     if lyr.name.endswith(('_L', '_R')) else lyr.name)
+            lbl = pg.TextItem(_dlbl, color=C['dark'], anchor=(0.5, 1.0))
+            lbl.setPos(cx, cy + _r + 0.01)
             lbl.setFont(QFont('Segoe UI', 6))
             lbl.setZValue(8)
             self._plot.addItem(lbl)
             self._text_items.append(lbl)
+            _node_items = [_circ, img_item, lbl]
+            if getattr(lyr, 'derivative', False):
+                _dot_y = cy + (H_DATA / 2 + _r) / 2
+                _dot = pg.ScatterPlotItem(x=[cx], y=[_dot_y], size=6, symbol='o',
+                                          brush=pg.mkBrush(C['dark']), pen=pg.mkPen(None))
+                _dot.setZValue(7)
+                self._plot.addItem(_dot)
+                self._panel_items.append(_dot)
+                _node_items.append(_dot)
+            self._image_node_items[f'{lyr.name}_0'] = _node_items
 
         # Conv2dLayer pool='none' image nodes — displayed like cameras (single thumbnail).
         from neurons import Conv2dLayer as _Conv2d
@@ -3119,12 +3105,60 @@ class NetworkVisualizerWindow(QWidget):
             img_item.setRect(*cam_rect)
             self._camera_items[key] = img_item
             self._camera_rects[key] = cam_rect
-            lbl = pg.TextItem(lyr.name, color=C['dark'], anchor=(0.5, 1.0))
-            lbl.setPos(cx, cy + H_DATA / 2 + 0.02)
+            _dlbl = (lyr.name[:-2] + ('_0' if lyr.name.endswith('_L') else '_1')
+                     if lyr.name.endswith(('_L', '_R')) else lyr.name)
+            lbl = pg.TextItem(_dlbl, color=C['dark'], anchor=(0.5, 1.0))
+            lbl.setPos(cx, cy + _r + 0.01)
             lbl.setFont(QFont('Segoe UI', 6))
             lbl.setZValue(8)
             self._plot.addItem(lbl)
             self._text_items.append(lbl)
+            self._image_node_items[f'{lyr.name}_0'] = [_circ, img_item, lbl]
+
+        # Reichardt2dLayer pool='none' image nodes — single thumbnail showing spatial correlation map.
+        from neurons import Reichardt2dLayer as _R2d
+        for lyr in self.gui.circuit.layers:
+            if not isinstance(lyr, _R2d) or getattr(lyr, 'pool', '') != 'none':
+                continue
+            pos = positions.get(f'{lyr.name}_0')
+            if pos is None:
+                continue
+            cx, cy = pos
+            _theta = np.linspace(0, 2 * np.pi, 65)
+            _r     = np.hypot(W_DATA / 2, H_DATA / 2)
+            _col   = getattr(lyr, 'color', None) or '#888888'
+            _circ  = pg.PlotDataItem(
+                cx + _r * np.cos(_theta), cy + _r * np.sin(_theta),
+                pen=pg.mkPen(_col, width=2.0),
+                fillLevel=cy - _r, brush=pg.mkBrush(C['bg']),
+            )
+            _circ.setZValue(5.5)
+            self._plot.addItem(_circ)
+            self._panel_items.append(_circ)
+            w_px = getattr(lyr, 'frame_w', None) or 1
+            key  = lyr.name
+            img_item = _old_cam_items.pop(key, None)
+            if img_item is None:
+                img_item = pg.ImageItem()
+                img_item.setZValue(6)
+                img_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+                self._plot.addItem(img_item, ignoreBounds=True)
+            # Correlation output is signed — initialise to mid-grey.
+            blank = np.full((DISP_H, max(w_px, 1), 3), 127, dtype=np.uint8)
+            img_item.setImage(blank, axisOrder='row-major')
+            cam_rect = (cx - W_DATA / 2, cy - H_DATA / 2, W_DATA, H_DATA)
+            img_item.setRect(*cam_rect)
+            self._camera_items[key] = img_item
+            self._camera_rects[key] = cam_rect
+            _dlbl = (lyr.name[:-2] + ('_0' if lyr.name.endswith('_L') else '_1')
+                     if lyr.name.endswith(('_L', '_R')) else lyr.name)
+            lbl = pg.TextItem(_dlbl, color=C['dark'], anchor=(0.5, 1.0))
+            lbl.setPos(cx, cy + _r + 0.01)
+            lbl.setFont(QFont('Segoe UI', 6))
+            lbl.setZValue(8)
+            self._plot.addItem(lbl)
+            self._text_items.append(lbl)
+            self._image_node_items[f'{lyr.name}_0'] = [_circ, img_item, lbl]
 
         # Remove ImageItems for sensors/layers that are no longer in the circuit.
         for item in _old_cam_items.values():
@@ -3146,6 +3180,7 @@ class NetworkVisualizerWindow(QWidget):
             (x, y)
             for name, (x, y) in positions.items()
             if getattr(layer_map.get(name.rsplit('_', 1)[0]), 'derivative', False)
+            and name not in _image_node_keys
         ]
         self._deriv_scatter = pg.ScatterPlotItem()
         self._deriv_scatter.setZValue(7)
@@ -3379,6 +3414,13 @@ class NetworkVisualizerWindow(QWidget):
                               'brush': brush, 'pen': pen, 'data': name})
 
             self._all_scatter.setData(spots=spots)
+
+            # Image nodes (cameras, Leaky2dLayer, Conv2dLayer pool='none') — visibility
+            # mirrors _spot_visible so hide/show works the same way as regular nodes.
+            for node_key, items in self._image_node_items.items():
+                visible = self._spot_visible.get(node_key, True)
+                for item in items:
+                    item.setVisible(visible)
 
             # Derivative dot: recompute y_off each frame via viewPixelSize so the
             # dot always touches the north of the node circle at any zoom level.
@@ -3885,9 +3927,16 @@ class NetworkVisualizerWindow(QWidget):
         self._push_undo()
         self._pin_implicit_depths()
         src, tgt = self._selected_edge
+        mirror_src = _mirror_name(src)
+        mirror_tgt = _mirror_name(tgt)
+        def _is_deleted(c):
+            if c.src == src and c.tgt == tgt:
+                return True
+            if mirror_src and mirror_tgt and c.src == mirror_src and c.tgt == mirror_tgt:
+                return True
+            return False
         self.gui.circuit.connections = [
-            c for c in self.gui.circuit.connections
-            if not (c.src == src and c.tgt == tgt)
+            c for c in self.gui.circuit.connections if not _is_deleted(c)
         ]
         self._sync_brain_to_circuit()
         self._selected_edge = None
@@ -3957,6 +4006,8 @@ class NetworkVisualizerWindow(QWidget):
         self.gui.circuit.connections = new_conns
         if hasattr(self.gui.brain, 'connections'):
             self.gui.brain.connections = new_conns
+        if hasattr(self.gui.brain, '_w_cache'):
+            self.gui.brain._w_cache = {}
         self.build()
 
     def _clear_edge_highlight(self):
@@ -4160,8 +4211,15 @@ class NetworkVisualizerWindow(QWidget):
             self._reorder_layer_by_y(layer, mouse_y)
             return
 
+        partner_name = getattr(obj, 'lateral_pair', None)
         if target_depth is not None:
             obj.layer = target_depth
+            # Lateralized layer pairs must always share the same column depth.
+            if partner_name:
+                partner = next((l for l in self.gui.circuit.layers
+                                if l.name == partner_name), None)
+                if partner is not None:
+                    partner.layer = target_depth
         self._compact_depths()
         self._build_without_selection_filter()
 
@@ -4394,7 +4452,7 @@ class NetworkVisualizerWindow(QWidget):
                 )
             else:
                 sensor_target_depth = self._insert_midpoint_depth(snap_x, exclude=None)
-            self._add_sensor_dialog(mime_text[len('sensor:'):], target_depth=sensor_target_depth)
+            self._sensor_dialog(mime_text[len('sensor:'):], target_depth=sensor_target_depth)
             return
         if mime_text.startswith('motif:'):
             self._insert_motif(mime_text[len('motif:'):], snap_x)
@@ -4412,11 +4470,7 @@ class NetworkVisualizerWindow(QWidget):
         else:
             target_depth = self._insert_midpoint_depth(snap_x, exclude=None)
 
-        prev_count = len(self.gui.circuit.layers)
-        self._add_layer_dialog(ltype)
-        if len(self.gui.circuit.layers) > prev_count:
-            self.gui.circuit.layers[-1].layer = target_depth
-            self.build()
+        self._layer_dialog(ltype, target_depth=target_depth)
 
     def _make_body_combo(self, bodies, current_body_ids=None):
         """Build a QComboBox for sensor body selection.
@@ -4563,17 +4617,52 @@ class NetworkVisualizerWindow(QWidget):
         lay.addStretch()
         return table, btns
 
-    def _build_sensor_param_editors(self, form, dlg, status_lbl, params, joints, bodies, is_proprio, cur_values):
+    def _build_param_editors(self, form, dlg, status_lbl, params, cur_values,
+                             joints=None, bodies=None, is_proprio=False):
         """Build param editor widgets from param_defs and add them to form.
 
         cur_values: {pname: current_value} — use param default when key is absent.
+        joints/bodies/is_proprio are sensor-only; omit (or pass None/False) for layers.
         Returns editors dict: {pname: (kind_or_ptype, widget, is_angle)}.
         """
+        if joints is None:
+            joints = []
+        if bodies is None:
+            bodies = []
         editors = {}
+        _rendered = set()
         for param in params:
             pname, ptype, default, desc = param[:4]
-            choices = param[4] if len(param) > 4 else None
+            if pname in _rendered:
+                continue
+            choices   = param[4] if len(param) > 4 else None
+            group_tag = param[5] if len(param) > 5 else None
             cur = cur_values.get(pname, default)
+
+            # --- grouped row: render several params side-by-side ---
+            if group_tag is not None:
+                grp = [p for p in params if len(p) > 5 and p[5] == group_tag]
+                row_w = QWidget()
+                hl = QHBoxLayout(row_w)
+                hl.setContentsMargins(0, 0, 0, 0)
+                hl.setSpacing(4)
+                for gp in grp:
+                    gpname, gptype, gpdefault, gpdesc = gp[:4]
+                    lbl = gpname.rsplit('_', 1)[-1].upper()
+                    hl.addWidget(QLabel(lbl + ':'))
+                    sw = QSpinBox()
+                    sw.setMinimum(-1); sw.setMaximum(100)
+                    try:    sw.setValue(int(cur_values.get(gpname, gpdefault)))
+                    except Exception: pass
+                    hl.addWidget(sw)
+                    f = _HoverStatus(status_lbl, gpdesc, dlg)
+                    sw.installEventFilter(f)
+                    dlg._filters.append(f)
+                    editors[gpname] = (gptype, sw, False)
+                    _rendered.add(gpname)
+                hl.addStretch()
+                form.addRow(group_tag, row_w)
+                continue
 
             if pname == 'joint_id' and is_proprio:
                 w = QComboBox()
@@ -4631,7 +4720,7 @@ class NetworkVisualizerWindow(QWidget):
 
         return editors
 
-    def _read_sensor_param_editors(self, editors):
+    def _read_param_editors(self, editors):
         """Read current values from editors dict. Returns {pname: value}."""
         result = {}
         for pname, (kind, w, is_angle) in editors.items():
@@ -4654,7 +4743,12 @@ class NetworkVisualizerWindow(QWidget):
                     pass
         return result
 
-    def _add_sensor_dialog(self, stype, target_depth=None):
+    def _sensor_dialog(self, stype, sensor=None, target_depth=None):
+        """Unified create/edit dialog for sensors.
+
+        sensor=None: creation mode (title "Add …", fields show defaults).
+        sensor=<obj>: edit mode (title "Edit …: name", fields show live values).
+        """
         from sensors import SENSOR_REGISTRY, ProprioceptiveSensor, BaseSensor
         cls = SENSOR_REGISTRY.get(stype)
         if cls is None:
@@ -4662,31 +4756,43 @@ class NetworkVisualizerWindow(QWidget):
         params = list(cls.param_defs() if hasattr(cls, 'param_defs') else [])
         existing = {p[0] for p in params}
         params += [p for p in BaseSensor._sensor_base_param_defs() if p[0] not in existing]
-        dlg, form, status_lbl = self._make_param_dialog(
-            f"Add {stype}", getattr(cls, 'help_text', None))
-        name_edit = QLineEdit(f"sensor{len(self.gui.circuit.sensors)}")
+
+        is_edit = sensor is not None
+        is_proprio = (isinstance(sensor, ProprioceptiveSensor) if is_edit
+                      else issubclass(cls, ProprioceptiveSensor))
+        title = f"Edit {stype}: {sensor.name}" if is_edit else f"Add {stype}"
+        dlg, form, status_lbl = self._make_param_dialog(title, getattr(cls, 'help_text', None))
+
+        default_name = sensor.name if is_edit else f"sensor{len(self.gui.circuit.sensors)}"
+        name_edit = QLineEdit(default_name)
         form.addRow("name", name_edit)
+
         joints = self.gui.circuit.joints if hasattr(self.gui.circuit, 'joints') else []
         bodies = self.gui.circuit.bodies if hasattr(self.gui.circuit, 'bodies') else []
-        cur_values = {p[0]: p[2] for p in params}
-        editors = self._build_sensor_param_editors(
-            form, dlg, status_lbl, params, joints, bodies,
-            issubclass(cls, ProprioceptiveSensor), cur_values)
+        cur_values = ({p[0]: getattr(sensor, p[0], p[2]) for p in params}
+                      if is_edit else {p[0]: p[2] for p in params})
+        editors = self._build_param_editors(
+            form, dlg, status_lbl, params, cur_values,
+            joints=joints, bodies=bodies, is_proprio=is_proprio)
 
         body_combo = None
-        if not issubclass(cls, ProprioceptiveSensor) and bodies:
-            body_combo = self._make_body_combo(bodies)
+        if not is_proprio and bodies:
+            cur_body_ids = (getattr(sensor, 'body_ids', None) or ['root']) if is_edit else None
+            body_combo = self._make_body_combo(bodies, cur_body_ids)
             form.addRow("mounted on body", body_combo)
 
-        nt_edit = QLineEdit('')
+        cur_nt = (getattr(sensor, 'neuromodulator_transmitter', None) or '') if is_edit else ''
+        nt_edit = QLineEdit(cur_nt)
         nt_edit.setPlaceholderText("e.g. dopamine  (leave empty if not a transmitter)")
         form.addRow("neuromodulator transmitter", nt_edit)
 
-        mod_color_edit = QLineEdit('')
+        cur_mod_color = (getattr(sensor, 'neuromodulator_color', None) or '') if is_edit else ''
+        mod_color_edit = QLineEdit(cur_mod_color)
         mod_color_edit.setPlaceholderText("#FF6600  (hex color for this transmitter)")
         form.addRow("transmitter color", mod_color_edit)
 
-        receptor_table, receptor_btns = self._receptor_table_widget([])
+        existing_mods = (getattr(sensor, 'modulators', []) or []) if is_edit else []
+        receptor_table, receptor_btns = self._receptor_table_widget(existing_mods)
         form.addRow("Modulator receptors", receptor_table)
         form.addRow(receptor_btns)
 
@@ -4697,19 +4803,7 @@ class NetworkVisualizerWindow(QWidget):
         form.addRow(btns)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
-        self._push_undo()
-        kwargs = {'name': name_edit.text().strip() or f'sensor{len(self.gui.circuit.sensors)}'}
-        kwargs.update(self._read_sensor_param_editors(editors))
-        angle_vals = {k: kwargs.pop(k) for k in list(kwargs) if k in self._ANGLE_PARAMS}
-        new_sensor = cls(**kwargs)
-        for pname, val in angle_vals.items():
-            setattr(new_sensor, pname, val)
-        if body_combo is not None:
-            new_sensor.body_ids = body_combo.currentData() or ['root']
-        nt = nt_edit.text().strip()
-        new_sensor.neuromodulator_transmitter = nt if nt else None
-        mc = mod_color_edit.text().strip()
-        new_sensor.neuromodulator_color = mc if mc else None
+
         new_mods = []
         for row in range(receptor_table.rowCount()):
             name_item  = receptor_table.item(row, 0)
@@ -4724,19 +4818,60 @@ class NetworkVisualizerWindow(QWidget):
                 new_mods.append((n, float(scale_item.text()), site_combo.currentText()))
             except ValueError:
                 pass
-        if new_mods:
-            new_sensor.modulators = new_mods
-        if isinstance(new_sensor, ProprioceptiveSensor) and new_sensor.joint_id:
-            group = sorted(
-                [jt for jt in joints if jt.motor_layer_name == new_sensor.joint_id],
-                key=lambda j: j.motor_output_idx
-            )
-            new_sensor._joint_refs = group
-            new_sensor.n = len(group) if group else 1
-        self.gui.circuit.sensors.append(new_sensor)
-        if target_depth is not None:
-            new_sensor.layer = target_depth
-        self.build()
+
+        if is_edit:
+            # ── Edit mode ─────────────────────────────────────────────────────
+            self._push_undo()
+            new_name = name_edit.text().strip()
+            if new_name and new_name != sensor.name:
+                old_name = sensor.name
+                sensor.name = new_name
+                from dataclasses import replace as _dc_replace
+                self.gui.circuit.connections = [
+                    _dc_replace(c, src=new_name) if c.src == old_name else
+                    _dc_replace(c, src=new_name + c.src[len(old_name):])
+                    if c.src.startswith(old_name + '_') else c
+                    for c in self.gui.circuit.connections
+                ]
+            for pname, val in self._read_param_editors(editors).items():
+                setattr(sensor, pname, val)
+            if body_combo is not None:
+                sensor.body_ids = body_combo.currentData() or ['root']
+            nt = nt_edit.text().strip()
+            sensor.neuromodulator_transmitter = nt if nt else None
+            mc = mod_color_edit.text().strip()
+            sensor.neuromodulator_color = mc if mc else None
+            sensor.modulators = new_mods
+            self._build_without_selection_filter()
+
+        else:
+            # ── Create mode ───────────────────────────────────────────────────
+            self._push_undo()
+            kwargs = {'name': name_edit.text().strip() or f'sensor{len(self.gui.circuit.sensors)}'}
+            kwargs.update(self._read_param_editors(editors))
+            angle_vals = {k: kwargs.pop(k) for k in list(kwargs) if k in self._ANGLE_PARAMS}
+            new_sensor = cls(**kwargs)
+            for pname, val in angle_vals.items():
+                setattr(new_sensor, pname, val)
+            if body_combo is not None:
+                new_sensor.body_ids = body_combo.currentData() or ['root']
+            nt = nt_edit.text().strip()
+            new_sensor.neuromodulator_transmitter = nt if nt else None
+            mc = mod_color_edit.text().strip()
+            new_sensor.neuromodulator_color = mc if mc else None
+            if new_mods:
+                new_sensor.modulators = new_mods
+            if isinstance(new_sensor, ProprioceptiveSensor) and new_sensor.joint_id:
+                group = sorted(
+                    [jt for jt in joints if jt.motor_layer_name == new_sensor.joint_id],
+                    key=lambda j: j.motor_output_idx
+                )
+                new_sensor._joint_refs = group
+                new_sensor.n = len(group) if group else 1
+            self.gui.circuit.sensors.append(new_sensor)
+            if target_depth is not None:
+                new_sensor.layer = target_depth
+            self.build()
 
     def _on_node_clicked(self, name, ev=None):
         self._node_just_clicked = True
@@ -4851,9 +4986,9 @@ class NetworkVisualizerWindow(QWidget):
         layer = next((l for l in self.gui.circuit.layers  if l.name == obj_name), None)
         if layer is not None:
             if getattr(layer, '_is_joint_motor', False):
-                self._show_body_edit(layer)
+                self._body_dialog(layer)
             else:
-                self._show_node_edit(layer)
+                self._layer_dialog(type(layer).__name__, layer=layer)
             return
         sensor = next((s for s in self.gui.circuit.sensors if s.name == obj_name), None)
         if sensor is None:
@@ -4861,9 +4996,9 @@ class NetworkVisualizerWindow(QWidget):
             parent = obj_name.rsplit('_', 1)[0]
             sensor = next((s for s in self.gui.circuit.sensors if s.name == parent), None)
         if sensor is not None:
-            self._show_sensor_edit(sensor)
+            self._sensor_dialog(type(sensor).__name__, sensor=sensor)
 
-    def _show_body_edit(self, layer):
+    def _body_dialog(self, layer):
         import math
         lname   = layer.name
         circuit = self.gui.circuit
@@ -4883,15 +5018,12 @@ class NetworkVisualizerWindow(QWidget):
             if other_joint:
                 other_body = next((b for b in circuit.bodies if b.id == other_joint.child_id), None)
 
-        # Derive display base name
         if mirrored and ref_body.name.endswith('_L'):
             base_name = ref_body.name[:-2]
         else:
             base_name = ref_body.name
 
-        dlg  = QDialog(self)
-        dlg.setWindowTitle("Edit Body")
-        form = QFormLayout(dlg)
+        dlg, form, _ = self._make_param_dialog("Edit Body")
 
         name_edit = QLineEdit(base_name)
         form.addRow("Name", name_edit)
@@ -4995,8 +5127,12 @@ class NetworkVisualizerWindow(QWidget):
         self._compact_depths()
         self.build()
 
-    def _show_node_edit(self, layer):
-        ltype  = type(layer).__name__
+    def _layer_dialog(self, ltype, layer=None, target_depth=None):
+        """Unified create/edit dialog for layers.
+
+        layer=None: creation mode (title "Add …", fields show defaults).
+        layer=<obj>: edit mode (title "Edit …: name", fields show live values).
+        """
         from neurons import LAYER_REGISTRY, DynamicsBase
         cls    = LAYER_REGISTRY.get(ltype)
         params = list(cls.param_defs() if cls is not None else [])
@@ -5005,63 +5141,45 @@ class NetworkVisualizerWindow(QWidget):
         if cls is not None and issubclass(cls, DynamicsBase):
             existing = {p[0] for p in params}
             params += [p for p in DynamicsBase._dynamics_param_defs() if p[0] not in existing]
-        dlg, form, status_lbl = self._make_param_dialog(
-            f"Edit {ltype}: {layer.name}", getattr(cls, 'help_text', None))
-        pair_name = getattr(layer, 'lateral_pair', None)
+
+        is_edit = layer is not None
+        title   = f"Edit {ltype}: {layer.name}" if is_edit else f"Add {ltype}"
+        dlg, form, status_lbl = self._make_param_dialog(title, getattr(cls, 'help_text', None))
+
+        pair_name = getattr(layer, 'lateral_pair', None) if is_edit else None
         if pair_name:
             note = QLabel(
                 f"<span style='font-size:8px;color:#4888CC'>"
                 f"Lateralized pair — edits also apply to <b>{pair_name}</b></span>")
             form.addRow(note)
-        name_edit = QLineEdit(layer.name)
+
+        default_name = layer.name if is_edit else f"layer{len(self.gui.circuit.layers)}"
+        name_edit = QLineEdit(default_name)
         form.addRow("name", name_edit)
-        editors = {}
-        for param in params:
-            pname, ptype, default, desc = param[:4]
-            choices = param[4] if len(param) > 4 else None
-            cur = getattr(layer, pname, None)
-            cur = cur if cur is not None else default
-            if choices is not None:
-                w = QComboBox()
-                for ch in choices:
-                    w.addItem(ch)
-                idx = w.findText(str(cur))
-                if idx >= 0:
-                    w.setCurrentIndex(idx)
-            elif ptype == bool:
-                w = QCheckBox()
-                w.setChecked(bool(cur))
-            elif ptype == int:
-                w = QSpinBox()
-                w.setMinimum(0); w.setMaximum(1000)
-                try:    w.setValue(int(cur))
-                except Exception: pass
-            else:
-                w = QLineEdit(str(cur) if cur != '' else default)
-            form.addRow(pname, w)
-            f = _HoverStatus(status_lbl, desc, dlg)
-            w.installEventFilter(f)
-            dlg._filters.append(f)
-            editors[pname] = (ptype, w)
+
+        cur_values = ({p[0]: getattr(layer, p[0], p[2]) for p in params}
+                      if is_edit else {p[0]: p[2] for p in params})
+        editors = self._build_param_editors(form, dlg, status_lbl, params, cur_values)
+
+        z_val = (getattr(layer, 'z', 0) or 0) if is_edit else 0
         z_spin = QSpinBox()
         z_spin.setMinimum(0); z_spin.setMaximum(20)
-        z_spin.setValue(getattr(layer, 'z', 0) or 0)
+        z_spin.setValue(z_val)
         z_spin.setToolTip("3D view: which Z plane this layer belongs to")
         form.addRow("Z plane (3D view)", z_spin)
 
-        cur_nt = getattr(layer, 'neuromodulator_transmitter', None) or ''
+        cur_nt = (getattr(layer, 'neuromodulator_transmitter', None) or '') if is_edit else ''
         nt_edit = QLineEdit(cur_nt)
         nt_edit.setPlaceholderText("e.g. dopamine  (leave empty if not a transmitter)")
         form.addRow("neuromodulator transmitter", nt_edit)
 
-        cur_mod_color = getattr(layer, 'neuromodulator_color', None) or ''
+        cur_mod_color = (getattr(layer, 'neuromodulator_color', None) or '') if is_edit else ''
         mod_color_edit = QLineEdit(cur_mod_color)
         mod_color_edit.setPlaceholderText("#FF6600  (hex color for this transmitter)")
         form.addRow("transmitter color", mod_color_edit)
 
-        # Modulator receptors table
-        receptor_table, receptor_btns = self._receptor_table_widget(
-            getattr(layer, 'modulators', []) or [])
+        existing_mods = (getattr(layer, 'modulators', []) or []) if is_edit else []
+        receptor_table, receptor_btns = self._receptor_table_widget(existing_mods)
         form.addRow("Modulator receptors", receptor_table)
         form.addRow(receptor_btns)
 
@@ -5072,250 +5190,200 @@ class NetworkVisualizerWindow(QWidget):
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
 
-        # ── Warn if n changes and connections become incompatible ──────────────
-        old_n = layer.n
-        new_n = old_n
-        n_entry = editors.get('n')
-        if n_entry is not None:
-            ptype_n, w_n = n_entry
-            raw_n = w_n.value() if hasattr(w_n, 'value') else w_n.text()
+        new_mods = []
+        for row in range(receptor_table.rowCount()):
+            name_item  = receptor_table.item(row, 0)
+            scale_item = receptor_table.item(row, 1)
+            site_combo = receptor_table.cellWidget(row, 2)
+            if not (name_item and scale_item and site_combo):
+                continue
+            n = name_item.text().strip()
+            if not n:
+                continue
             try:
-                new_n = ptype_n(raw_n)
-            except (ValueError, TypeError):
+                new_mods.append((n, float(scale_item.text()), site_combo.currentText()))
+            except ValueError:
                 pass
 
-        if new_n != old_n:
-            check_names = {layer.name}
-            if pair_name:
-                check_names.add(pair_name)
-            incompatible = []
-            for conn in self.gui.circuit.connections:
-                W = np.asarray(conn.W, dtype=float)
-                mismatch = False
-                if conn.tgt in check_names:
-                    if W.ndim in (2, 4) and W.shape[0] != new_n:
-                        mismatch = True
-                if not mismatch and conn.src in check_names:
-                    if W.ndim == 2 and W.shape[1] != new_n:
-                        mismatch = True
-                if mismatch:
-                    incompatible.append(conn)
-            if incompatible:
-                lines = '\n'.join(
-                    f"  {c.src} → {c.tgt}  (W {np.asarray(c.W).shape})"
-                    for c in incompatible
-                )
-                reply = QMessageBox.question(
-                    self, "Incompatible connections",
-                    f"Changing n from {old_n} to {new_n} makes "
-                    f"{len(incompatible)} connection(s) incompatible:\n\n{lines}"
-                    f"\n\nDelete these connections and continue?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                )
-                if reply != QMessageBox.StandardButton.Yes:
-                    return
-                _bad = {id(c) for c in incompatible}
+        if is_edit:
+            # ── Edit mode ─────────────────────────────────────────────────────
+            all_vals = self._read_param_editors(editors)
+            old_n = layer.n
+            new_n = all_vals.get('n', old_n)
+            if new_n != old_n:
+                check_names = {layer.name}
+                if pair_name:
+                    check_names.add(pair_name)
+                incompatible = []
+                for conn in self.gui.circuit.connections:
+                    W = np.asarray(conn.W, dtype=float)
+                    mismatch = False
+                    if conn.tgt in check_names:
+                        if W.ndim in (2, 4) and W.shape[0] != new_n:
+                            mismatch = True
+                    if not mismatch and conn.src in check_names:
+                        if W.ndim == 2 and W.shape[1] != new_n:
+                            mismatch = True
+                    if mismatch:
+                        incompatible.append(conn)
+                if incompatible:
+                    lines = '\n'.join(
+                        f"  {c.src} → {c.tgt}  (W {np.asarray(c.W).shape})"
+                        for c in incompatible
+                    )
+                    reply = QMessageBox.question(
+                        self, "Incompatible connections",
+                        f"Changing n from {old_n} to {new_n} makes "
+                        f"{len(incompatible)} connection(s) incompatible:\n\n{lines}"
+                        f"\n\nDelete these connections and continue?",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    )
+                    if reply != QMessageBox.StandardButton.Yes:
+                        return
+                    _bad = {id(c) for c in incompatible}
+                    self.gui.circuit.connections = [
+                        c for c in self.gui.circuit.connections if id(c) not in _bad
+                    ]
+                    if hasattr(self.gui.brain, 'connections'):
+                        self.gui.brain.connections = self.gui.circuit.connections
+
+            self._push_undo()
+            new_name = name_edit.text().strip()
+            if new_name and new_name != layer.name:
+                old_name = layer.name
+                layer.name = new_name
+                from dataclasses import replace as _dc_replace
                 self.gui.circuit.connections = [
-                    c for c in self.gui.circuit.connections if id(c) not in _bad
+                    _dc_replace(c,
+                                src=new_name if c.src == old_name else c.src,
+                                tgt=new_name if c.tgt == old_name else c.tgt)
+                    for c in self.gui.circuit.connections
                 ]
-                if hasattr(self.gui.brain, 'connections'):
-                    self.gui.brain.connections = self.gui.circuit.connections
+            # Apply params — tau last so it overrides tau_rise/tau_decay
+            tau_val = all_vals.pop('tau', None)
+            for pname, val in all_vals.items():
+                setattr(layer, pname, val)
+            if tau_val is not None:
+                setattr(layer, 'tau', tau_val)
+            layer.z = z_spin.value() or None
+            nt = nt_edit.text().strip()
+            layer.neuromodulator_transmitter = nt if nt else None
+            mc = mod_color_edit.text().strip()
+            layer.neuromodulator_color = mc if mc else None
+            layer.modulators = new_mods
 
-        self._push_undo()
-        # Rename layer and update all connection references
-        new_name = name_edit.text().strip()
-        if new_name and new_name != layer.name:
-            old_name = layer.name
-            layer.name = new_name
-            from dataclasses import replace as _dc_replace
-            self.gui.circuit.connections = [
-                _dc_replace(c,
-                            src=new_name if c.src == old_name else c.src,
-                            tgt=new_name if c.tgt == old_name else c.tgt)
-                for c in self.gui.circuit.connections
-            ]
-        # Apply tau last so it overrides tau_rise/tau_decay when explicitly set
-        tau_entry = editors.pop('tau', None)
-        for pname, (ptype, w) in editors.items():
-            if isinstance(w, QCheckBox):
-                setattr(layer, pname, w.isChecked())
-            elif isinstance(w, QComboBox):
-                try:
-                    setattr(layer, pname, ptype(w.currentText()))
-                except (ValueError, TypeError):
-                    setattr(layer, pname, w.currentText())
+            import torch as _torch
+            from neurons import Conv2dLayer as _C2d, Reichardt2dLayer as _R2d
+            if isinstance(layer, _C2d) and layer.pool == 'none' and layer.n_filters > 1:
+                QMessageBox.warning(self, "Conv2dLayer",
+                                    "pool='none' requires n_filters=1.\n\n"
+                                    "n_filters has been corrected to 1.")
+                layer.n_filters = 1
+
+            def _sync_conv_n(lyr):
+                if isinstance(lyr, _C2d):
+                    if lyr.pool == 'none':
+                        lyr.viz_n = 1
+                        if not hasattr(lyr, '_last_frame'):
+                            lyr._last_frame = None
+                        if not hasattr(lyr, 'frame_h'):
+                            lyr.frame_h = None
+                        if not hasattr(lyr, 'frame_w'):
+                            lyr.frame_w = None
+                    else:
+                        try:
+                            del lyr.viz_n
+                        except AttributeError:
+                            pass
+                    new_n = lyr.n_filters
+                    if lyr.n != new_n:
+                        lyr.n = new_n
+                        lyr.register_buffer('_x', _torch.zeros(new_n))
+                        lyr.output = _torch.zeros(new_n)
+
+            def _sync_reichardt(lyr):
+                if isinstance(lyr, _R2d):
+                    if lyr.pool == 'none':
+                        lyr.viz_n = 1
+                        if not hasattr(lyr, '_last_frame'):
+                            lyr._last_frame = None
+                    else:
+                        try:
+                            del lyr.viz_n
+                        except AttributeError:
+                            pass
+                        lyr.n = lyr.n_dirs
+
+            _sync_conv_n(layer)
+            _sync_reichardt(layer)
+
+            if pair_name:
+                partner = next((l for l in self.gui.circuit.layers
+                                if l.name == pair_name), None)
+                if partner is not None:
+                    for pname, *_ in params:
+                        if pname != 'lateralized' and hasattr(layer, pname):
+                            setattr(partner, pname, getattr(layer, pname))
+                    for attr in ('group', 'z', 'neuromodulator_transmitter',
+                                 'neuromodulator_color', 'modulators'):
+                        if hasattr(layer, attr):
+                            setattr(partner, attr, getattr(layer, attr))
+                    _sync_conv_n(partner)
+                    _sync_reichardt(partner)
+
+            self._build_without_selection_filter()
+
+        else:
+            # ── Create mode ───────────────────────────────────────────────────
+            kwargs = {'name': name_edit.text().strip() or f'layer{len(self.gui.circuit.layers)}'}
+            kwargs.update(self._read_param_editors(editors))
+            nt = nt_edit.text().strip()
+            if nt:
+                kwargs['neuromodulator_transmitter'] = nt
+            mc = mod_color_edit.text().strip()
+            if mc:
+                kwargs['neuromodulator_color'] = mc
+            if new_mods:
+                kwargs['modulators'] = new_mods
+
+            self._push_undo()
+            from neurons import RingAttractorLayer as _RAL, Conv2dLayer as _C2d, Leaky2dLayer as _L2dCls, Reichardt2dLayer as _R2dCls
+            if issubclass(cls, _C2d) and kwargs.get('pool') == 'none' and int(kwargs.get('n_filters', 1)) > 1:
+                QMessageBox.warning(self, "Conv2dLayer",
+                                    "pool='none' requires n_filters=1.\n\n"
+                                    "n_filters has been corrected to 1.")
+                kwargs['n_filters'] = 1
+
+            if kwargs.get('lateralized') and issubclass(cls, (_C2d, _L2dCls, _R2dCls)):
+                base_name = kwargs.pop('name')
+                new_layers = []
+                for side in ('_L', '_R'):
+                    kw = dict(kwargs, name=base_name + side, lateralized=True)
+                    lyr = cls(**kw)
+                    self.gui.circuit.layers.append(lyr)
+                    setattr(self.gui.brain, lyr.name, lyr)
+                    new_layers.append(lyr)
+                new_layers[0].lateral_pair = new_layers[1].name
+                new_layers[1].lateral_pair = new_layers[0].name
+                for lyr in new_layers:
+                    lyr.z = z_spin.value() or None
+                    if target_depth is not None:
+                        lyr.layer = target_depth
             else:
-                raw = w.value() if hasattr(w, 'value') else w.text()
-                try:
-                    if str(raw).strip() != '':
-                        setattr(layer, pname, ptype(raw))
-                except (ValueError, TypeError):
-                    pass
-        if tau_entry is not None:
-            editors['tau'] = tau_entry
-            ptype, w = tau_entry
-            raw = w.text().strip()
-            if raw:
-                try:
-                    setattr(layer, 'tau', ptype(raw))
-                except (ValueError, TypeError):
-                    pass
-        layer.z = z_spin.value() or None
+                new_layer = cls(**kwargs)
+                self.gui.circuit.layers.append(new_layer)
+                setattr(self.gui.brain, new_layer.name, new_layer)
+                new_layer.z = z_spin.value() or None
+                if target_depth is not None:
+                    new_layer.layer = target_depth
+                if isinstance(new_layer, _RAL):
+                    W = _RAL.default_kernel(new_layer.n)
+                    from circuit_model import Connection as _Conn
+                    self.gui.circuit.connections.append(
+                        _Conn(new_layer.name, new_layer.name, W))
+            self.build()
 
-        nt = nt_edit.text().strip()
-        layer.neuromodulator_transmitter = nt if nt else None
-
-        mc = mod_color_edit.text().strip()
-        layer.neuromodulator_color = mc if mc else None
-
-        new_mods = []
-        for row in range(receptor_table.rowCount()):
-            name_item  = receptor_table.item(row, 0)
-            scale_item = receptor_table.item(row, 1)
-            site_combo = receptor_table.cellWidget(row, 2)
-            if not (name_item and scale_item and site_combo):
-                continue
-            n = name_item.text().strip()
-            if not n:
-                continue
-            try:
-                new_mods.append((n, float(scale_item.text()), site_combo.currentText()))
-            except ValueError:
-                pass
-        layer.modulators = new_mods
-
-        # For Conv2dLayer, validate pool='none' + n_filters and sync n / viz attrs.
-        import torch as _torch
-        from neurons import Conv2dLayer as _C2d
-        if isinstance(layer, _C2d) and layer.pool == 'none' and layer.n_filters > 1:
-            QMessageBox.warning(self, "Conv2dLayer",
-                                "pool='none' requires n_filters=1.\n\n"
-                                "n_filters has been corrected to 1.")
-            layer.n_filters = 1
-        def _sync_conv_n(lyr):
-            if isinstance(lyr, _C2d):
-                if lyr.pool == 'none':
-                    lyr.viz_n = 1
-                    if not hasattr(lyr, '_last_frame'):
-                        lyr._last_frame = None
-                    if not hasattr(lyr, 'frame_h'):
-                        lyr.frame_h = None
-                    if not hasattr(lyr, 'frame_w'):
-                        lyr.frame_w = None
-                else:
-                    try:
-                        del lyr.viz_n
-                    except AttributeError:
-                        pass
-                new_n = lyr.n_filters
-                if lyr.n != new_n:
-                    lyr.n = new_n
-                    lyr.register_buffer('_x', _torch.zeros(new_n))
-                    lyr.output = _torch.zeros(new_n)
-        _sync_conv_n(layer)
-
-        # Propagate all edited params to the lateralized partner (if any).
-        if pair_name:
-            partner = next((l for l in self.gui.circuit.layers
-                            if l.name == pair_name), None)
-            if partner is not None:
-                for pname, *_ in params:
-                    if pname != 'lateralized' and hasattr(layer, pname):
-                        setattr(partner, pname, getattr(layer, pname))
-                for attr in ('group', 'z', 'neuromodulator_transmitter',
-                             'neuromodulator_color', 'modulators'):
-                    if hasattr(layer, attr):
-                        setattr(partner, attr, getattr(layer, attr))
-                _sync_conv_n(partner)
-
-        self._build_without_selection_filter()
-
-    _ANGLE_PARAMS = {'angle_spread', 'center_angle', 'arc_angle', 'mount_angle', 'fov'}
-
-    def _show_sensor_edit(self, sensor):
-        from sensors import SENSOR_REGISTRY, ProprioceptiveSensor as _ProprioSensor, BaseSensor
-        stype  = type(sensor).__name__
-        cls    = SENSOR_REGISTRY.get(stype)
-        params = list(cls.param_defs() if cls is not None else [])
-        existing = {p[0] for p in params}
-        params += [p for p in BaseSensor._sensor_base_param_defs() if p[0] not in existing]
-        dlg, form, status_lbl = self._make_param_dialog(
-            f"Edit {stype}: {sensor.name}", getattr(cls, 'help_text', None))
-        name_edit = QLineEdit(sensor.name)
-        form.addRow("name", name_edit)
-        joints = self.gui.circuit.joints if hasattr(self.gui.circuit, 'joints') else []
-        bodies = self.gui.circuit.bodies
-        cur_values = {p[0]: getattr(sensor, p[0], p[2]) for p in params}
-        editors = self._build_sensor_param_editors(
-            form, dlg, status_lbl, params, joints, bodies,
-            isinstance(sensor, _ProprioSensor), cur_values)
-
-        body_combo = None
-        if not isinstance(sensor, _ProprioSensor) and bodies:
-            cur_body_ids = getattr(sensor, 'body_ids', None) or ['root']
-            body_combo = self._make_body_combo(bodies, cur_body_ids)
-            form.addRow("mounted on body", body_combo)
-
-        cur_nt = getattr(sensor, 'neuromodulator_transmitter', None) or ''
-        nt_edit = QLineEdit(cur_nt)
-        nt_edit.setPlaceholderText("e.g. dopamine  (leave empty if not a transmitter)")
-        form.addRow("neuromodulator transmitter", nt_edit)
-
-        cur_mod_color = getattr(sensor, 'neuromodulator_color', None) or ''
-        mod_color_edit = QLineEdit(cur_mod_color)
-        mod_color_edit.setPlaceholderText("#FF6600  (hex color for this transmitter)")
-        form.addRow("transmitter color", mod_color_edit)
-
-        receptor_table, receptor_btns = self._receptor_table_widget(
-            getattr(sensor, 'modulators', []) or [])
-        form.addRow("Modulator receptors", receptor_table)
-        form.addRow(receptor_btns)
-
-        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        btns.accepted.connect(dlg.accept)
-        btns.rejected.connect(dlg.reject)
-        form.addRow(btns)
-        if dlg.exec() != QDialog.DialogCode.Accepted:
-            return
-        self._push_undo()
-        new_name = name_edit.text().strip()
-        if new_name and new_name != sensor.name:
-            old_name = sensor.name
-            sensor.name = new_name
-            from dataclasses import replace as _dc_replace
-            self.gui.circuit.connections = [
-                _dc_replace(c, src=new_name) if c.src == old_name else
-                _dc_replace(c, src=new_name + c.src[len(old_name):])
-                if c.src.startswith(old_name + '_') else c
-                for c in self.gui.circuit.connections
-            ]
-        for pname, val in self._read_sensor_param_editors(editors).items():
-            setattr(sensor, pname, val)
-        if body_combo is not None:
-            sensor.body_ids = body_combo.currentData() or ['root']
-
-        nt = nt_edit.text().strip()
-        sensor.neuromodulator_transmitter = nt if nt else None
-        mc = mod_color_edit.text().strip()
-        sensor.neuromodulator_color = mc if mc else None
-
-        new_mods = []
-        for row in range(receptor_table.rowCount()):
-            name_item  = receptor_table.item(row, 0)
-            scale_item = receptor_table.item(row, 1)
-            site_combo = receptor_table.cellWidget(row, 2)
-            if not (name_item and scale_item and site_combo):
-                continue
-            n = name_item.text().strip()
-            if not n:
-                continue
-            try:
-                new_mods.append((n, float(scale_item.text()), site_combo.currentText()))
-            except ValueError:
-                pass
-        sensor.modulators = new_mods
-
-        self._build_without_selection_filter()
+    _ANGLE_PARAMS = {'angle_spread', 'center_angle', 'arc_angle', 'mount_angle', 'fov', 'vertical_angle'}
 
     def _on_scene_click(self, event):
         if event.button() == Qt.LeftButton:
@@ -5497,110 +5565,6 @@ class NetworkVisualizerWindow(QWidget):
                         rm_act.triggered.connect(self._remove_selected_sensor)
                     menu.exec(event.screenPos().toPoint())
 
-    def _add_layer_dialog(self, ltype):
-        from neurons import LAYER_REGISTRY, DynamicsBase
-        cls    = LAYER_REGISTRY.get(ltype)
-        params = list(cls.param_defs() if cls is not None else [])
-        if cls is not None and issubclass(cls, DynamicsBase):
-            existing = {p[0] for p in params}
-            params += [p for p in DynamicsBase._dynamics_param_defs() if p[0] not in existing]
-        dlg, form, status_lbl = self._make_param_dialog(
-            f"Add {ltype}", getattr(cls, 'help_text', None))
-
-        name_edit = QLineEdit(f"layer{len(self.gui.circuit.layers)}")
-        form.addRow("name", name_edit)
-        editors = {}
-        for param in params:
-            pname, ptype, default, desc = param[:4]
-            choices = param[4] if len(param) > 4 else None
-            if choices is not None:
-                w = QComboBox()
-                for ch in choices:
-                    w.addItem(ch)
-                idx = w.findText(str(default))
-                if idx >= 0:
-                    w.setCurrentIndex(idx)
-            elif ptype == bool:
-                w = QCheckBox()
-                w.setChecked(bool(default))
-            elif ptype == int:
-                w = QSpinBox()
-                w.setMinimum(0); w.setMaximum(1000)
-                try:    w.setValue(int(default))
-                except Exception: pass
-            else:
-                w = QLineEdit(str(default))
-            form.addRow(pname, w)
-            f = _HoverStatus(status_lbl, desc, dlg)
-            w.installEventFilter(f)
-            dlg._filters.append(f)
-            editors[pname] = (ptype, w)
-        nt_edit = QLineEdit('')
-        nt_edit.setPlaceholderText("e.g. dopamine  (leave empty if not a transmitter)")
-        form.addRow("neuromodulator transmitter", nt_edit)
-
-        mod_color_edit = QLineEdit('')
-        mod_color_edit.setPlaceholderText("#FF6600  (hex color for this transmitter)")
-        form.addRow("transmitter color", mod_color_edit)
-
-        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        btns.accepted.connect(dlg.accept)
-        btns.rejected.connect(dlg.reject)
-        form.addRow(btns)
-        if dlg.exec() != QDialog.DialogCode.Accepted:
-            return
-        kwargs = {'name': name_edit.text().strip() or f'layer{len(self.gui.circuit.layers)}'}
-        for pname, (ptype, w) in editors.items():
-            if isinstance(w, QCheckBox):
-                kwargs[pname] = w.isChecked()
-            elif isinstance(w, QComboBox):
-                try:
-                    kwargs[pname] = ptype(w.currentText())
-                except (ValueError, TypeError):
-                    kwargs[pname] = w.currentText()
-            else:
-                raw = w.value() if hasattr(w, 'value') else w.text()
-                try:
-                    if str(raw).strip() != '':
-                        kwargs[pname] = ptype(raw)
-                except (ValueError, TypeError):
-                    pass
-        nt = nt_edit.text().strip()
-        if nt:
-            kwargs['neuromodulator_transmitter'] = nt
-        mc = mod_color_edit.text().strip()
-        if mc:
-            kwargs['neuromodulator_color'] = mc
-        self._push_undo()
-        from neurons import RingAttractorLayer as _RAL, Conv2dLayer as _C2d, Leaky2dLayer as _L2dCls
-        if issubclass(cls, _C2d) and kwargs.get('pool') == 'none' and int(kwargs.get('n_filters', 1)) > 1:
-            QMessageBox.warning(self, "Conv2dLayer",
-                                "pool='none' requires n_filters=1.\n\n"
-                                "n_filters has been corrected to 1.")
-            kwargs['n_filters'] = 1
-        if kwargs.get('lateralized') and issubclass(cls, (_C2d, _L2dCls)):
-            base_name = kwargs.pop('name')
-            new_layers = []
-            for side in ('_L', '_R'):
-                kw = dict(kwargs, name=base_name + side, lateralized=True)
-                lyr = cls(**kw)
-                self.gui.circuit.layers.append(lyr)
-                setattr(self.gui.brain, lyr.name, lyr)
-                new_layers.append(lyr)
-            # Cross-link so _finish_connection can auto-wire the mirror side
-            new_layers[0].lateral_pair = new_layers[1].name
-            new_layers[1].lateral_pair = new_layers[0].name
-        else:
-            new_layer = cls(**kwargs)
-            self.gui.circuit.layers.append(new_layer)
-            setattr(self.gui.brain, new_layer.name, new_layer)
-            if isinstance(new_layer, _RAL):
-                W = _RAL.default_kernel(new_layer.n)
-                from circuit_model import Connection as _Conn
-                self.gui.circuit.connections.append(
-                    _Conn(new_layer.name, new_layer.name, W))
-        self.build()
-
     def _compact_depths(self):
         """Close gaps in explicit depths while preserving the minimum depth value.
 
@@ -5626,6 +5590,9 @@ class NetworkVisualizerWindow(QWidget):
         depth_map = {d: min_d + i for i, d in enumerate(all_unique)}
         for o in expl_objs:
             o.layer = depth_map[o.layer]
+        # Keep hidden/disabled column sets consistent with remapped depths.
+        self._hidden_cols   = {depth_map.get(d, d) for d in self._hidden_cols}
+        self._disabled_cols = {depth_map.get(d, d) for d in self._disabled_cols}
 
     def _pin_implicit_depths(self):
         """Freeze connectivity-inferred column positions before a deletion mutates the graph.
@@ -5756,8 +5723,8 @@ class NetworkVisualizerWindow(QWidget):
                      and hasattr(tgt_layer, 'n_filters')
                      and hasattr(tgt_layer, 'kernel_size'))
 
-        from neurons import Leaky2dLayer as _L2d
-        is_leaky2d = (tgt_layer is not None and isinstance(tgt_layer, _L2d))
+        from neurons import Leaky2dLayer as _L2d, Reichardt2dLayer as _R2d
+        is_leaky2d = (tgt_layer is not None and isinstance(tgt_layer, (_L2d, _R2d)))
 
         _pair_name = None   # lateral pair partner of the source layer (if any)
         _pair_lyr  = None   # partner layer object
@@ -5826,12 +5793,12 @@ class NetworkVisualizerWindow(QWidget):
             _src_lyr_c  = next((l for l in self.gui.circuit.layers if l.name == src_name), None)
             if isinstance(src_sensor, _CamSensor):
                 in_ch = getattr(src_sensor, 'in_ch', 1)
-            elif isinstance(_src_lyr_c, _L2d):
+            elif isinstance(_src_lyr_c, (_L2d, _R2d)):
                 in_ch = max(1, _src_lyr_c.in_ch)
             else:
                 in_ch = max(1, getattr(src_sensor, 'n', 1) if src_sensor else 1)
             is_lat_half = _src_is_lat_half or (
-                isinstance(_src_lyr_c, _L2d)
+                isinstance(_src_lyr_c, (_L2d, _R2d))
                 and getattr(_src_lyr_c, 'lateral_pair', None) is not None
                 and (src_name.endswith('_L') or src_name.endswith('_R'))
             )
@@ -5923,6 +5890,10 @@ class NetworkVisualizerWindow(QWidget):
                 new_conns.append(_Conn(mirror_src, pair_name, W, init_W=W_snap))
 
         self.gui.circuit.connections = new_conns
+        if hasattr(self.gui.brain, 'connections'):
+            self.gui.brain.connections = new_conns
+        if hasattr(self.gui.brain, '_w_cache'):
+            self.gui.brain._w_cache = {}
         self._build_without_selection_filter()
 
     def _new_network(self):
@@ -5978,20 +5949,71 @@ class NetworkVisualizerWindow(QWidget):
 
     def _save_network_json(self):
         from brain_serializer import save_network_file
-        from PySide6.QtWidgets import QInputDialog
+        from PySide6.QtWidgets import QDialog, QFormLayout, QComboBox, QLineEdit, QDialogButtonBox, QPushButton, QHBoxLayout, QInputDialog
         current = getattr(self.gui.brain, 'network_file', '') or ''
-        suggested = current.replace('.json', '') if current else 'my_network'
-        name, ok = QInputDialog.getText(
-            self, 'Save Network', 'Network name:', text=suggested)
-        if not ok or not name.strip():
+        project = getattr(self.gui.brain, 'network_project', '')
+
+        # ── Build list of subdirectories under networks/ ──────────────────────
+        nets_root = 'networks'
+        os.makedirs(nets_root, exist_ok=True)
+        subdirs = [''] + sorted(
+            e.name for e in os.scandir(nets_root)
+            if e.is_dir() and not e.name.startswith('.')
+        )
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle('Save Network')
+        form = QFormLayout(dlg)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+
+        dir_row = QHBoxLayout()
+        dir_combo = QComboBox()
+        dir_combo.addItems([d if d else '(networks root)' for d in subdirs])
+        current_idx = subdirs.index(project) if project in subdirs else 0
+        dir_combo.setCurrentIndex(current_idx)
+        btn_new_dir = QPushButton('+')
+        btn_new_dir.setFixedWidth(24)
+        btn_new_dir.setToolTip('Create new subdirectory')
+        def _new_dir():
+            name_d, ok = QInputDialog.getText(dlg, 'New directory', 'Directory name:')
+            if not ok or not name_d.strip():
+                return
+            name_d = name_d.strip()
+            os.makedirs(os.path.join(nets_root, name_d), exist_ok=True)
+            if name_d not in subdirs:
+                subdirs.append(name_d)
+                subdirs.sort()
+                subdirs_display = [d if d else '(networks root)' for d in subdirs]
+                dir_combo.clear()
+                dir_combo.addItems(subdirs_display)
+            dir_combo.setCurrentIndex(subdirs.index(name_d))
+        btn_new_dir.clicked.connect(_new_dir)
+        dir_row.addWidget(dir_combo, 1)
+        dir_row.addWidget(btn_new_dir)
+        form.addRow('Directory:', dir_row)
+
+        suggested_name = (current.replace('.json', '') if current else 'my_network')
+        name_edit = QLineEdit(suggested_name)
+        form.addRow('Name:', name_edit)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        form.addRow(buttons)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
             return
-        name = name.strip()
+
+        chosen_project = subdirs[dir_combo.currentIndex()]
+        name = name_edit.text().strip()
+        if not name:
+            return
         if not name.endswith('.json'):
             name += '.json'
-        project = getattr(self.gui.brain, 'network_project', '')
-        net_dir = os.path.join('networks', project) if project else 'networks'
+
+        net_dir = os.path.join(nets_root, chosen_project) if chosen_project else nets_root
         os.makedirs(net_dir, exist_ok=True)
-        path = os.path.join(net_dir, name)
+        path = os.path.abspath(os.path.join(net_dir, name))
         try:
             save_network_file(
                 path,
@@ -6009,7 +6031,8 @@ class NetworkVisualizerWindow(QWidget):
             import traceback
             QMessageBox.critical(self, 'Save error', traceback.format_exc())
             return
-        self.gui.brain.network_file = name
+        self.gui.brain.network_file    = name
+        self.gui.brain.network_project = chosen_project
         if hasattr(self.gui, '_connection_params'):
             self.gui._connection_params = self._weight_params
         # Sync brain attribute references to the live circuit layers (joints may
@@ -6021,7 +6044,7 @@ class NetworkVisualizerWindow(QWidget):
         # Update the sidebar network-file combo to reflect the (possibly new) name.
         self.gui._rebuild_brain_params()
         print(f'[NetworkViz] Saved network to {path}')
-        QMessageBox.information(self, 'Save', f'Network saved to\n{name}')
+        QMessageBox.information(self, 'Save', f'Network saved to\n{path}')
 
     # ── Bonsai export ─────────────────────────────────────────────────────────
 

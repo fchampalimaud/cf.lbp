@@ -1,267 +1,278 @@
 {
-  "version": 1,
-  "motor_layer": "motor",
-  "hidden_cols": [
-    2
-  ],
-  "disabled_cols": [],
-  "col_labels": {},
-  "sensors": [
-    {
-      "type": "GradientSensor",
-      "name": "sensor1",
-      "n": 2,
-      "angle_spread_deg": 30.0,
-      "center_angle_deg": 0.0,
-      "dist": 0.12,
-      "color_channel": "None",
-      "gradient": "A",
-      "scale": 40.0,
-      "tau_rise": 0.1,
-      "tau_decay": 0.1,
-      "activation": "relu",
-      "modulators": [
-        [
-          "insulin",
-          -10.0,
-          "pre"
-        ]
-      ],
-      "viz_layer": 1
-    },
-    {
-      "type": "CollisionSensor",
-      "name": "bumper",
-      "n": 2,
-      "angle_spread_deg": 90.0,
-      "arc_angle_deg": 35.0,
-      "radius": 1.2,
-      "scale": 60.0,
-      "bias": 0.0,
-      "noise_std": 0.0,
-      "activation": "linear",
-      "viz_layer": 2
-    },
-    {
-      "type": "InteroceptiveSensor",
-      "name": "sensor3",
-      "gradient": "A",
-      "scale": 2.0,
-      "max_val": 1.0,
-      "start_val": 0.0,
-      "bias": 0.0,
-      "tau_rise": 10.0,
-      "tau_decay": 500.0,
-      "neuromodulator_transmitter": "insulin",
-      "neuromodulator_color": "#FF0000",
-      "viz_layer": 1
-    }
-  ],
-  "layers": [
-    {
-      "type": "MotorLayer",
-      "name": "motor",
-      "layer": 4,
-      "activation": "linear",
-      "n": 2,
-      "scale": 1.0,
-      "robot_address": "",
-      "viz_row": 3
-    },
-    {
-      "type": "ConstantLayer",
-      "name": "Drive",
-      "layer": 3,
-      "value": 100.0,
-      "n": 2,
-      "noise_std": 0.0,
-      "viz_row": 0
-    },
-    {
-      "type": "LeakyLayer",
-      "name": "bumper_short",
-      "layer": 2,
-      "tau_rise": 0.1,
-      "tau_decay": 0.5,
-      "bias": 0.0,
-      "activation": "relu",
-      "n": 2,
-      "derivative": false,
-      "noise_std": 0.0,
-      "noise_tau": 0.0,
-      "scale": 1.0
-    },
-    {
-      "type": "LeakyLayer",
-      "name": "bumper_long",
-      "layer": 2,
-      "tau_rise": 0.1,
-      "tau_decay": 1.5,
-      "bias": 0.0,
-      "activation": "relu",
-      "n": 2,
-      "derivative": false,
-      "noise_std": 0.0,
-      "noise_tau": 0.0,
-      "scale": 1.0
-    },
-    {
-      "type": "LeakyLayer",
-      "name": "fw",
-      "layer": 3,
-      "tau_rise": 0.1,
-      "tau_decay": 0.1,
-      "bias": 0.0,
-      "activation": "relu",
-      "n": 2,
-      "derivative": false,
-      "noise_std": 0.0,
-      "noise_tau": 0.0,
-      "scale": 1.0,
-      "viz_row": 1
-    },
-    {
-      "type": "LeakyLayer",
-      "name": "bw",
-      "layer": 3,
-      "tau_rise": 0.1,
-      "tau_decay": 0.1,
-      "bias": 0.0,
-      "activation": "relu",
-      "n": 2,
-      "derivative": false,
-      "noise_std": 0.0,
-      "noise_tau": 0.0,
-      "scale": 1.0,
-      "viz_row": 2
-    }
-  ],
-  "connections": [
-    {
-      "src": "bumper",
-      "tgt": "bumper_short",
-      "W": [
-        [
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0
-        ]
-      ]
-    },
-    {
-      "src": "bumper",
-      "tgt": "bumper_long",
-      "W": [
-        [
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0
-        ]
-      ]
-    },
-    {
-      "src": "bumper_long",
-      "tgt": "bw",
-      "W": [
-        [
-          0.0,
-          1.0
-        ],
-        [
-          1.0,
-          0.0
-        ]
-      ]
-    },
-    {
-      "src": "bumper_short",
-      "tgt": "bw",
-      "W": [
-        [
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0
-        ]
-      ]
-    },
-    {
-      "src": "Drive",
-      "tgt": "fw",
-      "W": [
-        [
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0
-        ]
-      ]
-    },
-    {
-      "src": "sensor1",
-      "tgt": "fw",
-      "W": [
-        [
-          -1.0,
-          0.0
-        ],
-        [
-          0.0,
-          -1.0
-        ]
-      ]
-    },
-    {
-      "src": "fw",
-      "tgt": "motor",
-      "W": [
-        [
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0
-        ]
-      ]
-    },
-    {
-      "src": "bw",
-      "tgt": "motor",
-      "W": [
-        [
-          -1.0,
-          0.0
-        ],
-        [
-          0.0,
-          -1.0
-        ]
-      ]
-    },
-    {
-      "src": "bumper_short",
-      "tgt": "fw",
-      "W": [
-        [
-          -1.0,
-          -1.0
-        ],
-        [
-          -1.0,
-          -1.0
-        ]
-      ]
-    }
-  ]
+    "version": 1,
+    "motor_layer": "motor",
+    "hidden_cols": [
+        2
+    ],
+    "disabled_cols": [],
+    "col_labels": {},
+    "sensors": [
+        {
+            "type": "GradientSensor",
+            "name": "sensor1",
+            "n": 2,
+            "angle_spread_deg": 30.0,
+            "center_angle_deg": 0.0,
+            "dist": 0.12,
+            "color_channel": "None",
+            "gradient": "A",
+            "scale": 40.0,
+            "tau_rise": 0.1,
+            "tau_decay": 0.1,
+            "activation": "relu",
+            "differential": false,
+            "noise_std": 0.0,
+            "robot_address": "",
+            "modulators": [
+                [
+                    "insulin",
+                    -10.0,
+                    "pre"
+                ]
+            ],
+            "viz_layer": 1
+        },
+        {
+            "type": "CollisionSensor",
+            "name": "bumper",
+            "n": 2,
+            "angle_spread_deg": 90.0,
+            "arc_angle_deg": 35.0,
+            "radius": 1.2,
+            "scale": 60.0,
+            "bias": 0.0,
+            "noise_std": 0.0,
+            "tau_rise": null,
+            "tau_decay": null,
+            "activation": "linear",
+            "differential": false,
+            "robot_address": "",
+            "viz_layer": 2
+        },
+        {
+            "type": "InteroceptiveSensor",
+            "name": "sensor3",
+            "gradient": "A",
+            "scale": 2.0,
+            "max_val": 1.0,
+            "start_val": 0.0,
+            "bias": 0.0,
+            "tau_rise": 10.0,
+            "tau_decay": 500.0,
+            "differential": false,
+            "noise_std": 0.0,
+            "activation": "linear",
+            "robot_address": "",
+            "neuromodulator_transmitter": "insulin",
+            "neuromodulator_color": "#FF0000",
+            "viz_layer": 1
+        }
+    ],
+    "layers": [
+        {
+            "type": "MotorLayer",
+            "name": "motor",
+            "layer": 4,
+            "activation": "linear",
+            "n": 2,
+            "scale": 1.0,
+            "robot_address": "",
+            "viz_row": 3
+        },
+        {
+            "type": "ConstantLayer",
+            "name": "Drive",
+            "layer": 3,
+            "value": 100.0,
+            "n": 2,
+            "noise_std": 0.0,
+            "viz_row": 0
+        },
+        {
+            "type": "LeakyLayer",
+            "name": "bumper_short",
+            "layer": 2,
+            "tau_rise": 0.1,
+            "tau_decay": 0.5,
+            "bias": 0.0,
+            "activation": "relu",
+            "n": 2,
+            "derivative": false,
+            "noise_std": 0.0,
+            "noise_tau": 0.0,
+            "scale": 1.0
+        },
+        {
+            "type": "LeakyLayer",
+            "name": "bumper_long",
+            "layer": 2,
+            "tau_rise": 0.1,
+            "tau_decay": 1.5,
+            "bias": 0.0,
+            "activation": "relu",
+            "n": 2,
+            "derivative": false,
+            "noise_std": 0.0,
+            "noise_tau": 0.0,
+            "scale": 1.0
+        },
+        {
+            "type": "LeakyLayer",
+            "name": "fw",
+            "layer": 3,
+            "tau_rise": 0.1,
+            "tau_decay": 0.1,
+            "bias": 0.0,
+            "activation": "relu",
+            "n": 2,
+            "derivative": false,
+            "noise_std": 0.0,
+            "noise_tau": 0.0,
+            "scale": 1.0,
+            "viz_row": 1
+        },
+        {
+            "type": "LeakyLayer",
+            "name": "bw",
+            "layer": 3,
+            "tau_rise": 0.1,
+            "tau_decay": 0.1,
+            "bias": 0.0,
+            "activation": "relu",
+            "n": 2,
+            "derivative": false,
+            "noise_std": 0.0,
+            "noise_tau": 0.0,
+            "scale": 1.0,
+            "viz_row": 2
+        }
+    ],
+    "connections": [
+        {
+            "src": "bumper",
+            "tgt": "bumper_short",
+            "W": [
+                [
+                    1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    1.0
+                ]
+            ]
+        },
+        {
+            "src": "bumper",
+            "tgt": "bumper_long",
+            "W": [
+                [
+                    1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    1.0
+                ]
+            ]
+        },
+        {
+            "src": "bumper_long",
+            "tgt": "bw",
+            "W": [
+                [
+                    0.0,
+                    1.0
+                ],
+                [
+                    1.0,
+                    0.0
+                ]
+            ]
+        },
+        {
+            "src": "bumper_short",
+            "tgt": "bw",
+            "W": [
+                [
+                    1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    1.0
+                ]
+            ]
+        },
+        {
+            "src": "Drive",
+            "tgt": "fw",
+            "W": [
+                [
+                    1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    1.0
+                ]
+            ]
+        },
+        {
+            "src": "sensor1",
+            "tgt": "fw",
+            "W": [
+                [
+                    -1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    -1.0
+                ]
+            ]
+        },
+        {
+            "src": "fw",
+            "tgt": "motor",
+            "W": [
+                [
+                    1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    1.0
+                ]
+            ]
+        },
+        {
+            "src": "bw",
+            "tgt": "motor",
+            "W": [
+                [
+                    -1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    -1.0
+                ]
+            ]
+        },
+        {
+            "src": "bumper_short",
+            "tgt": "fw",
+            "W": [
+                [
+                    -1.0,
+                    -1.0
+                ],
+                [
+                    -1.0,
+                    -1.0
+                ]
+            ]
+        }
+    ]
 }

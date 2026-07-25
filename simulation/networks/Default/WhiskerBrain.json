@@ -1,116 +1,129 @@
 {
-  "version": 1,
-  "motor_layer": "motor",
-  "hidden_groups": [],
-  "disabled_groups": [],
-  "sensors": [
-    {
-      "type": "WhiskerSensor",
-      "name": "sensor0",
-      "length": 0.9,
-      "mount_dist": 0.0,
-      "mount_angle": 0.0,
-      "n": 1,
-      "body_ids": [
-        "ea9892f5",
-        "3e041191"
-      ]
-    }
-  ],
-  "layers": [
-    {
-      "type": "SumLayer",
-      "name": "motor",
-      "layer": 2,
-      "n": 2,
-      "activation": "linear"
-    },
-    {
-      "type": "ConstantLayer",
-      "name": "layer3",
-      "layer": 1,
-      "n": 2,
-      "value": 50.0
-    },
-    {
-      "type": "SineLayer",
-      "name": "WhiskerCPG",
-      "layer": 3,
-      "n": 1,
-      "amplitude": 5.0,
-      "frequency": 1.0,
-      "viz_row": 0
-    }
-  ],
-  "connections": [
-    {
-      "src": "layer3",
-      "tgt": "motor",
-      "W": [
-        [
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0
-        ]
-      ]
-    },
-    {
-      "src": "WhiskerCPG",
-      "tgt": "body3",
-      "W": [
-        [
-          1.0
-        ],
-        [
-          1.0
-        ]
-      ]
-    }
-  ],
-  "bodies": [
-    {
-      "id": "root",
-      "name": "root",
-      "radius": 0.2
-    },
-    {
-      "id": "ea9892f5",
-      "name": "body3_L",
-      "radius": 0.01,
-      "mirror_group": "body3"
-    },
-    {
-      "id": "3e041191",
-      "name": "body3_R",
-      "radius": 0.01,
-      "mirror_group": "body3"
-    }
-  ],
-  "joints": [
-    {
-      "parent_id": "root",
-      "child_id": "ea9892f5",
-      "attach_dist": 0.1,
-      "attach_angle": 0.7853981633974483,
-      "angle": -0.351717573309631,
-      "angle_min": -0.6981317007977318,
-      "angle_max": 0.6981317007977318,
-      "motor_layer_name": "body3",
-      "motor_output_idx": 0
-    },
-    {
-      "parent_id": "root",
-      "child_id": "3e041191",
-      "attach_dist": 0.1,
-      "attach_angle": -0.7853981633974483,
-      "angle": 0.351717573309631,
-      "angle_min": -0.6981317007977318,
-      "angle_max": 0.6981317007977318,
-      "motor_layer_name": "body3",
-      "motor_output_idx": 1
-    }
-  ]
+    "version": 1,
+    "motor_layer": "motor",
+    "hidden_cols": [],
+    "disabled_cols": [],
+    "col_labels": {},
+    "sensors": [
+        {
+            "type": "WhiskerSensor",
+            "name": "sensor0",
+            "length": 0.9,
+            "mount_dist": 0.0,
+            "mount_angle": 0.0,
+            "n": 1,
+            "scale": 1.0,
+            "tau_rise": null,
+            "tau_decay": null,
+            "activation": "linear",
+            "differential": false,
+            "noise_std": 0.0,
+            "robot_address": "",
+            "body_ids": [
+                "ea9892f5",
+                "3e041191"
+            ]
+        }
+    ],
+    "layers": [
+        {
+            "type": "SumLayer",
+            "name": "motor",
+            "layer": 2,
+            "activation": "linear",
+            "scale": 1.0,
+            "n": 2
+        },
+        {
+            "type": "ConstantLayer",
+            "name": "layer3",
+            "layer": 1,
+            "value": 50.0,
+            "n": 2,
+            "noise_std": 0.0
+        },
+        {
+            "type": "SineLayer",
+            "name": "WhiskerCPG",
+            "layer": 3,
+            "amplitude": 5.0,
+            "frequency": 1.0,
+            "phase": 0.0,
+            "n": 1,
+            "viz_row": 0
+        }
+    ],
+    "connections": [
+        {
+            "src": "layer3",
+            "tgt": "motor",
+            "W": [
+                [
+                    1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    1.0
+                ]
+            ]
+        },
+        {
+            "src": "WhiskerCPG",
+            "tgt": "body3",
+            "W": [
+                [
+                    1.0
+                ],
+                [
+                    1.0
+                ]
+            ]
+        }
+    ],
+    "bodies": [
+        {
+            "id": "root",
+            "name": "root",
+            "radius": 0.2
+        },
+        {
+            "id": "ea9892f5",
+            "name": "body3_L",
+            "radius": 0.01,
+            "mirror_group": "body3"
+        },
+        {
+            "id": "3e041191",
+            "name": "body3_R",
+            "radius": 0.01,
+            "mirror_group": "body3"
+        }
+    ],
+    "joints": [
+        {
+            "parent_id": "root",
+            "child_id": "ea9892f5",
+            "attach_dist": 0.1,
+            "attach_angle": 0.7853981633974483,
+            "angle": -0.351717573309631,
+            "angle_min": -0.6981317007977318,
+            "angle_max": 0.6981317007977318,
+            "motor_layer_name": "body3",
+            "motor_output_idx": 0
+        },
+        {
+            "parent_id": "root",
+            "child_id": "3e041191",
+            "attach_dist": 0.1,
+            "attach_angle": -0.7853981633974483,
+            "angle": 0.351717573309631,
+            "angle_min": -0.6981317007977318,
+            "angle_max": 0.6981317007977318,
+            "motor_layer_name": "body3",
+            "motor_output_idx": 1
+        }
+    ],
+    "hidden_groups": [],
+    "disabled_groups": []
 }

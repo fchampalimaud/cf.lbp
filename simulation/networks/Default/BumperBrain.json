@@ -1,149 +1,179 @@
 {
-  "version": 1,
-  "motor_layer": "motor",
-  "hidden_groups": [],
-  "disabled_groups": [],
-  "sensors": [
-    {
-      "type": "GradientSensor",
-      "name": "temp",
-      "n": 2,
-      "angle_spread_deg": 30.0,
-      "center_angle_deg": 0.0,
-      "dist": 0.12,
-      "gradient": "B",
-      "scale": 40.0,
-      "activation": "linear"
-    },
-    {
-      "type": "GradientSensor",
-      "name": "sensor1",
-      "n": 2,
-      "angle_spread_deg": 30.0,
-      "center_angle_deg": 0.0,
-      "dist": 0.12,
-      "gradient": "A",
-      "scale": 40.0,
-      "tau_rise": 0.1,
-      "tau_decay": 0.1,
-      "activation": "relu",
-      "modulators": [
-        [
-          "insulin",
-          -1.0,
-          "pre"
-        ]
-      ]
-    },
-    {
-      "type": "CollisionSensor",
-      "name": "bumper",
-      "n": 2,
-      "angle_spread_deg": 90.0,
-      "arc_angle_deg": 35.0,
-      "radius": 1.2,
-      "scale": 100.0,
-      "tau_rise": 0.05,
-      "tau_decay": 0.7,
-      "activation": "linear"
-    },
-    {
-      "type": "InteroceptiveSensor",
-      "name": "sensor3",
-      "gradient": "A",
-      "scale": 100.0,
-      "max_val": 100.0,
-      "start_val": 0.0,
-      "tau_rise": 10.0,
-      "tau_decay": 100.0
-    }
-  ],
-  "layers": [
-    {
-      "type": "SumLayer",
-      "name": "motor",
-      "layer": 3,
-      "n": 2,
-      "activation": "linear"
-    },
-    {
-      "type": "ConstantLayer",
-      "name": "Drive",
-      "layer": 1,
-      "n": 2,
-      "value": 50.0
-    },
-    {
-      "type": "LeakyLayer",
-      "name": "MotorLayer",
-      "layer": 2,
-      "n": 4,
-      "tau_rise": 0.05,
-      "tau_decay": 0.5
-    }
-  ],
-  "connections": [
-    {
-      "src": "MotorLayer",
-      "tgt": "motor",
-      "W": [
-        [
-          1.0,
-          -1.0,
-          0.0,
-          0.0
-        ],
-        [
-          0.0,
-          0.0,
-          -1.0,
-          1.0
-        ]
-      ]
-    },
-    {
-      "src": "bumper",
-      "tgt": "MotorLayer",
-      "W": [
-        [
-          -2.0,
-          0.0
-        ],
-        [
-          0.5,
-          2.0
-        ],
-        [
-          2.0,
-          0.5
-        ],
-        [
-          0.0,
-          -2.0
-        ]
-      ]
-    },
-    {
-      "src": "Drive",
-      "tgt": "MotorLayer",
-      "W": [
-        [
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          0.0
-        ],
-        [
-          0.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0
-        ]
-      ]
-    }
-  ]
+    "version": 1,
+    "motor_layer": "motor",
+    "hidden_cols": [],
+    "disabled_cols": [],
+    "col_labels": {},
+    "sensors": [
+        {
+            "type": "GradientSensor",
+            "name": "temp",
+            "n": 2,
+            "angle_spread_deg": 30.0,
+            "center_angle_deg": 0.0,
+            "dist": 0.12,
+            "color_channel": "",
+            "gradient": "B",
+            "scale": 40.0,
+            "tau_rise": null,
+            "tau_decay": null,
+            "activation": "linear",
+            "differential": false,
+            "noise_std": 0.0,
+            "robot_address": ""
+        },
+        {
+            "type": "GradientSensor",
+            "name": "sensor1",
+            "n": 2,
+            "angle_spread_deg": 30.0,
+            "center_angle_deg": 0.0,
+            "dist": 0.12,
+            "color_channel": "",
+            "gradient": "A",
+            "scale": 40.0,
+            "tau_rise": 0.1,
+            "tau_decay": 0.1,
+            "activation": "relu",
+            "differential": false,
+            "noise_std": 0.0,
+            "robot_address": "",
+            "modulators": [
+                [
+                    "insulin",
+                    -1.0,
+                    "pre"
+                ]
+            ]
+        },
+        {
+            "type": "CollisionSensor",
+            "name": "bumper",
+            "n": 2,
+            "angle_spread_deg": 90.0,
+            "arc_angle_deg": 35.0,
+            "radius": 1.2,
+            "scale": 100.0,
+            "bias": 0.0,
+            "noise_std": 0.0,
+            "tau_rise": 0.05,
+            "tau_decay": 0.7,
+            "activation": "linear",
+            "differential": false,
+            "robot_address": ""
+        },
+        {
+            "type": "InteroceptiveSensor",
+            "name": "sensor3",
+            "gradient": "A",
+            "scale": 100.0,
+            "max_val": 100.0,
+            "start_val": 0.0,
+            "bias": 0.0,
+            "tau_rise": 10.0,
+            "tau_decay": 100.0,
+            "differential": false,
+            "noise_std": 0.0,
+            "activation": "linear",
+            "robot_address": ""
+        }
+    ],
+    "layers": [
+        {
+            "type": "SumLayer",
+            "name": "motor",
+            "layer": 3,
+            "activation": "linear",
+            "scale": 1.0,
+            "n": 2
+        },
+        {
+            "type": "ConstantLayer",
+            "name": "Drive",
+            "layer": 1,
+            "value": 50.0,
+            "n": 2,
+            "noise_std": 0.0
+        },
+        {
+            "type": "LeakyLayer",
+            "name": "MotorLayer",
+            "layer": 2,
+            "tau_rise": 0.05,
+            "tau_decay": 0.5,
+            "bias": 0.0,
+            "activation": "relu",
+            "n": 4,
+            "derivative": false,
+            "noise_std": 0.0,
+            "noise_tau": 0.0,
+            "scale": 1.0
+        }
+    ],
+    "connections": [
+        {
+            "src": "MotorLayer",
+            "tgt": "motor",
+            "W": [
+                [
+                    1.0,
+                    -1.0,
+                    0.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    0.0,
+                    -1.0,
+                    1.0
+                ]
+            ]
+        },
+        {
+            "src": "bumper",
+            "tgt": "MotorLayer",
+            "W": [
+                [
+                    -2.0,
+                    0.0
+                ],
+                [
+                    0.5,
+                    2.0
+                ],
+                [
+                    2.0,
+                    0.5
+                ],
+                [
+                    0.0,
+                    -2.0
+                ]
+            ]
+        },
+        {
+            "src": "Drive",
+            "tgt": "MotorLayer",
+            "W": [
+                [
+                    1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    1.0
+                ]
+            ]
+        }
+    ],
+    "hidden_groups": [],
+    "disabled_groups": []
 }

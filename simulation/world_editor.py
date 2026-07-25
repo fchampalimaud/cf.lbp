@@ -11,7 +11,7 @@ import numpy as np
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
 
-from sim_constants import GRADIENT_COLORS, OBJECT_COLORS
+from sim_constants import GRADIENT_COLORS
 
 
 class WorldEditor:
@@ -39,7 +39,7 @@ class WorldEditor:
         self.gradient_color         = GRADIENT_COLORS[0][2]
         self.gradient_active_letter = GRADIENT_COLORS[0][0]
         self.gradient_continuous    = False
-        self.object_color           = OBJECT_COLORS[0][2]
+        self.object_color           = [1.0, 0.0, 0.0]
 
         self._poly_vertices  = []
         self._poly_color     = [0.5, 0.5, 0.5]
@@ -58,10 +58,14 @@ class WorldEditor:
         self.gradient_active_letter = letter
         self.draw_mode = 'gradient'
 
-    def set_object_mode(self, color, letter):
+    def set_object_mode(self, color):
         self._cancel_poly_wall()
         self.object_color = color
         self.draw_mode = 'object'
+
+    def set_wall_paint_mode(self):
+        self._cancel_poly_wall()
+        self.draw_mode = 'wall_paint'
 
     def set_wall_mode(self):
         self._cancel_poly_wall()
@@ -89,6 +93,8 @@ class WorldEditor:
     def handle_click(self, x, y, button):
         if button == 1 and self.draw_mode == 'object':
             self._place_polygon_vertex(x, y)
+        elif button == 1 and self.draw_mode == 'wall_paint':
+            self._paint_nearest_wall(x, y)
         elif button == 2:
             self._right_click(x, y)
 
@@ -97,6 +103,10 @@ class WorldEditor:
             self._drag_sky(x, y, is_start, is_finish)
         elif self.draw_mode == 'move':
             self._drag_move(x, y, is_start, is_finish)
+        elif self.draw_mode == 'wall_paint':
+            if is_finish:
+                self._paint_nearest_wall(x, y)
+            return
         elif self.draw_mode == 'object' and self._poly_vertices:
             return  # polygon in progress — ignore drags
         else:
@@ -156,6 +166,28 @@ class WorldEditor:
         else:
             self._poly_vertices.append([snap_x, snap_y])
             self._arena.update_poly_preview(self._poly_vertices, self._hover_pos)
+
+    def _paint_nearest_wall(self, x, y):
+        best = None
+        best_dist = float('inf')
+        for w in self._world.walls:
+            pts = w['points']
+            for i in range(len(pts)):
+                ax, ay = pts[i]
+                bx, by = pts[(i + 1) % len(pts)]
+                dx, dy = bx - ax, by - ay
+                len2 = dx * dx + dy * dy
+                if len2 < 1e-12:
+                    d = np.hypot(x - ax, y - ay)
+                else:
+                    t = np.clip(((x - ax) * dx + (y - ay) * dy) / len2, 0, 1)
+                    d = np.hypot(x - (ax + t * dx), y - (ay + t * dy))
+                if d < best_dist:
+                    best_dist = d
+                    best = w
+        if best is not None and best_dist < 1.0:
+            best['color'] = list(self.object_color)
+            self._setup_world()
 
     def _right_click(self, x, y):
         if self._poly_vertices:

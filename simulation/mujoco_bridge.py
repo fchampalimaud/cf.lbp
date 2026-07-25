@@ -7,7 +7,7 @@ import mujoco.viewer
 
 class MuJocoBridge:
     """
-    Passive MuJoCo window that mirrors the 2D Braitenberg simulator state.
+    Passive MuJoCo window that mirrors the 2D LBP simulator state.
     The 2D sim remains source of truth; this class is a read-only visualiser.
 
     Thread model:

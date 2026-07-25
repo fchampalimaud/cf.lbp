@@ -1,5 +1,5 @@
 """
-robot_driver.py — real-robot I/O for the 2D Braitenberg simulator.
+robot_driver.py — real-robot I/O for the 2D LBP simulator.
 
 One thread is created per unique robot_address (host:port).  The thread type
 is determined by the sensor type(s) registered at that address:

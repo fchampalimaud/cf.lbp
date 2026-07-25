@@ -1,18 +1,21 @@
 {
-  "version": 1,
-  "motor_layer": "motor",
-  "hidden_groups": [],
-  "disabled_groups": [],
-  "sensors": [],
-  "layers": [
-    {
-      "type": "SumLayer",
-      "name": "motor",
-      "layer": 4,
-      "activation": "linear",
-      "scale": 1.0,
-      "n": 2
-    }
-  ],
-  "connections": []
+    "version": 1,
+    "motor_layer": "motor",
+    "hidden_cols": [],
+    "disabled_cols": [],
+    "col_labels": {},
+    "sensors": [],
+    "layers": [
+        {
+            "type": "SumLayer",
+            "name": "motor",
+            "layer": 4,
+            "activation": "linear",
+            "scale": 1.0,
+            "n": 2
+        }
+    ],
+    "connections": [],
+    "hidden_groups": [],
+    "disabled_groups": []
 }

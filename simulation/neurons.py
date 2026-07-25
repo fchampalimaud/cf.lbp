@@ -126,6 +126,21 @@ class DynamicsBase:
             ('noise_tau',  float, '0.0',  'noise correlation τ (0 = white noise)'),
         ]
 
+    def _dyn_code_parts(self, activation_default='relu'):
+        """Code-gen kwarg strings for shared optional dynamics attrs (omits defaults)."""
+        parts = []
+        if self.bias != 0.0:
+            parts.append(f'bias={self.bias}')
+        if self.activation != activation_default:
+            parts.append(f"activation='{self.activation}'")
+        if getattr(self, 'noise_std', 0.0):
+            parts.append(f'noise_std={self.noise_std}')
+        if getattr(self, 'noise_tau', 0.0):
+            parts.append(f'noise_tau={self.noise_tau}')
+        if getattr(self, 'scale', 1.0) != 1.0:
+            parts.append(f'scale={self.scale}')
+        return parts
+
 
 class LayerBase(nn.Module):
     """Mixin carrying the 7 display / neuromodulation attrs shared by every layer type."""
@@ -150,6 +165,50 @@ class LayerBase(nn.Module):
     def is_lateralized(self) -> bool:
         """True when this layer is one half of a lateralized L/R pair."""
         return self.lateral_pair is not None
+
+    # ── Visualization protocol ─────────────────────────────────────────────────
+
+    is_image_node = False  # overridden to True by image-displaying layers
+
+    def thumbnail_frames(self, disp_h=32):
+        """Yield (key, uint8_data) tuples for image thumbnail display. Default: nothing."""
+        yield from ()
+
+    @property
+    def viz_color(self):
+        """Color used for the node in the network visualizer."""
+        return self.color
+
+    # ── Code-generation protocol ───────────────────────────────────────────────
+
+    def _base_code_parts(self):
+        """kwarg strings for name, color, layer (shared by every layer type)."""
+        parts = [f"name='{self.name}'"]
+        if getattr(self, 'color', None) is not None:
+            parts.append(f"color='{self.color}'")
+        if getattr(self, 'layer', None) is not None:
+            parts.append(f'layer={self.layer}')
+        return parts
+
+    def _mod_code_parts(self):
+        """kwarg strings for neuromodulation attrs (omits empties)."""
+        parts = []
+        if getattr(self, 'modulators', None):
+            parts.append(f'modulators={self.modulators!r}')
+        if getattr(self, 'neuromodulator_transmitter', None):
+            parts.append(f'neuromodulator_transmitter={self.neuromodulator_transmitter!r}')
+        if getattr(self, 'neuromodulator_color', None):
+            parts.append(f'neuromodulator_color={self.neuromodulator_color!r}')
+        return parts
+
+    def init_code_parts(self):
+        """Return a list of kwarg strings that reconstruct this layer.
+
+        Subclasses override this to produce the full constructor argument list.
+        The default fallback just yields name/color/layer + neuromod attrs.
+        brain_serializer.generate_layer_code() calls this and joins with ', '.
+        """
+        return self._base_code_parts() + self._mod_code_parts()
 
 
 class LeakyLayer(DynamicsBase, LayerBase):
@@ -199,16 +258,15 @@ class LeakyLayer(DynamicsBase, LayerBase):
 ## LeakyLayer — low-pass filter neurons
 
 **Parameters:**
-- `n` — number of neurons
 - `tau_rise` (τ_rise) — rise time constant (s); default 0.1
 - `tau_decay` (τ_decay) — decay time constant (s); defaults to `tau_rise`
 - `bias` (b) — constant added to each input sum; default 0.0
 - `activation` (f) — nonlinearity: `relu`, `sigmoid`, `tanh`, `linear`; default `relu`
-- `scale` (s) — output multiplier; default 1.0
+- `n` — number of neurons
 - `derivative` — if True, outputs x − u instead of x (detects input drops); default False
 - `noise_std` (σ) — Gaussian noise std added to u each step; default 0.0
 - `noise_tau` — Ornstein-Uhlenbeck time constant (0 = white noise); default 0.0
-
+- `scale` (s) — output multiplier; default 1.0
 **Dynamics** (u = Σ inputs + b):
 
 $$\\frac{dx}{dt} = \\frac{u - x}{\\tau}, \\quad \\tau = \\begin{cases} \\tau_{rise} & u > x \\\\ \\tau_{decay} & u \\leq x \\end{cases}$$
@@ -248,9 +306,9 @@ Set `scale = -1` to detect *increases* instead.
 """
 
     def __init__(self, tau_rise=0.1, tau_decay=None,
-                 bias=0.0, activation='relu', derivative=False,
-                 noise_std=0.0, noise_tau=0.0, scale=1.0,
-                 name='leaky', n=None, color=None, layer=None,
+                 bias=0.0, activation='relu', n=None,
+                 derivative=False, noise_std=0.0, noise_tau=0.0,
+                 scale=1.0, name='leaky', color=None, layer=None,
                  modulators=None, neuromodulator_transmitter=None, neuromodulator_color=None):
         LayerBase.__init__(self, name=name, color=color, layer=layer,
                            modulators=modulators,
@@ -310,6 +368,153 @@ Set `scale = -1` to detect *increases* instead.
     def internal_edges(self):
         return []
 
+    def init_code_parts(self):
+        parts = [f'tau_rise={self.tau_rise}', f'tau_decay={self.tau_decay}']
+        parts += self._base_code_parts()
+        if self.n is not None:
+            parts.append(f'n={self.n}')
+        if getattr(self, 'derivative', False):
+            parts.append('derivative=True')
+        parts += self._dyn_code_parts()
+        parts += self._mod_code_parts()
+        return parts
+
+
+class AccumulatorLayer(DynamicsBase, LayerBase):
+    """
+    Pure integrator with optional leaky decay: x accumulates input over time.
+
+    Primary update (per step):
+        x += rate * u_c * dt          (u_c = u - mean(u) if zero_center else u)
+
+    Optional decay toward zero (tau_decay is not None):
+        x -= x / tau_decay * dt
+
+    This separates accumulation (rate) from forgetting (tau_decay), unlike
+    LeakyLayer which conflates both into a single tau that pulls x toward u.
+
+    zero_center=True subtracts mean(u) before accumulating so only the spatial
+    bump integrates, not the DC offset.  Matches the hDelta update in Goulard
+    et al. (2023):
+        hDc = hDc + rate * (PFN - mean(PFN))
+
+    Parameters
+    ----------
+    rate        : float  Accumulation rate (output/s). Default 0.001.
+    zero_center : bool   Subtract mean(u) before accumulating. Default True.
+    clip        : float  Symmetric clamp |x| ≤ clip. None = no clamp.
+    tau_decay   : float  Decay toward zero time constant (s). None = no decay.
+    n           : int    Number of neurons (inferred from connections if None).
+    """
+
+    help_text = """\
+## AccumulatorLayer — pure integrator with optional decay
+
+Primary update each step:
+
+$$x \\leftarrow x + r \\cdot u_c \\cdot dt$$
+
+where $u_c = u - \\bar{u}$ when `zero_center=True`, or $u_c = u$ otherwise.
+
+Optional decay toward zero (set `tau_decay`):
+
+$$x \\leftarrow x - \\frac{x}{\\tau_{decay}} \\cdot dt$$
+
+**Parameters:**
+- `n` — number of neurons (inferred from connections if not set)
+- `tau_decay` — decay-toward-zero time constant (s); 0 = no decay; default 0
+- `noise_std`, `noise_tau` — optional noise on input (same as other layers)
+- `noise_tau` — noise correlation τ (0 = white noise)
+- `rate` (r) — accumulation rate (output per second); default 0.001
+- `zero_center` — subtract mean(u) before accumulating; removes DC offset; default True
+- `clip` — symmetric clamp |x| ≤ clip after each update; 0 = off; default 0
+**Use cases:**
+- Path integration (hDelta / hDc in the insect central complex)
+- Satiation / energy with digestion (`zero_center=False`, set `tau_decay`)
+- Slow evidence accumulation
+"""
+
+    def __init__(self, n=None, tau_decay=None, noise_std=0.0,
+                 noise_tau=0.0, rate=0.001, zero_center=True,
+                 clip=None, name='accumulator', color=None, layer=None,
+                 modulators=None, neuromodulator_transmitter=None, neuromodulator_color=None,
+                 lateral_pair=None):
+        LayerBase.__init__(self, name=name, color=color, layer=layer,
+                           modulators=modulators,
+                           neuromodulator_transmitter=neuromodulator_transmitter,
+                           neuromodulator_color=neuromodulator_color,
+                           lateral_pair=lateral_pair)
+        self._init_dynamics(tau_rise=0.0, tau_decay=tau_decay,
+                            noise_std=noise_std, noise_tau=noise_tau)
+        self.rate        = float(rate)
+        self.zero_center = bool(zero_center)
+        self.clip        = float(clip) if clip is not None else None
+        self.n           = n
+        if n is not None:
+            self._ensure_n(n)
+        else:
+            self.register_buffer('_x',         None)
+            self.register_buffer('_noise_buf', None)
+        self.output = torch.zeros(n) if n is not None else None
+
+    @classmethod
+    def param_defs(cls):
+        return [
+            ('n',           int,   '16',    'number of neurons'),
+            ('tau_decay',   float, '0.0',   'decay-toward-zero τ (s; 0 = no decay)'),
+            ('noise_std',   float, '0.0',   'noise amplitude'),
+            ('noise_tau',   float, '0.0',   'noise correlation τ (0 = white noise)'),
+            ('rate',        float, '0.001', 'accumulation rate per second'),
+            ('zero_center', bool,  True,    'subtract mean(u) before accumulating'),
+            ('clip',        float, '0.0',   'symmetric value clamp (0 = off)'),
+        ]
+
+    def _ensure_n(self, n):
+        if self.n is None:
+            self.n = n
+            self._init_dynamics_buffers(n)
+            self.output = torch.zeros(n)
+        elif self.n != n:
+            raise ValueError(f"AccumulatorLayer '{self.name}': declared n={self.n} but connection implies n={n}")
+
+    def reset(self):
+        if self.n is None:
+            return
+        self._reset_dynamics()
+        self.output = torch.zeros(self.n)
+
+    def step(self, input_vec, dt):
+        u = torch.as_tensor(input_vec, dtype=torch.float32)
+        u = self._apply_noise(u, dt)
+        if self.zero_center:
+            u = u - u.mean()
+        self._x = self._x.detach()
+        self._x = self._x + self.rate * u * dt
+        if self.tau_decay:
+            self._x = self._x - self._x / self.tau_decay * dt
+        if self.clip is not None and self.clip > 0.0:
+            self._x = torch.clamp(self._x, -self.clip, self.clip)
+        self.output = self._x.detach()
+        return self.output
+
+    def internal_edges(self):
+        return []
+
+    def init_code_parts(self):
+        parts = [f'rate={self.rate}']
+        if not self.zero_center:
+            parts.append('zero_center=False')
+        if self.clip is not None and self.clip > 0.0:
+            parts.append(f'clip={self.clip}')
+        if self.tau_decay:
+            parts.append(f'tau_decay={self.tau_decay}')
+        parts += self._base_code_parts()
+        if self.n is not None:
+            parts.append(f'n={self.n}')
+        parts += self._dyn_code_parts()
+        parts += self._mod_code_parts()
+        return parts
+
 
 class AdaptiveLayer(DynamicsBase, LayerBase):
     """
@@ -357,7 +562,6 @@ class AdaptiveLayer(DynamicsBase, LayerBase):
 ## AdaptiveLayer — leaky integrator with spike-frequency adaptation
 
 **Parameters:**
-- `n` — number of neurons; default 2
 - `tau_rise` (τ) — membrane rise time constant (s); default 0.1
 - `tau_decay` — membrane decay time constant (s); defaults to `tau_rise`
 - `tau_a` (τ_a) — adaptation time constant (s); default 0.5
@@ -365,9 +569,10 @@ class AdaptiveLayer(DynamicsBase, LayerBase):
 - `w` — mutual inhibition weight (CPG mode, n=2); default 0.0
 - `bias` (b) — constant added to each input sum; default 0.0
 - `activation` (f) — nonlinearity: `relu`, `sigmoid`, `tanh`, `linear`; default `relu`
-- `scale` — output multiplier; default 1.0
 - `noise_std` / `noise_tau` — same as LeakyLayer
-
+- `noise_tau` — noise correlation time (0 = white noise)
+- `scale` — output multiplier; default 1.0
+- `n` — number of neurons; default 2
 **Dynamics** (u = Σ inputs + b + noise):
 
 $$u_{eff} = u - \\beta a - w \\cdot o_{other}$$
@@ -404,7 +609,7 @@ Requirements: `w >= 1`, `beta ~ 2–3`, `bias > 0` (tonic drive).
     def __init__(self, tau_rise=0.1, tau_decay=None, tau_a=0.5, beta=1.0,
                  w=0.0, bias=0.0, activation='relu',
                  noise_std=0.0, noise_tau=0.0, scale=1.0,
-                 name='adaptive', n=None, color=None, layer=None,
+                 n=None, name='adaptive', color=None, layer=None,
                  modulators=None, neuromodulator_transmitter=None, neuromodulator_color=None):
         LayerBase.__init__(self, name=name, color=color, layer=layer,
                            modulators=modulators,
@@ -471,6 +676,19 @@ Requirements: `w >= 1`, `beta ~ 2–3`, `bias > 0` (tonic drive).
             return [(0, 1, -self.w), (1, 0, -self.w)]
         return []
 
+    def init_code_parts(self):
+        parts = [f'tau_rise={self.tau_rise}', f'tau_decay={self.tau_decay}']
+        parts += self._base_code_parts()
+        parts.append(f'tau_a={self.tau_a}')
+        parts.append(f'beta={self.beta}')
+        if self.w != 0.0:
+            parts.append(f'w={self.w}')
+        if self.n is not None:
+            parts.append(f'n={self.n}')
+        parts += self._dyn_code_parts()
+        parts += self._mod_code_parts()
+        return parts
+
 
 class MatsuokaLayer(AdaptiveLayer):
     """
@@ -489,11 +707,15 @@ Thin wrapper around **AdaptiveLayer** with `n=2` fixed. Use `AdaptiveLayer` for 
 
 **Parameters:**
 - `tau_rise` (τ_M) — membrane time constant (s); default 0.3
+- `tau_decay` — membrane decay τ (s; empty = same as tau_rise)
 - `tau_a` (τ_A) — adaptation time constant (s); default 1.2
 - `beta` (β) — adaptation strength; default 2.5
 - `w` — mutual inhibition weight; default 2.5
 - `bias` (b) — tonic drive; default 0.0
-
+- `activation` — output nonlinearity
+- `noise_std` — noise amplitude
+- `noise_tau` — noise correlation time (0 = white noise)
+- `scale` — output multiplier
 **Dynamics (each neuron):**
 
 $$\\tau_M \\frac{dx}{dt} = -x + u - \\beta a - w \\cdot o_{other}$$
@@ -524,8 +746,8 @@ If neurons lock (both fire / both silent): increase `w` or `bias`.
   - Feedback paths use the previous tick's value (one-step delay).
 """
 
-    def __init__(self, tauM=None, tauA=None, tau_rise=0.3, tau_decay=None, tau_a=1.2,
-                 beta=2.5, w=2.5, bias=0.0, name='matsuoka', **kwargs):
+    def __init__(self, tau_rise=0.3, tau_decay=None, tau_a=1.2, beta=2.5, w=2.5,
+                 bias=0.0, tauM=None, tauA=None, name='matsuoka', **kwargs):
         if tauM is not None:   # backward compat — old JSON / brain files use tauM
             tau_rise = tauM
         if tauA is not None:
@@ -571,6 +793,15 @@ If neurons lock (both fire / both silent): increase `w` or `bias`.
         super().reset()
         self._x[0] = 0.1
 
+    def init_code_parts(self):
+        parts = [f'tau_rise={self.tau_rise}', f'tau_a={self.tau_a}',
+                 f'beta={self.beta}', f'w={self.w}']
+        parts += self._base_code_parts()
+        if self.bias != 0.0:
+            parts.append(f'bias={self.bias}')
+        parts += self._mod_code_parts()
+        return parts
+
 
 class ConstantLayer(LayerBase):
     """
@@ -596,10 +827,9 @@ class ConstantLayer(LayerBase):
 Outputs a fixed value every step, ignoring incoming connections.
 
 **Parameters:**
-- `n` — number of neurons; default 2
 - `value` (v) — constant output (scalar or list of length n); default 1.0
+- `n` — number of neurons; default 2
 - `noise_std` (σ) — Gaussian noise std added each step; default 0.0
-
 **Output:**
 
 $$\\text{output}_i = v + \\varepsilon_i, \\quad \\varepsilon_i \\sim \\mathcal{N}(0,\\,\\sigma)$$
@@ -682,6 +912,16 @@ exactly `value`, not `value × n`.
     def internal_edges(self):
         return []
 
+    def init_code_parts(self):
+        v    = self._value
+        vstr = repr(float(v[0])) if v.size == 1 else repr(v.tolist())
+        parts = [f'value={vstr}', f'n={self.n}']
+        parts += self._base_code_parts()
+        if getattr(self, 'noise_std', 0.0):
+            parts.append(f'noise_std={self.noise_std}')
+        parts += self._mod_code_parts()
+        return parts
+
 
 class SumLayer(LayerBase):
     """
@@ -710,10 +950,9 @@ class SumLayer(LayerBase):
 No dynamics, no memory. Output tracks input in the **same step**.
 
 **Parameters:**
-- `n` — number of neurons; default 2
 - `activation` (f) — nonlinearity: `relu`, `sigmoid`, `tanh`, `linear`; default `relu`
 - `scale` (s) — output multiplier; default 1.0
-
+- `n` — number of neurons; default 2
 **Output:**
 
 $$\\text{output} = f\\!\\left(\\sum_k W_k \\cdot \\text{input}_k\\right) \\times s$$
@@ -739,7 +978,7 @@ Use **MotorLayer** (a SumLayer subclass) when you need robot actuation.
   - Feedback paths use the previous tick's value (one-step delay).
 """
 
-    def __init__(self, activation='relu', scale=1.0, name='sum', n=None, color=None, layer=None,
+    def __init__(self, activation='relu', scale=1.0, n=None, name='sum', color=None, layer=None,
                  modulators=None, neuromodulator_transmitter=None, neuromodulator_color=None):
         super().__init__(name=name, color=color, layer=layer,
                          modulators=modulators,
@@ -778,6 +1017,18 @@ Use **MotorLayer** (a SumLayer subclass) when you need robot actuation.
     def internal_edges(self):
         return []
 
+    def init_code_parts(self):
+        parts = []
+        if self.activation != 'relu':
+            parts.append(f"activation='{self.activation}'")
+        parts += self._base_code_parts()
+        if getattr(self, 'scale', 1.0) != 1.0:
+            parts.append(f'scale={self.scale}')
+        if self.n is not None:
+            parts.append(f'n={self.n}')
+        parts += self._mod_code_parts()
+        return parts
+
 
 class MotorLayer(SumLayer):
     """
@@ -806,13 +1057,10 @@ SumLayer computation (instantaneous weighted sum) with a **robot_address** that
 routes output to physical hardware in real-robot mode.
 
 **Parameters:**
-- `n` — number of motor outputs; default 2 (left wheel, right wheel)
 - `activation` — nonlinearity; default `linear` (pass-through)
+- `n` — number of motor outputs; default 2 (left wheel, right wheel)
 - `scale` — output multiplier; default 1.0
 - `robot_address` — full OSC target: `ip:port/osc_path`
-  e.g. `192.168.0.1:2390/wheels`
-  Leave empty to run in sim-only mode.
-
 **Output:**
 
 $$\\text{output} = f\\!\\left(\\sum_k W_k \\cdot \\text{input}_k\\right) \\times s$$
@@ -825,10 +1073,10 @@ OSC message and sent to `robot_address` each tick.
 sees what the wheels are actually doing.
 """
 
-    def __init__(self, activation='linear', scale=1.0, name='motor', n=None,
-                 color=None, layer=None,
-                 modulators=None, neuromodulator_transmitter=None, neuromodulator_color=None,
-                 robot_address=''):
+    def __init__(self, activation='linear', n=None, scale=1.0, robot_address='',
+                 name='motor', color=None,
+                 layer=None, modulators=None, neuromodulator_transmitter=None,
+                 neuromodulator_color=None):
         super().__init__(activation=activation, scale=scale, name=name, n=n,
                          color=color, layer=layer,
                          modulators=modulators,
@@ -845,6 +1093,12 @@ sees what the wheels are actually doing.
             ('robot_address', str,   '',
              'ip:port/osc_path for robot mode (e.g. 192.168.0.1:2390/wheels)'),
         ]
+
+    def init_code_parts(self):
+        parts = super().init_code_parts()
+        if self.robot_address:
+            parts.append(f'robot_address={self.robot_address!r}')
+        return parts
 
 
 class PulseLayer(LayerBase):
@@ -898,7 +1152,6 @@ class PulseLayer(LayerBase):
 Models calcium-like sustained (working-memory) activity.
 
 **Parameters:**
-- `n` — number of neurons; default 2
 - `tau_rise` (τ_rise) — fast membrane rise time constant (s); default 0.05
 - `tau_decay` (τ_decay) — fast membrane decay time constant (s); defaults to `tau_rise`
 - `tau_hold` (τ_hold) — plateau charging/draining time constant (s); default 2.0
@@ -908,7 +1161,7 @@ Models calcium-like sustained (working-memory) activity.
 - `bias` (b) — constant added to input; default 0.0
 - `activation` (f) — output nonlinearity; default `relu`
 - `scale` — output multiplier; default 1.0
-
+- `n` — number of neurons; default 2
 **Fast membrane** (u_in = Σ inputs + b):
 
 $$\\frac{du}{dt} = \\frac{u_{in} - u}{\\tau}, \\quad \\tau = \\begin{cases}\\tau_{rise} & u_{in}>u \\\\ \\tau_{decay} & u_{in}\\leq u\\end{cases}$$
@@ -946,7 +1199,7 @@ the plateau for ≈ `tau_hold` seconds.
     def __init__(self, tau_rise=0.05, tau_decay=None, tau_hold=2.0,
                  theta=0.0, w_s=1.0, drain=1.0,
                  bias=0.0, activation='relu', scale=1.0,
-                 name='pulse', n=None, color=None, layer=None,
+                 n=None, name='pulse', color=None, layer=None,
                  modulators=None, neuromodulator_transmitter=None, neuromodulator_color=None):
         super().__init__(name=name, color=color, layer=layer,
                          modulators=modulators,
@@ -1020,6 +1273,27 @@ the plateau for ≈ `tau_hold` seconds.
     def internal_edges(self):
         return []
 
+    def init_code_parts(self):
+        parts = [f'tau_rise={self.tau_rise}', f'tau_decay={self.tau_decay}',
+                 f'tau_hold={self.tau_hold}']
+        parts += self._base_code_parts()
+        if self.theta != 0.0:
+            parts.append(f'theta={self.theta}')
+        if self.w_s != 1.0:
+            parts.append(f'w_s={self.w_s}')
+        if self.drain != 1.0:
+            parts.append(f'drain={self.drain}')
+        if self.n is not None:
+            parts.append(f'n={self.n}')
+        if self.bias != 0.0:
+            parts.append(f'bias={self.bias}')
+        if self.activation != 'relu':
+            parts.append(f"activation='{self.activation}'")
+        if getattr(self, 'scale', 1.0) != 1.0:
+            parts.append(f'scale={self.scale}')
+        parts += self._mod_code_parts()
+        return parts
+
 
 class SineLayer(LayerBase):
     """
@@ -1034,11 +1308,10 @@ Ignores incoming connections. All `n` neurons share the same value.
 `t` resets to 0 on `reset()`.
 
 **Parameters:**
-- `n` — number of neurons; default 1
 - `amplitude` (A) — peak amplitude; default 1.0
 - `frequency` (f) — oscillation frequency in Hz; default 1.0
 - `phase` (φ) — initial phase offset in radians; default 0.0
-
+- `n` — number of neurons; default 1
 **Output:**
 
 $$\\text{output} = A \\sin(2\\pi f\\, t + \\phi)$$
@@ -1057,7 +1330,7 @@ layer for open-loop sinusoidal motion.
 """
 
     def __init__(self, amplitude=1.0, frequency=1.0, phase=0.0,
-                 name='sine', n=1, color=None, layer=None,
+                 n=1, name='sine', color=None, layer=None,
                  modulators=None, neuromodulator_transmitter=None, neuromodulator_color=None):
         super().__init__(name=name, color=color, layer=layer,
                          modulators=modulators,
@@ -1101,6 +1374,16 @@ layer for open-loop sinusoidal motion.
     def internal_edges(self):
         return []
 
+    def init_code_parts(self):
+        parts = [f'amplitude={self.amplitude}', f'frequency={self.frequency}']
+        parts += self._base_code_parts()
+        if self.phase != 0.0:
+            parts.append(f'phase={self.phase}')
+        if getattr(self, 'n', 1) != 1:
+            parts.append(f'n={self.n}')
+        parts += self._mod_code_parts()
+        return parts
+
 
 class RingAttractorLayer(DynamicsBase, LayerBase):
     """
@@ -1133,7 +1416,7 @@ Recurrent connectivity defined by a **self-connection** (use the Mexican hat pre
 - `activation` (f) — nonlinearity: `relu`, `sigmoid`, `tanh`, `linear`; default `relu`
 - `bias` (b) — constant tonic drive per neuron (replaces a ConstantLayer); default 0.0
 - `noise_std` / `noise_tau` — same as LeakyLayer
-
+- `noise_tau` — noise correlation time (0 = white noise)
 **Dynamics** (u = Σ all incoming connections including self-connection):
 
 $$\\frac{dx}{dt} = \\frac{-x + u}{\\tau}, \\quad \\tau = \\begin{cases}\\tau_{rise} & u>x \\\\ \\tau_{decay} & u\\leq x\\end{cases}$$
@@ -1255,6 +1538,22 @@ or the Mexican hat row sums are not sufficiently negative.
     def internal_edges(self):
         return []
 
+    def init_code_parts(self):
+        parts = [f'n={self.n}', f'tau_rise={self.tau_rise}']
+        if self.tau_decay != self.tau_rise:
+            parts.append(f'tau_decay={self.tau_decay}')
+        parts += self._base_code_parts()
+        if self.activation != 'relu':
+            parts.append(f"activation='{self.activation}'")
+        if self.bias != 0.0:
+            parts.append(f'bias={self.bias}')
+        if self.noise_std != 0.0:
+            parts.append(f'noise_std={self.noise_std}')
+        if self.noise_tau != 0.0:
+            parts.append(f'noise_tau={self.noise_tau}')
+        parts += self._mod_code_parts()
+        return parts
+
 
 class Conv2dLayer(DynamicsBase, LayerBase):
     """
@@ -1300,8 +1599,9 @@ Each filter is a `(in_ch, kH, kW)` kernel; `in_ch` is inferred from camera mode.
 - `beta` (β) — adaptation strength; 0 = no adaptation; default 0.0
 - `bias` (b) — constant added to each pooled output; default 0.0
 - `scale` — output multiplier; default 1.0
+- `noise_std` — Gaussian noise σ injected each tick (0 = off)
+- `noise_tau` — noise correlation time (0 = white noise)
 - `lateralized` — create mirrored _L / _R pair for split-camera input; default False
-
 **Forward pass** (I: in_ch × H × W, W: n_filters × in_ch × kH × kW):
 
 $$M = f(\\text{conv2d}(I,\\, W)), \\quad \\text{pooled} = \\text{pool}(M) + b$$
@@ -1342,8 +1642,8 @@ Smaller τ_a → faster adaptation, more transient responses.
     def __init__(self, n_filters=1, kernel_size=3, stride=1, padding='same',
                  pool='global_avg', activation='relu',
                  tau_rise=0.0, tau_decay=None, tau_a=0.0, beta=0.0,
-                 bias=0.0, scale=1.0, lateralized=False,
-                 noise_std=0.0, noise_tau=0.0, differential=False,
+                 bias=0.0, scale=1.0, noise_std=0.0,
+                 noise_tau=0.0, lateralized=False, differential=False,
                  name='conv2d', n=None, color=None, layer=None,
                  modulators=None, neuromodulator_transmitter=None, neuromodulator_color=None):
         LayerBase.__init__(self, name=name, color=color, layer=layer,
@@ -1392,6 +1692,8 @@ Smaller τ_a → faster adaptation, more transient responses.
             ('beta',        float, '0.0',         'adaptation strength (0 = off)'),
             ('bias',        float, '0.0',         'constant added to pooled output'),
             ('scale',       float, '1.0',         'output scale factor applied after dynamics'),
+            ('noise_std',   float, '0.0',         'Gaussian noise σ injected each tick (0 = off)'),
+            ('noise_tau',   float, '0.0',         'noise correlation time (0 = white noise)'),
             ('lateralized', bool,  False,         'create mirrored _L / _R pair for split-camera input'),
         ]
 
@@ -1438,6 +1740,47 @@ Smaller τ_a → faster adaptation, more transient responses.
     def internal_edges(self):
         return []
 
+    @property
+    def is_image_node(self):
+        return self.pool == 'none'
+
+    def thumbnail_frames(self, disp_h=32):
+        if self.pool != 'none':
+            return
+        frame = getattr(self, '_last_frame', None)
+        if frame is None:
+            return
+        g    = frame if frame.ndim == 2 else np.mean(frame, axis=-1)
+        data = np.clip(g * 255, 0, 255).astype(np.uint8)
+        data = np.stack([data, data, data], axis=-1)
+        reps = max(1, disp_h // max(data.shape[0], 1))
+        data = np.repeat(data, reps, axis=0)[:disp_h]
+        yield self.name, data
+
+    def init_code_parts(self):
+        parts = [f'n_filters={self.n_filters}', f'kernel_size={self.kernel_size}']
+        parts += self._base_code_parts()
+        if self.stride != 1:
+            parts.append(f'stride={self.stride}')
+        if self.padding != 'same':
+            parts.append(f"padding='{self.padding}'")
+        if self.pool != 'global_avg':
+            parts.append(f"pool='{self.pool}'")
+        if self.activation != 'relu':
+            parts.append(f"activation='{self.activation}'")
+        if self.tau_rise != 0.0:
+            parts.append(f'tau_rise={self.tau_rise}')
+        if self.tau_decay != self.tau_rise:
+            parts.append(f'tau_decay={self.tau_decay}')
+        if self.bias != 0.0:
+            parts.append(f'bias={self.bias}')
+        if getattr(self, 'scale', 1.0) != 1.0:
+            parts.append(f'scale={self.scale}')
+        if getattr(self, 'lateralized', False):
+            parts.append('lateralized=True')
+        parts += self._mod_code_parts()
+        return parts
+
 
 class Leaky2dLayer(DynamicsBase, LayerBase):
     """
@@ -1479,14 +1822,15 @@ to **each pixel** of the input image, producing an output image of the same spat
 Downstream `Conv2dLayer` nodes can use this as their source.
 
 **Parameters:**
+- `lateralized` — create mirrored _L/_R pair for split-camera input
 - `tau_rise` (τ_rise) — rise time constant (s); default 0.1
 - `tau_decay` (τ_decay) — decay τ (s); defaults to `tau_rise`
-- `bias` (b) — constant added to each pixel before integration; default 0.0
 - `activation` (f) — nonlinearity per pixel: `linear`, `relu`, `sigmoid`, `tanh`; default `linear`
-- `scale` (s) — output multiplier; default 1.0
 - `derivative` — if True, outputs x − u instead of x (fires on pixel *decrease*); default False
+- `bias` (b) — constant added to each pixel before integration; default 0.0
+- `scale` (s) — output multiplier; default 1.0
 - `noise_std` / `noise_tau` — per-pixel noise (same as `LeakyLayer`)
-
+- `noise_tau` — noise correlation τ (0 = white noise)
 **Dynamics** (u = pixel value + b):
 
 $$\\frac{dx}{dt} = \\frac{u - x}{\\tau}, \\quad \\tau = \\begin{cases} \\tau_{rise} & u > x \\\\ \\tau_{decay} & u \\leq x \\end{cases}$$
@@ -1512,13 +1856,14 @@ Use `scale = -1` to detect *increases* (brighter = active).
 - `modulators` — list of `(name, scale, site)` triples (pre / post / none).
 """
 
-    viz_n = 1  # show as a single image node in the network visualizer (like a camera)
+    viz_n        = 1     # show as a single image node in the network visualizer (like a camera)
+    is_image_node = True
 
-    def __init__(self, tau_rise=0.1, tau_decay=None, activation='linear',
-                 bias=0.0, scale=1.0, derivative=False,
-                 noise_std=0.0, noise_tau=0.0,
-                 in_ch=1, frame_h=None, frame_w=None,
-                 lateralized=False,
+    def __init__(self, lateralized=False, tau_rise=0.1, tau_decay=None,
+                 activation='linear', derivative=False, bias=0.0,
+                 scale=1.0, noise_std=0.0,
+                 noise_tau=0.0, in_ch=1, frame_h=None,
+                 frame_w=None,
                  name='leaky2d', n=None, color=None, layer=None,
                  modulators=None, neuromodulator_transmitter=None, neuromodulator_color=None):
         LayerBase.__init__(self, name=name, color=color, layer=layer,
@@ -1594,6 +1939,368 @@ Use `scale = -1` to detect *increases* (brighter = active).
 
     def internal_edges(self):
         return []
+
+    def thumbnail_frames(self, disp_h=32):
+        frame = getattr(self, '_last_frame', None)
+        if frame is None:
+            return
+        if self.in_ch == 3:
+            rgb = frame
+        else:
+            g   = frame if frame.ndim == 2 else np.mean(frame, axis=-1)
+            rgb = np.stack([g, g, g], axis=-1)
+        if getattr(self, 'derivative', False):
+            data = np.clip((rgb + 1.0) * 127.5, 0, 255).astype(np.uint8)
+        else:
+            data = np.clip(rgb * 255, 0, 255).astype(np.uint8)
+        reps = max(1, disp_h // max(data.shape[0], 1))
+        data = np.repeat(data, reps, axis=0)[:disp_h]
+        yield self.name, data
+
+    def init_code_parts(self):
+        parts = [f'tau_rise={self.tau_rise}', f'tau_decay={self.tau_decay}']
+        parts += self._base_code_parts()
+        if self.activation != 'linear':
+            parts.append(f"activation='{self.activation}'")
+        if self.n is not None:
+            parts.append(f'n={self.n}')
+        if getattr(self, 'derivative', False):
+            parts.append('derivative=True')
+        if self.in_ch != 1:
+            parts.append(f'in_ch={self.in_ch}')
+        if self.frame_h is not None:
+            parts.append(f'frame_h={self.frame_h}')
+        if self.frame_w is not None:
+            parts.append(f'frame_w={self.frame_w}')
+        if self.bias != 0.0:
+            parts.append(f'bias={self.bias}')
+        if getattr(self, 'noise_std', 0.0):
+            parts.append(f'noise_std={self.noise_std}')
+        if getattr(self, 'noise_tau', 0.0):
+            parts.append(f'noise_tau={self.noise_tau}')
+        if getattr(self, 'scale', 1.0) != 1.0:
+            parts.append(f'scale={self.scale}')
+        parts += self._mod_code_parts()
+        return parts
+
+
+class Reichardt2dLayer(DynamicsBase, LayerBase):
+    """
+    Elementary motion detector (Reichardt correlator) over camera image input.
+
+    For each direction (dy, dx) and pixel (i, j), the balanced Reichardt response is:
+
+        R(i, j) = I_del(i, j) · I_cur(i+dy, j+dx) − I_del(i+dy, j+dx) · I_cur(i, j)
+
+    where I_del is an exponential low-pass of the input image with time constant
+    tau_delay. Positive output means motion in the preferred direction; negative
+    means motion in the opposite direction.
+
+    n_dirs selects the direction set:
+        1 → rightward only
+        2 → rightward / leftward
+        4 → LRUD (default)
+        8 → LRUD + 4 diagonals
+
+    With pool='global_avg' or 'global_max' the output is (n_dirs,) scalars, one per
+    direction. With pool='none' all direction maps are stacked into a (n_dirs × H × W)
+    motion-field image, displayed as RGB with user-selected direction-to-channel mapping
+    (disp_r, disp_g, disp_b). The flat output vector has size n_dirs × H × W.
+
+    Parameters
+    ----------
+    n_dirs     : int   Direction set: 1, 2, 4, or 8. Default 4.
+    offset     : int   Spatial pixel offset Δ for the correlation. Default 1.
+    tau_delay  : float Internal Reichardt delay time constant (s). Default 0.1.
+    pool       : str   'global_avg', 'global_max', or 'none'. Default 'global_avg'.
+    activation : str   Nonlinearity applied to correlation maps before pooling.
+    tau_rise   : float Rise τ for optional leaky dynamics on pooled output (0 = off).
+    tau_decay  : float Decay τ (defaults to tau_rise).
+    tau_a      : float Adaptation τ (0 = off). Default 0.0.
+    beta       : float Adaptation strength. Default 0.0.
+    bias       : float Constant added to pooled output. Default 0.0.
+    scale      : float Output multiplier. Default 1.0.
+    lateralized: bool  Create mirrored _L / _R pair for split-camera input.
+    disp_r     : int   Direction index for Red channel in image display (-1 = black).
+    disp_g     : int   Direction index for Green channel (-1 = black).
+    disp_b     : int   Direction index for Blue channel (-1 = black).
+    """
+
+    _DIRECTIONS = {
+        1: [(0,  1)],
+        2: [(0,  1), (0, -1)],
+        4: [(0,  1), (0, -1), (1,  0), (-1,  0)],
+        8: [(0,  1), (0, -1), (1,  0), (-1,  0),
+            (1,  1), (1, -1), (-1,  1), (-1, -1)],
+    }
+
+    help_text = """\
+## Reichardt2dLayer — elementary motion detector over camera input
+
+Implements the balanced Reichardt (EM detector) correlator. For each direction and
+pixel `(i, j)`:
+
+$$R(i,j) = I_{del}(i,j) \\cdot I_{cur}(i{+}\\Delta y,\\,j{+}\\Delta x)
+          - I_{del}(i{+}\\Delta y,\\,j{+}\\Delta x) \\cdot I_{cur}(i,j)$$
+
+where $I_{del}$ is an exponential low-pass of the input with time constant `tau_delay`.
+Positive output → motion in the preferred direction. Negative → opposite direction.
+
+**Parameters:**
+- `n_dirs` — direction set: 1 (right), 2 (left/right), 4 (LRUD), 8 (LRUD+diagonals); default 4
+- `offset` (Δ) — spatial pixel offset for the correlation; default 1
+- `tau_delay` (τ_d) — internal Reichardt delay time constant (s); default 0.1
+- `pool` — `global_avg`, `global_max`, or `none`; default `global_avg`
+- `activation` (f) — nonlinearity applied to correlation maps before pooling; default `relu`
+- `tau_rise` (τ_rise) — leaky rise τ on pooled output (0 = off); default 0.0
+- `tau_decay` (τ_decay) — leaky decay τ (defaults to `tau_rise`); default 0.0
+- `tau_a` (τ_a) — adaptation time constant (0 = off); default 0.0
+- `beta` (β) — adaptation strength (0 = off); default 0.0
+- `bias` (b) — constant added to each pooled output; default 0.0
+- `scale` — output multiplier; default 1.0
+- `lateralized` — create mirrored _L / _R pair for split-camera input; default False
+- `noise_std` (σ) — Gaussian noise std on pooled output (0 = off); default 0.0
+- `noise_tau` — Ornstein-Uhlenbeck time constant for noise (0 = white noise); default 0.0
+**Forward pass:**
+
+1. Low-pass filter each pixel with `tau_delay` → $I_{del}$
+2. For each direction: compute balanced Reichardt map $R$ (see equation above)
+3. Apply activation to $R$ → pool → add bias → optional noise → optional leaky dynamics → × scale
+
+**Output shape:**
+- `pool = 'global_avg'` / `'global_max'` → `(n_dirs,)` scalars
+- `pool = 'none'` → `(n_dirs × H × W,)` flat motion-field vector; displayed as RGB image
+  with `disp_r`, `disp_g`, `disp_b` selecting which direction maps to each channel (-1 = black)
+
+**Tuning tips:**
+- Set `tau_delay ≈ 1 / fps` for one-frame delay (optimal for frame-rate motion).
+- `offset = 1` detects smallest shifts; increase for slower / large-scale motions.
+- Use `activation='linear'` to preserve sign — negative means opposite-direction motion.
+- For push-pull motor drive: `n_dirs=2`, wire outputs [0] and [1] with opposite signs.
+
+---
+
+**Neuromodulation:**
+
+- `neuromodulator_transmitter` — name of the signal this layer emits; its mean output is published to the bus each tick.
+- `neuromodulator_color` — display color for this neuromodulator in the visualizer.
+- `modulators` — list of `(name, scale, site)` triples:
+  - `site="pre"`: multiplies the pooled output by `1 + scale × signal` before dynamics.
+  - `site="post"`: multiplies the output by `1 + scale × signal` after dynamics.
+  - `site="none"`: declares the neuromodulator for learning/visualization only.
+  - `scale > 0` → excitatory; `scale < 0` → inhibitory.
+"""
+
+    def __init__(self, n_dirs=4, offset=1, tau_delay=0.1,
+                 pool='global_avg', activation='relu',
+                 tau_rise=0.0, tau_decay=None, tau_a=0.0, beta=0.0,
+                 bias=0.0, scale=1.0, lateralized=False,
+                 noise_std=0.0, noise_tau=0.0, differential=False,
+                 in_ch=1, frame_h=None, frame_w=None,
+                 disp_r=0, disp_g=1, disp_b=2,
+                 name='reichardt', n=None, color=None, layer=None,
+                 modulators=None, neuromodulator_transmitter=None, neuromodulator_color=None):
+        LayerBase.__init__(self, name=name, color=color, layer=layer,
+                           modulators=modulators,
+                           neuromodulator_transmitter=neuromodulator_transmitter,
+                           neuromodulator_color=neuromodulator_color)
+        if n_dirs not in self._DIRECTIONS:
+            raise ValueError(
+                f"Reichardt2dLayer '{name}': n_dirs must be 1, 2, 4, or 8 (got {n_dirs})")
+
+        self.n_dirs      = int(n_dirs)
+        self.offset      = max(1, int(offset))
+        self.tau_delay   = float(tau_delay)
+        self.pool        = pool
+        self.lateralized = bool(lateralized)
+        self.in_ch       = int(in_ch)
+        self.frame_h     = int(frame_h) if frame_h is not None else None
+        self.frame_w     = int(frame_w) if frame_w is not None else None
+        self.disp_r      = int(disp_r)
+        self.disp_g      = int(disp_g)
+        self.disp_b      = int(disp_b)
+        self._last_frame = None
+
+        self._init_dynamics(tau_rise=tau_rise, tau_decay=tau_decay, activation=activation,
+                            bias=bias, scale=scale, tau_a=tau_a, beta=beta,
+                            noise_std=noise_std, noise_tau=noise_tau, differential=differential)
+
+        if pool == 'none':
+            self.viz_n = 1
+
+        n_out = n if n is not None else n_dirs
+        self.n = n_out
+        self._init_dynamics_buffers(n_out)
+        self.output = torch.zeros(n_out)
+        self.register_buffer('_I_del', None)
+
+    @classmethod
+    def param_defs(cls):
+        return [
+            ('n_dirs',      int,   '4',          'direction set: 1 (right) 2 (H) 4 (LRUD) 8 (LRUD+diag)'),
+            ('offset',      int,   '1',          'spatial pixel offset Δ for the correlation'),
+            ('tau_delay',   float, '0.1',        'internal Reichardt delay τ (s)'),
+            ('pool',        str,   'global_avg', 'global_avg/global_max → (n_dirs,) scalars; none → (n_dirs×H×W) image',
+             ['global_avg', 'global_max', 'none']),
+            ('activation',  str,   'relu',       'nonlinearity applied to correlation maps before pooling',
+             ACTIVATIONS),
+            ('tau_rise',    float, '0.0',        'leaky rise τ on pooled output (0 = instantaneous)'),
+            ('tau_decay',   float, '0.0',        'leaky decay τ (defaults to tau_rise)'),
+            ('tau_a',       float, '0.0',        'adaptation time constant (0 = off)'),
+            ('beta',        float, '0.0',        'adaptation strength (0 = off)'),
+            ('bias',        float, '0.0',        'constant added to pooled output'),
+            ('scale',       float, '1.0',        'output scale factor applied after dynamics'),
+            ('lateralized', bool,  False,        'create mirrored _L / _R pair for split-camera input'),
+            ('noise_std',   float, '0.0',        'noise amplitude on pooled output (0 = off)'),
+            ('noise_tau',   float, '0.0',        'noise correlation τ (0 = white noise)'),
+            ('disp_r',      int,   '0',          'R: direction index → Red channel (pool=none only; -1 = black)',   None, 'display RGB'),
+            ('disp_g',      int,   '1',          'G: direction index → Green channel (-1 = black)',                  None, 'display RGB'),
+            ('disp_b',      int,   '2',          'B: direction index → Blue channel (-1 = black)',                   None, 'display RGB'),
+        ]
+
+    def _ensure_n(self, n):
+        if self.n != n:
+            self.n = n
+            self._init_dynamics_buffers(n)
+            self.output = torch.zeros(n)
+
+    def reset(self):
+        self._reset_dynamics()
+        if self._I_del is not None:
+            self._I_del.zero_()
+        self.output = torch.zeros(self.n)
+
+    @staticmethod
+    def _shift(img, dy, dx, offset):
+        """Zero-pad-shift img (in_ch × H × W) by (dy*offset, dx*offset) pixels."""
+        result = torch.zeros_like(img)
+        H, W = img.shape[-2], img.shape[-1]
+        r = dy * offset   # positive = shift down
+        c = dx * offset   # positive = shift right
+        src_rows = slice(max(0, -r), H - max(0, r))
+        dst_rows = slice(max(0,  r), H - max(0, -r))
+        src_cols = slice(max(0, -c), W - max(0, c))
+        dst_cols = slice(max(0,  c), W - max(0, -c))
+        result[:, dst_rows, dst_cols] = img[:, src_rows, src_cols]
+        return result
+
+    def step(self, input_vec, dt):
+        inp = torch.as_tensor(input_vec, dtype=torch.float32)
+
+        # --- reshape flat input to (in_ch, H, W) ---
+        n_pixels = inp.numel() // max(self.in_ch, 1)
+        H = self.frame_h if self.frame_h else int(n_pixels ** 0.5)
+        W = self.frame_w if self.frame_w else max(1, n_pixels // max(H, 1))
+        I_cur = inp.reshape(self.in_ch, H, W)
+
+        # --- update internal Reichardt delay buffer (exponential low-pass) ---
+        if self._I_del is None or self._I_del.shape != I_cur.shape:
+            self.register_buffer('_I_del', I_cur.detach().clone())
+        self._I_del = self._I_del.detach()
+        alpha = min(1.0, dt / max(self.tau_delay, 1e-9))
+        self._I_del = self._I_del + (I_cur - self._I_del) * alpha
+
+        I_del = self._I_del
+
+        # --- Reichardt correlation for each direction ---
+        if self.pool == 'none':
+            self._ensure_n(self.n_dirs * H * W)
+
+        dir_responses = []
+        for (dy, dx) in self._DIRECTIONS[self.n_dirs]:
+            I_cur_sh = self._shift(I_cur, dy, dx, self.offset)
+            I_del_sh = self._shift(I_del, dy, dx, self.offset)
+            R_map = I_del * I_cur_sh - I_del_sh * I_cur    # (in_ch, H, W)
+            R_map = R_map.mean(dim=0, keepdim=True)          # (1, H, W) — collapse channels
+            act_map = _activate(R_map, self.activation)
+            if self.pool == 'global_avg':
+                dir_responses.append(act_map.mean())
+            elif self.pool == 'global_max':
+                dir_responses.append(act_map.amax())
+            else:  # pool='none' — keep full spatial map per direction
+                dir_responses.append(act_map.squeeze(0))    # (H, W)
+
+        if self.pool == 'none':
+            pooled = torch.stack(dir_responses).reshape(-1)  # (n_dirs * H * W,)
+        else:
+            pooled = torch.stack(dir_responses)              # (n_dirs,)
+
+        # --- output dynamics: bias, noise, adaptation, leaky, scale, differential ---
+        u = pooled + self.bias
+        u = self._apply_noise(u, dt)
+        u = self._apply_adaptation_pre(u)
+        out = self._apply_leaky(u, dt)
+        self._update_adaptation(out, dt)
+        out = out * self.scale
+        self.output = self._apply_differential(out, dt).detach()
+
+        if self.pool == 'none':
+            self._last_frame = self.output.numpy().reshape(self.n_dirs, H, W)
+
+        return self.output
+
+    def internal_edges(self):
+        return []
+
+    @property
+    def is_image_node(self):
+        return self.pool == 'none'
+
+    def thumbnail_frames(self, disp_h=32):
+        if self.pool != 'none':
+            return
+        frame = getattr(self, '_last_frame', None)   # (n_dirs, H, W) numpy
+        if frame is None:
+            return
+        n, H, W = frame.shape
+
+        def _ch(idx):
+            if idx < 0 or idx >= n:
+                return np.zeros((H, W), dtype=np.uint8)
+            # Correlation is signed; centre at 127.5 grey.
+            return np.clip((frame[idx] + 1.0) * 127.5, 0, 255).astype(np.uint8)
+
+        data = np.stack([_ch(self.disp_r), _ch(self.disp_g), _ch(self.disp_b)], axis=-1)
+        scale = max(1, disp_h // max(H, 1))
+        data = np.repeat(np.repeat(data, scale, axis=0), scale, axis=1)[:disp_h]
+        yield self.name, data
+
+    def init_code_parts(self):
+        parts = [f'n_dirs={self.n_dirs}', f'offset={self.offset}',
+                 f'tau_delay={self.tau_delay}']
+        parts += self._base_code_parts()
+        if self.pool != 'global_avg':
+            parts.append(f"pool='{self.pool}'")
+        if self.activation != 'relu':
+            parts.append(f"activation='{self.activation}'")
+        if self.tau_rise != 0.0:
+            parts.append(f'tau_rise={self.tau_rise}')
+        if self.tau_decay != self.tau_rise:
+            parts.append(f'tau_decay={self.tau_decay}')
+        if self.bias != 0.0:
+            parts.append(f'bias={self.bias}')
+        if getattr(self, 'scale', 1.0) != 1.0:
+            parts.append(f'scale={self.scale}')
+        if getattr(self, 'lateralized', False):
+            parts.append('lateralized=True')
+        if self.in_ch != 1:
+            parts.append(f'in_ch={self.in_ch}')
+        if self.frame_h is not None:
+            parts.append(f'frame_h={self.frame_h}')
+        if self.frame_w is not None:
+            parts.append(f'frame_w={self.frame_w}')
+        if getattr(self, 'noise_std', 0.0):
+            parts.append(f'noise_std={self.noise_std}')
+        if getattr(self, 'noise_tau', 0.0):
+            parts.append(f'noise_tau={self.noise_tau}')
+        if self.disp_r != 0:
+            parts.append(f'disp_r={self.disp_r}')
+        if self.disp_g != 1:
+            parts.append(f'disp_g={self.disp_g}')
+        if self.disp_b != 2:
+            parts.append(f'disp_b={self.disp_b}')
+        parts += self._mod_code_parts()
+        return parts
 
 
 class LearningLayerBase(DynamicsBase, LayerBase):
@@ -1731,6 +2438,35 @@ class LearningLayerBase(DynamicsBase, LayerBase):
     def internal_edges(self):
         return []
 
+    def _learning_code_parts(self):
+        """Common code parts for all LearningLayerBase subclasses."""
+        parts = []
+        if self.reward_modulator != 'dopamine':
+            parts.append(f'reward_modulator={self.reward_modulator!r}')
+        parts += self._base_code_parts()
+        if self.tau_rise:
+            parts.append(f'tau_rise={self.tau_rise}')
+            if self.tau_decay != self.tau_rise:
+                parts.append(f'tau_decay={self.tau_decay}')
+        if self.activation != 'linear':
+            parts.append(f"activation='{self.activation}'")
+        if self.bias != 0.0:
+            parts.append(f'bias={self.bias}')
+        if self.scale != 1.0:
+            parts.append(f'scale={self.scale}')
+        if self.weight_decay:
+            parts.append(f'weight_decay={self.weight_decay}')
+        if self.w_min is not None:
+            parts.append(f'w_min={self.w_min!r}')
+        if self.w_max is not None:
+            parts.append(f'w_max={self.w_max!r}')
+        if self.competition != 'none':
+            parts.append(f'competition={self.competition!r}')
+        if self.k != 1:
+            parts.append(f'k={self.k}')
+        parts += self._mod_code_parts()
+        return parts
+
 
 class TDLayer(LearningLayerBase):
     help_text = """\
@@ -1747,7 +2483,16 @@ learned weight: W[j, i] is neuron j's weight on input i.
 - `alpha_neg` — learning rate for negative δ (extinction); default = alpha_pos
 - `gamma` (γ) — discount factor (0–1); default 0.99
 - `reward_modulator` — neuromodulator name carrying the reward signal r; default "dopamine"
-
+- `tau_rise` — leaky rise τ on V output (0 = off)
+- `tau_decay` — leaky decay τ on V output
+- `activation` — output nonlinearity
+- `bias` — constant added to V before output
+- `scale` — output scale factor
+- `weight_decay` — passive weight decay rate (per second; 0 = off)
+- `w_min` — min synaptic weight (blank = unbounded)
+- `w_max` — max synaptic weight (blank = unbounded)
+- `competition` — lateral competition: none / softmax / wta
+- `k` — number of winners for wta competition
 **Output:** V(s) ∈ ℝⁿ — predicted future reward per neuron.
 Can be wired to motors: higher V → stronger approach drive.
 
@@ -1781,10 +2526,10 @@ settings with spatially co-located cue and reward, prefer **ThreeFactorLayer**.
   and reward. *Science*, 275(5306), 1593–1599.
 """
 
-    def __init__(self, alpha_pos=0.01, alpha_neg=None,
-                 gamma=0.99, reward_modulator='dopamine', n=1,
+    def __init__(self, n=1, alpha_pos=0.01,
+                 alpha_neg=None, gamma=0.99, reward_modulator='dopamine',
                  tau_rise=0.0, tau_decay=None, activation='linear', bias=0.0, scale=1.0,
-                 w_min=None, w_max=None, competition='none', k=1, weight_decay=0.0,
+                 weight_decay=0.0, w_min=None, w_max=None, competition='none', k=1,
                  name='td', color=None, layer=None,
                  modulators=None, neuromodulator_transmitter=None, neuromodulator_color=None,
                  alpha=None):  # alpha kept as ignored kwarg for JSON backward compat
@@ -1821,6 +2566,11 @@ settings with spatially co-located cue and reward, prefer **ThreeFactorLayer**.
             ('scale',            float, '1.0',      'output scale factor'),
         ] + cls._shared_learning_param_defs()
 
+    def init_code_parts(self):
+        return ([f'n={self.n}', f'alpha_pos={self.alpha_pos}',
+                 f'alpha_neg={self.alpha_neg}', f'gamma={self.gamma}']
+                + self._learning_code_parts())
+
 
 class DeltaLayer(LearningLayerBase):
     help_text = """\
@@ -1842,7 +2592,16 @@ the behavioural extinction timescale.
 - `alpha_pos` — learning rate for δ ≥ 0 (acquisition); default 0.05
 - `alpha_neg` — learning rate for δ < 0 (extinction); default 0.005
 - `reward_modulator` — neuromodulator name carrying reward r; default "dopamine"
-
+- `tau_rise` — leaky rise τ on V output (0 = off)
+- `tau_decay` — leaky decay τ on V output
+- `activation` — output nonlinearity
+- `bias` — constant added to V before output
+- `scale` — output scale factor
+- `weight_decay` — passive weight decay rate (per second; 0 = off)
+- `w_min` — min synaptic weight (blank = unbounded)
+- `w_max` — max synaptic weight (blank = unbounded)
+- `competition` — lateral competition: none / softmax / wta
+- `k` — number of winners for wta competition
 **Output:** V(s) ∈ ℝⁿ — reward prediction per neuron.
 Can be wired to motors for direct approach drive.
 
@@ -1864,10 +2623,10 @@ settings where reward gates all learning, prefer **ThreeFactorLayer**.
   Convention Record*, 4, 96–104.
 """
 
-    def __init__(self, alpha_pos=0.05, alpha_neg=0.005,
-                 reward_modulator='dopamine', n=1,
+    def __init__(self, n=1, alpha_pos=0.05,
+                 alpha_neg=0.005, reward_modulator='dopamine',
                  tau_rise=0.0, tau_decay=None, activation='linear', bias=0.0, scale=1.0,
-                 w_min=None, w_max=None, competition='none', k=1, weight_decay=0.0,
+                 weight_decay=0.0, w_min=None, w_max=None, competition='none', k=1,
                  name='delta', color=None, layer=None,
                  modulators=None, neuromodulator_transmitter=None, neuromodulator_color=None):
         super().__init__(n=n, alpha_pos=alpha_pos, alpha_neg=alpha_neg,
@@ -1898,6 +2657,11 @@ settings where reward gates all learning, prefer **ThreeFactorLayer**.
             ('bias',             float, '0.0',      'constant added to V before output'),
             ('scale',            float, '1.0',      'output scale factor'),
         ] + cls._shared_learning_param_defs()
+
+    def init_code_parts(self):
+        return ([f'n={self.n}', f'alpha_pos={self.alpha_pos}',
+                 f'alpha_neg={self.alpha_neg}']
+                + self._learning_code_parts())
 
 
 class ThreeFactorLayer(LearningLayerBase):
@@ -1930,11 +2694,16 @@ acquisition rate and decay rate — infrequently rewarded associations fade natu
 - `alpha_pos` — learning rate when r·V ≥ 0; default 0.01
 - `alpha_neg` — learning rate when r·V < 0 (punishment); default = alpha_pos
 - `reward_modulator` — neuromodulator name carrying r; default "dopamine"
+- `tau_rise` — leaky rise τ on output (0 = off)
+- `tau_decay` — leaky decay τ on output
+- `activation` — output nonlinearity
+- `bias` — constant added to output
+- `scale` — output scale factor
 - `weight_decay` — passive decay rate (s⁻¹); default 0.0
 - `w_min` / `w_max` — synaptic bounds (blank = unbounded)
+- `w_max` — max synaptic weight (blank = unbounded)
 - `competition` — lateral competition: `none` / `softmax` / `wta`; default `none`
 - `k` — number of winners for `wta`; default 1
-
 **Wiring:**
 1. Connect any sensory/feature layer → ThreeFactorLayer (initialise W to zeros).
 2. Declare the reward-carrying layer as a neuromodulator transmitter (e.g. "dopamine").
@@ -1954,10 +2723,10 @@ Use **↺ Reset Weights** to zero all incoming connection weights.
   theory of three-factor learning rules. *Frontiers in Neural Circuits*, 9, 85.
 """
 
-    def __init__(self, alpha_pos=0.01, alpha_neg=None,
-                 reward_modulator='dopamine', n=1,
+    def __init__(self, n=1, alpha_pos=0.01,
+                 alpha_neg=None, reward_modulator='dopamine',
                  tau_rise=0.0, tau_decay=None, activation='linear', bias=0.0, scale=1.0,
-                 w_min=None, w_max=None, competition='none', k=1, weight_decay=0.0,
+                 weight_decay=0.0, w_min=None, w_max=None, competition='none', k=1,
                  name='3factor', color=None, layer=None,
                  modulators=None, neuromodulator_transmitter=None, neuromodulator_color=None):
         super().__init__(n=n, alpha_pos=alpha_pos,
@@ -1989,6 +2758,11 @@ Use **↺ Reset Weights** to zero all incoming connection weights.
             ('bias',             float, '0.0',      'constant added to output'),
             ('scale',            float, '1.0',      'output scale factor'),
         ] + cls._shared_learning_param_defs()
+
+    def init_code_parts(self):
+        return ([f'n={self.n}', f'alpha_pos={self.alpha_pos}',
+                 f'alpha_neg={self.alpha_neg}']
+                + self._learning_code_parts())
 
 
 # Registry — populated automatically by LayerBase.__init_subclass__ as each class is defined.

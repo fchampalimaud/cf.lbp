@@ -9,202 +9,17 @@ import json
 import os
 import re
 import numpy as np
-from neurons import (LeakyLayer, MatsuokaLayer, ConstantLayer,
-                     AdaptiveLayer, SumLayer, PulseLayer, SineLayer,
-                     RingAttractorLayer, Conv2dLayer, Leaky2dLayer, LAYER_REGISTRY)
+from neurons import RingAttractorLayer, Conv2dLayer, LAYER_REGISTRY
 from circuit_model import Connection
 
 _ALL_NEURON_TYPES = sorted(LAYER_REGISTRY.keys())
-
-
-# ── Code generation helpers ────────────────────────────────────────────────────
-
-def _append_mod_parts(lyr, parts):
-    """Append modulator / neuromodulator kwargs to a parts list."""
-    if getattr(lyr, 'modulators', None):
-        parts.append(f'modulators={lyr.modulators!r}')
-    if getattr(lyr, 'neuromodulator_transmitter', None):
-        parts.append(f'neuromodulator_transmitter={lyr.neuromodulator_transmitter!r}')
-    if getattr(lyr, 'neuromodulator_color', None):
-        parts.append(f'neuromodulator_color={lyr.neuromodulator_color!r}')
-
-
-def _append_dynamic_parts(lyr, parts):
-    """Append optional filter attrs shared by LeakyLayer and AdaptiveLayer."""
-    if lyr.bias != 0.0:
-        parts.append(f'bias={lyr.bias}')
-    if lyr.activation != 'relu':
-        parts.append(f"activation='{lyr.activation}'")
-    if getattr(lyr, 'noise_std', 0.0):
-        parts.append(f'noise_std={lyr.noise_std}')
-    if getattr(lyr, 'noise_tau', 0.0):
-        parts.append(f'noise_tau={lyr.noise_tau}')
-    if getattr(lyr, 'scale', 1.0) != 1.0:
-        parts.append(f'scale={lyr.scale}')
-
-
 
 
 # ── Code generation ────────────────────────────────────────────────────────────
 
 def generate_layer_code(lyr) -> str:
     """Return a constructor expression string for *lyr* (one line, no trailing comma)."""
-    t     = type(lyr).__name__
-    parts = [f"name='{lyr.name}'"]
-    if getattr(lyr, 'color', None) is not None:
-        parts.append(f"color='{lyr.color}'")
-    if getattr(lyr, 'layer', None) is not None:
-        parts.append(f'layer={lyr.layer}')
-
-    if isinstance(lyr, LeakyLayer):
-        parts.insert(0, f'tau_rise={lyr.tau_rise}')
-        parts.insert(1, f'tau_decay={lyr.tau_decay}')
-        if lyr.n is not None:
-            parts.append(f'n={lyr.n}')
-        if getattr(lyr, 'derivative', False):
-            parts.append('derivative=True')
-        _append_dynamic_parts(lyr, parts)
-        _append_mod_parts(lyr, parts)
-        return f'LeakyLayer({", ".join(parts)})'
-
-    if isinstance(lyr, MatsuokaLayer):
-        parts = [f'tau_rise={lyr.tau_rise}', f'tau_a={lyr.tau_a}',
-                 f'beta={lyr.beta}', f'w={lyr.w}'] + parts
-        if lyr.bias != 0.0:
-            parts.append(f'bias={lyr.bias}')
-        _append_mod_parts(lyr, parts)
-        return f'MatsuokaLayer({", ".join(parts)})'
-
-    if isinstance(lyr, ConstantLayer):
-        v    = lyr._value
-        vstr = repr(float(v[0])) if v.size == 1 else repr(v.tolist())
-        parts = [f'value={vstr}', f'n={lyr.n}'] + parts
-        if getattr(lyr, 'noise_std', 0.0):
-            parts.append(f'noise_std={lyr.noise_std}')
-        _append_mod_parts(lyr, parts)
-        return f'ConstantLayer({", ".join(parts)})'
-
-    if isinstance(lyr, AdaptiveLayer):
-        parts.insert(0, f'tau_rise={lyr.tau_rise}')
-        parts.insert(1, f'tau_decay={lyr.tau_decay}')
-        parts.append(f'tau_a={lyr.tau_a}')
-        parts.append(f'beta={lyr.beta}')
-        if lyr.w != 0.0:
-            parts.append(f'w={lyr.w}')
-        if lyr.n is not None:
-            parts.append(f'n={lyr.n}')
-        _append_dynamic_parts(lyr, parts)
-        _append_mod_parts(lyr, parts)
-        return f'AdaptiveLayer({", ".join(parts)})'
-
-    if isinstance(lyr, SumLayer):
-        if lyr.activation != 'relu':
-            parts.insert(0, f"activation='{lyr.activation}'")
-        if getattr(lyr, 'scale', 1.0) != 1.0:
-            parts.append(f'scale={lyr.scale}')
-        if lyr.n is not None:
-            parts.append(f'n={lyr.n}')
-        _append_mod_parts(lyr, parts)
-        return f'SumLayer({", ".join(parts)})'
-
-    if isinstance(lyr, PulseLayer):
-        parts.insert(0, f'tau_rise={lyr.tau_rise}')
-        parts.insert(1, f'tau_decay={lyr.tau_decay}')
-        parts.insert(2, f'tau_hold={lyr.tau_hold}')
-        if lyr.theta != 0.0:
-            parts.append(f'theta={lyr.theta}')
-        if lyr.w_s != 1.0:
-            parts.append(f'w_s={lyr.w_s}')
-        if lyr.drain != 1.0:
-            parts.append(f'drain={lyr.drain}')
-        if lyr.n is not None:
-            parts.append(f'n={lyr.n}')
-        if lyr.bias != 0.0:
-            parts.append(f'bias={lyr.bias}')
-        if lyr.activation != 'relu':
-            parts.append(f"activation='{lyr.activation}'")
-        if getattr(lyr, 'scale', 1.0) != 1.0:
-            parts.append(f'scale={lyr.scale}')
-        _append_mod_parts(lyr, parts)
-        return f'PulseLayer({", ".join(parts)})'
-
-    if isinstance(lyr, SineLayer):
-        parts.insert(0, f'amplitude={lyr.amplitude}')
-        parts.insert(1, f'frequency={lyr.frequency}')
-        if lyr.phase != 0.0:
-            parts.append(f'phase={lyr.phase}')
-        if getattr(lyr, 'n', 1) != 1:
-            parts.append(f'n={lyr.n}')
-        _append_mod_parts(lyr, parts)
-        return f'SineLayer({", ".join(parts)})'
-
-    if isinstance(lyr, RingAttractorLayer):
-        parts.insert(0, f'n={lyr.n}')
-        parts.insert(1, f'tau_rise={lyr.tau_rise}')
-        if lyr.tau_decay != lyr.tau_rise:
-            parts.insert(2, f'tau_decay={lyr.tau_decay}')
-        if lyr.activation != 'relu':
-            parts.append(f"activation='{lyr.activation}'")
-        if lyr.bias != 0.0:
-            parts.append(f'bias={lyr.bias}')
-        if lyr.noise_std != 0.0:
-            parts.append(f'noise_std={lyr.noise_std}')
-        if lyr.noise_tau != 0.0:
-            parts.append(f'noise_tau={lyr.noise_tau}')
-        _append_mod_parts(lyr, parts)
-        return f'RingAttractorLayer({", ".join(parts)})'
-
-    if isinstance(lyr, Conv2dLayer):
-        parts.insert(0, f'n_filters={lyr.n_filters}')
-        parts.insert(1, f'kernel_size={lyr.kernel_size}')
-        if lyr.stride != 1:
-            parts.append(f'stride={lyr.stride}')
-        if lyr.padding != 'same':
-            parts.append(f"padding='{lyr.padding}'")
-        if lyr.pool != 'global_avg':
-            parts.append(f"pool='{lyr.pool}'")
-        if lyr.activation != 'relu':
-            parts.append(f"activation='{lyr.activation}'")
-        if lyr.tau_rise != 0.0:
-            parts.append(f'tau_rise={lyr.tau_rise}')
-        if lyr.tau_decay != lyr.tau_rise:
-            parts.append(f'tau_decay={lyr.tau_decay}')
-        if lyr.bias != 0.0:
-            parts.append(f'bias={lyr.bias}')
-        if getattr(lyr, 'scale', 1.0) != 1.0:
-            parts.append(f'scale={lyr.scale}')
-        if getattr(lyr, 'lateralized', False):
-            parts.append('lateralized=True')
-        _append_mod_parts(lyr, parts)
-        return f'Conv2dLayer({", ".join(parts)})'
-
-    if isinstance(lyr, Leaky2dLayer):
-        parts.insert(0, f'tau_rise={lyr.tau_rise}')
-        parts.insert(1, f'tau_decay={lyr.tau_decay}')
-        if lyr.activation != 'linear':
-            parts.append(f"activation='{lyr.activation}'")
-        if lyr.n is not None:
-            parts.append(f'n={lyr.n}')
-        if getattr(lyr, 'derivative', False):
-            parts.append('derivative=True')
-        if lyr.in_ch != 1:
-            parts.append(f'in_ch={lyr.in_ch}')
-        if lyr.frame_h is not None:
-            parts.append(f'frame_h={lyr.frame_h}')
-        if lyr.frame_w is not None:
-            parts.append(f'frame_w={lyr.frame_w}')
-        if lyr.bias != 0.0:
-            parts.append(f'bias={lyr.bias}')
-        if getattr(lyr, 'noise_std', 0.0):
-            parts.append(f'noise_std={lyr.noise_std}')
-        if getattr(lyr, 'noise_tau', 0.0):
-            parts.append(f'noise_tau={lyr.noise_tau}')
-        if getattr(lyr, 'scale', 1.0) != 1.0:
-            parts.append(f'scale={lyr.scale}')
-        _append_mod_parts(lyr, parts)
-        return f'Leaky2dLayer({", ".join(parts)})'
-
-    return f'{t}(name="{lyr.name}")'
+    return f'{type(lyr).__name__}({", ".join(lyr.init_code_parts())})'
 
 
 def generate_weight_code(W, ns: int, nt: int) -> str:
@@ -331,55 +146,30 @@ def serialize_brain(content: str, layers, connections) -> str:
 
 # ── Network JSON (data-driven brain format) ────────────────────────────────────
 
-# Attributes serialized per sensor type (angle values stored in degrees for readability).
-_SENSOR_ATTRS = {
-    'GradientSensor':  ['n', 'angle_spread_deg', 'center_angle_deg', 'dist',
-                        'color_channel', 'gradient', 'scale', 'tau_rise', 'tau_decay', 'activation'],
-    'ColorSensor':     ['n', 'angle_spread_deg', 'center_angle_deg', 'dist',
-                        'color_channel', 'scale', 'tau_rise', 'tau_decay', 'activation'],
-    'CollisionSensor': ['n', 'angle_spread_deg', 'arc_angle_deg',
-                        'radius', 'scale', 'bias', 'noise_std', 'tau_rise', 'tau_decay', 'activation'],
-    'DistanceSensor':      ['n', 'angle_spread_deg', 'max_range', 'scale', 'tau_rise', 'tau_decay', 'activation'],
-    'InteroceptiveSensor': ['gradient', 'scale', 'max_val', 'start_val', 'bias', 'tau_rise', 'tau_decay'],
-    'WhiskerSensor':          ['length', 'mount_dist', 'mount_angle', 'n',
-                              'scale', 'tau_rise', 'tau_decay', 'activation'],
-    'ProprioceptiveSensor':   ['joint_id', 'use_velocity', 'scale', 'tau_rise', 'tau_decay', 'activation'],
-    'SkyCompassSensor':       ['n', 'scale', 'phase', 'tau_rise', 'tau_decay', 'activation',
-                              'noise_std', 'noise_tau', 'derivative'],
-    'CameraSensor':           ['width', 'height', 'fov_deg', 'center_angle_deg',
-                               'max_range', 'mode', 'lateralized', 'overlap',
-                               'tau_rise', 'tau_decay', 'activation', 'differential', 'noise_std'],
-    'GrayCameraSensor':       ['width', 'height', 'fov_deg', 'center_angle_deg',
-                               'max_range', 'lateralized', 'overlap',
-                               'tau_rise', 'tau_decay', 'activation', 'differential', 'noise_std'],
-    'RGBCameraSensor':        ['width', 'height', 'fov_deg', 'center_angle_deg',
-                               'max_range', 'lateralized', 'overlap',
-                               'tau_rise', 'tau_decay', 'activation', 'differential', 'noise_std'],
-}
-
-
 def _sensor_to_dict(sensor) -> dict:
+    from sensors import SENSOR_REGISTRY, BaseSensor
     t = type(sensor).__name__
     d = {'type': t, 'name': sensor.name}
     if getattr(sensor, 'robot_address', ''):
         d['robot_address'] = sensor.robot_address
-    for attr in _SENSOR_ATTRS.get(t, []):
-        if attr == 'angle_spread_deg':
-            d[attr] = round(float(np.degrees(sensor.angle_spread)), 4)
-        elif attr == 'center_angle_deg':
-            d[attr] = round(float(np.degrees(sensor.center_angle)), 4)
-        elif attr == 'arc_angle_deg':
-            d[attr] = round(float(np.degrees(sensor.arc_angle)), 4)
-        elif attr == 'fov_deg':
-            d[attr] = round(float(np.degrees(sensor.fov)), 4)
+    cls = SENSOR_REGISTRY.get(t)
+    all_params = list(cls.param_defs()) if cls and hasattr(cls, 'param_defs') else []
+    # Append shared base params (noise_std, tau_rise, activation, etc.) not already
+    # covered by the sensor-specific param_defs — mirrors what the UI dialogs do.
+    existing = {p[0] for p in all_params}
+    all_params += [p for p in BaseSensor._sensor_base_param_defs()
+                   if p[0] not in existing]
+    _always_write = {'tau_rise', 'tau_decay', 'activation', 'differential',
+                     'noise_std', 'noise_tau'}
+    for param_name, *_ in all_params:
+        if param_name in BaseSensor._ANGLE_ATTRS:
+            raw = getattr(sensor, param_name, None)
+            if raw is not None:
+                d[f'{param_name}_deg'] = round(float(np.degrees(raw)), 4)
         else:
-            val = getattr(sensor, attr, None)
-            # Always write dynamics attrs even when None (null in JSON) so the
-            # freshness check finds the key and doesn't flag them as missing.
-            _always_write = {'tau_rise', 'tau_decay', 'activation', 'differential',
-                             'noise_std', 'noise_tau'}
-            if val is not None or attr in _always_write:
-                d[attr] = val
+            val = getattr(sensor, param_name, None)
+            if val is not None or param_name in _always_write:
+                d[param_name] = val
     if getattr(sensor, 'modulators', None):
         d['modulators'] = sensor.modulators
     for attr in ('neuromodulator_transmitter', 'neuromodulator_color'):
@@ -413,10 +203,11 @@ def _sensor_from_dict(d: dict):
     else:
         kw.pop('bonsai_subject', None)
     # Convert degree fields back to radians for the constructor
-    for deg_key, rad_key in [('angle_spread_deg', 'angle_spread'),
-                              ('center_angle_deg', 'center_angle'),
-                              ('arc_angle_deg',    'arc_angle'),
-                              ('fov_deg',          'fov')]:
+    for deg_key, rad_key in [('angle_spread_deg',    'angle_spread'),
+                              ('center_angle_deg',   'center_angle'),
+                              ('arc_angle_deg',      'arc_angle'),
+                              ('fov_deg',            'fov'),
+                              ('vertical_angle_deg', 'vertical_angle')]:
         if deg_key in kw:
             kw[rad_key] = float(kw.pop(deg_key))
     # Backward compat: CollisionSensor 'noise' → 'noise_std'
@@ -467,9 +258,9 @@ def _layer_to_dict(layer) -> dict:
         val = getattr(layer, attr, None)
         if val:
             d[attr] = val
-    # Leaky2dLayer: persist shape metadata not covered by param_defs().
-    from neurons import Leaky2dLayer as _L2d
-    if isinstance(layer, _L2d):
+    # Leaky2dLayer / Reichardt2dLayer: persist shape metadata not covered by param_defs().
+    from neurons import Leaky2dLayer as _L2d, Reichardt2dLayer as _R2d
+    if isinstance(layer, (_L2d, _R2d)):
         for attr in ('n', 'in_ch', 'frame_h', 'frame_w'):
             val = getattr(layer, attr, None)
             if val is not None:
@@ -552,15 +343,13 @@ def _w_from_params(params: dict, n_tgt: int, n_src: int, saved_W=None):
     """
     if not params:
         return None
+    from sim_constants import WEIGHT_PATTERNS
     idx = params.get('type', -1)
     has_new_keys = 'rand_uniform' in params or 'rand_normal' in params
     if has_new_keys:
-        # 0=Uniform 1=Cosine 2=Gaussian 3=MexHat 4=OneToOne
-        # 5=RandUnif 6=RandNorm 7=Expression 8=Manual
-        names = ['uniform', 'cosine', 'gaussian', 'mexican_hat', 'one_to_one',
-                 'rand_uniform', 'rand_normal', 'expression', 'manual']
+        names = WEIGHT_PATTERNS
     else:
-        # 0=Uniform 1=Cosine 2=Gaussian 3=MexHat 4=OneToOne 5=Expression 6=Manual
+        # Old JSON (pre rand_uniform/rand_normal): 0=Uniform…4=OneToOne 5=Expression 6=Manual
         names = ['uniform', 'cosine', 'gaussian', 'mexican_hat', 'one_to_one',
                  'expression', 'manual']
     pattern = names[idx] if 0 <= idx < len(names) else 'manual'
@@ -714,9 +503,9 @@ def load_network_json(data: dict):
             layer._legacy_W = None
     # Re-establish lateral_pair cross-links for lateralized Conv2dLayer / Leaky2dLayer pairs.
     # New JSONs already have lateral_pair set via _layer_from_dict(); guard with is None check.
-    from neurons import Leaky2dLayer as _L2dR
+    from neurons import Leaky2dLayer as _L2dR, Reichardt2dLayer as _R2dR
     _lat_candidates = {l.name: l for l in layers
-                       if isinstance(l, (Conv2dLayer, _L2dR)) and getattr(l, 'lateralized', False)}
+                       if isinstance(l, (Conv2dLayer, _L2dR, _R2dR)) and getattr(l, 'lateralized', False)}
     for name, layer in _lat_candidates.items():
         if layer.lateral_pair is not None:
             continue  # already restored from JSON
@@ -729,22 +518,34 @@ def load_network_json(data: dict):
         if partner in _lat_candidates:
             layer.lateral_pair = partner
     lat_conv = {n: l for n, l in _lat_candidates.items() if isinstance(l, Conv2dLayer)}
+    lat_reich = {n: l for n, l in _lat_candidates.items() if isinstance(l, _R2dR)}
     # Sync operational params from _L to _R so both sides are always in step.
-    _LATERAL_SYNC = ('n_filters', 'kernel_size', 'stride', 'padding', 'pool',
-                     'activation', 'tau_rise', 'tau_decay', 'bias', 'scale')
+    _LATERAL_SYNC_CONV = ('n_filters', 'kernel_size', 'stride', 'padding', 'pool',
+                          'activation', 'tau_rise', 'tau_decay', 'bias', 'scale')
     for name, layer in lat_conv.items():
         if name.endswith('_L'):
             partner_name = layer.lateral_pair
             if partner_name and partner_name in lat_conv:
                 partner = lat_conv[partner_name]
-                for attr in _LATERAL_SYNC:
+                for attr in _LATERAL_SYNC_CONV:
+                    if hasattr(layer, attr):
+                        setattr(partner, attr, getattr(layer, attr))
+    _LATERAL_SYNC_REICH = ('n_dirs', 'offset', 'tau_delay', 'pool',
+                           'activation', 'tau_rise', 'tau_decay', 'bias', 'scale')
+    for name, layer in lat_reich.items():
+        if name.endswith('_L'):
+            partner_name = layer.lateral_pair
+            if partner_name and partner_name in lat_reich:
+                partner = lat_reich[partner_name]
+                for attr in _LATERAL_SYNC_REICH:
                     if hasattr(layer, attr):
                         setattr(partner, attr, getattr(layer, attr))
     # Auto-create the mirror camera→conv connection for lateralized pairs that only
     # have the _L side wired (e.g. JSONs saved before the auto-wiring feature was added).
     import copy as _copy
     conn_set = {(c.src, c.tgt) for c in connections}
-    for name, layer in lat_conv.items():
+    _all_lat = {**lat_conv, **lat_reich}
+    for name, layer in _all_lat.items():
         if not name.endswith('_L'):
             continue
         partner_name = layer.lateral_pair
@@ -788,8 +589,6 @@ def check_network_freshness(data: dict, sensors, layers) -> list:
     saved JSON — i.e. new params added to the simulator since the file was last saved.
     An empty list means everything is up-to-date.
     """
-    from neurons import DynamicsBase
-
     # Keys that are structural/display or saved only when non-empty —
     # never report these as "missing" regardless of which side they appear on.
     _SKIP = {
@@ -812,10 +611,6 @@ def check_network_freshness(data: dict, sensors, layers) -> list:
         if cls is None or not hasattr(cls, 'param_defs'):
             continue
         expected = list(cls.param_defs())
-        if issubclass(cls, DynamicsBase):
-            existing = {p[0] for p in expected}
-            expected += [p for p in DynamicsBase._dynamics_param_defs()
-                         if p[0] not in existing]
         expected_names = {p[0] for p in expected} - _SKIP
         saved_keys     = set(layer_data.get(layer.name, {}).keys()) - _SKIP
         missing        = sorted(expected_names - saved_keys)

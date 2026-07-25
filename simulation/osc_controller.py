@@ -1,5 +1,5 @@
 """
-osc_controller.py — oscilloscope channel management for the Braitenberg simulator.
+osc_controller.py — oscilloscope channel management for the LBP simulator.
 
 Owns the set of tracked channels, their colours, the per-channel multiplier
 spinboxes, trace ring-buffers, and the logic that discovers which channels the

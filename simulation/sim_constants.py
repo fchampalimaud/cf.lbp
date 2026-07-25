@@ -51,3 +51,12 @@ OBJECT_COLORS = [
     ('V', 'Orange', [1.0, 0.5, 0.0], '#FF8800'),
     ('U', 'Purple', [0.6, 0.0, 0.8], '#9900CC'),
 ]
+
+# Ordered weight pattern names — index is the integer stored in connection params['type'].
+# 'manual' is always last. Import this in brain_serializer and network_viz to avoid
+# the magic index 8 scattered across the code.
+WEIGHT_PATTERNS = [
+    'uniform', 'cosine', 'gaussian', 'mexican_hat', 'one_to_one',
+    'rand_uniform', 'rand_normal', 'expression', 'manual',
+]
+_IDX_MANUAL = len(WEIGHT_PATTERNS) - 1

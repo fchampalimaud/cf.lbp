@@ -1,12 +1,12 @@
 # 2D Simulator
 
-`simulation/2d/BraitenbergSimulator.py` is a self-contained Python application built on PySide6 and PyQtGraph. It runs a physics simulation of a differential-drive robot moving through a 2D arena, and lets you swap out the robot's "brain" — the code that turns sensor readings into motor commands — without restarting.
+`simulation/2d/LBPSimulator.py` is a world/brain simulator for studying *the Brain* in an evolutionary way — starting simple and growing progressively more sophisticated. It couples a physics simulator with a neural simulator, with sensors and motors as the interface between them. In its simplest form the physics layer runs a differential-drive robot through a 2D arena of gradient fields and obstacles; the neural layer runs dynamic neural models that read from the robot's sensors and write motor commands back.
 
 ## Running it
 
 ```bash
 cd simulation/2d
-python BraitenbergSimulator.py
+python LBPSimulator.py
 ```
 
 ## Key concepts
@@ -22,8 +22,8 @@ python BraitenbergSimulator.py
 ## Tutorials
 
 - [Tour of the simulator](tour.md) — every panel, button, and control, with linkable anchors
-- [Braitenberg with Code](braitenberg-code.md) — hardwire sensor-to-motor logic directly in `loop()`
-- [Braitenberg with Layers](braitenberg-neural.md) — express the same logic as a weight matrix so you can edit it live
+- [Coding Brains](coding-brains.md) — hardwire sensor-to-motor logic directly in `loop()`
+- [Wiring Brains](wiring-brains.md) — express the same logic as a weight matrix so you can edit it live
 
 ## Vehicle library
 

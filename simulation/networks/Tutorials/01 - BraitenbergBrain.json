@@ -1,162 +1,168 @@
 {
-  "version": 1,
-  "motor_layer": "motor",
-  "hidden_cols": [],
-  "disabled_cols": [],
-  "col_labels": {},
-  "sensors": [
-    {
-      "type": "GradientSensor",
-      "name": "sensor0",
-      "n": 2,
-      "angle_spread_deg": 30.0,
-      "center_angle_deg": 0.0,
-      "dist": 0.12,
-      "gradient": "A",
-      "scale": 50.0,
-      "activation": "linear",
-      "viz_layer": 3
-    }
-  ],
-  "layers": [
-    {
-      "type": "MotorLayer",
-      "name": "motor",
-      "layer": 4,
-      "activation": "linear",
-      "n": 2,
-      "scale": 1.0,
-      "robot_address": ""
-    },
-    {
-      "type": "ConstantLayer",
-      "name": "layer1",
-      "layer": 4,
-      "value": 70.0,
-      "n": 2,
-      "noise_std": 0.0
-    }
-  ],
-  "connections": [
-    {
-      "src": "sensor0",
-      "tgt": "motor",
-      "W": [
-        [
-          -1.0,
-          0.0
-        ],
-        [
-          0.0,
-          -1.0
-        ]
-      ],
-      "init_W": [
-        [
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0
-        ]
-      ],
-      "params": {
-        "type": 8,
-        "uniform": {
-          "amp": 1.0
-        },
-        "cosine": {
-          "amp": 1.0,
-          "ph0": 0.0,
-          "step": 180.0
-        },
-        "gaussian": {
-          "amp": 1.0,
-          "sig": 0.2,
-          "off": 0.0,
-          "base": 0.0
-        },
-        "mexican_hat": {
-          "exc": 2.0,
-          "sige": 0.7,
-          "inh": 1.0,
-          "sigi": 1.5
-        },
-        "one_to_one": {
-          "amp": 1.0,
-          "off": 0
-        },
-        "rand_uniform": {
-          "amp": 1.0
-        },
-        "rand_normal": {
-          "std": 0.1
-        },
-        "expression": {
-          "code": ""
+    "version": 1,
+    "motor_layer": "motor",
+    "hidden_cols": [],
+    "disabled_cols": [],
+    "col_labels": {},
+    "sensors": [
+        {
+            "type": "GradientSensor",
+            "name": "sensor0",
+            "n": 2,
+            "angle_spread_deg": 30.0,
+            "center_angle_deg": 0.0,
+            "dist": 0.12,
+            "color_channel": "",
+            "gradient": "A",
+            "scale": 50.0,
+            "tau_rise": null,
+            "tau_decay": null,
+            "activation": "linear",
+            "differential": false,
+            "noise_std": 0.0,
+            "robot_address": "",
+            "viz_layer": 3
         }
-      }
-    },
-    {
-      "src": "layer1",
-      "tgt": "motor",
-      "W": [
-        [
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0
-        ]
-      ],
-      "init_W": [
-        [
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0
-        ]
-      ],
-      "params": {
-        "type": 8,
-        "uniform": {
-          "amp": 1.0
+    ],
+    "layers": [
+        {
+            "type": "MotorLayer",
+            "name": "motor",
+            "layer": 4,
+            "activation": "linear",
+            "n": 2,
+            "scale": 1.0,
+            "robot_address": ""
         },
-        "cosine": {
-          "amp": 1.0,
-          "ph0": 0.0,
-          "step": 180.0
-        },
-        "gaussian": {
-          "amp": 1.0,
-          "sig": 0.2,
-          "off": 0.0,
-          "base": 0.0
-        },
-        "mexican_hat": {
-          "exc": 2.0,
-          "sige": 0.7,
-          "inh": 1.0,
-          "sigi": 1.5
-        },
-        "one_to_one": {
-          "amp": 1.0,
-          "off": 0
-        },
-        "rand_uniform": {
-          "amp": 1.0
-        },
-        "rand_normal": {
-          "std": 0.1
-        },
-        "expression": {
-          "code": ""
+        {
+            "type": "ConstantLayer",
+            "name": "layer1",
+            "layer": 4,
+            "value": 70.0,
+            "n": 2,
+            "noise_std": 0.0
         }
-      }
-    }
-  ]
+    ],
+    "connections": [
+        {
+            "src": "sensor0",
+            "tgt": "motor",
+            "W": [
+                [
+                    -1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    -1.0
+                ]
+            ],
+            "init_W": [
+                [
+                    1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    1.0
+                ]
+            ],
+            "params": {
+                "type": 8,
+                "uniform": {
+                    "amp": 1.0
+                },
+                "cosine": {
+                    "amp": 1.0,
+                    "ph0": 0.0,
+                    "step": 180.0
+                },
+                "gaussian": {
+                    "amp": 1.0,
+                    "sig": 0.2,
+                    "off": 0.0,
+                    "base": 0.0
+                },
+                "mexican_hat": {
+                    "exc": 2.0,
+                    "sige": 0.7,
+                    "inh": 1.0,
+                    "sigi": 1.5
+                },
+                "one_to_one": {
+                    "amp": 1.0,
+                    "off": 0
+                },
+                "rand_uniform": {
+                    "amp": 1.0
+                },
+                "rand_normal": {
+                    "std": 0.1
+                },
+                "expression": {
+                    "code": ""
+                }
+            }
+        },
+        {
+            "src": "layer1",
+            "tgt": "motor",
+            "W": [
+                [
+                    1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    1.0
+                ]
+            ],
+            "init_W": [
+                [
+                    1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    1.0
+                ]
+            ],
+            "params": {
+                "type": 8,
+                "uniform": {
+                    "amp": 1.0
+                },
+                "cosine": {
+                    "amp": 1.0,
+                    "ph0": 0.0,
+                    "step": 180.0
+                },
+                "gaussian": {
+                    "amp": 1.0,
+                    "sig": 0.2,
+                    "off": 0.0,
+                    "base": 0.0
+                },
+                "mexican_hat": {
+                    "exc": 2.0,
+                    "sige": 0.7,
+                    "inh": 1.0,
+                    "sigi": 1.5
+                },
+                "one_to_one": {
+                    "amp": 1.0,
+                    "off": 0
+                },
+                "rand_uniform": {
+                    "amp": 1.0
+                },
+                "rand_normal": {
+                    "std": 0.1
+                },
+                "expression": {
+                    "code": ""
+                }
+            }
+        }
+    ]
 }

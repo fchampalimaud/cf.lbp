@@ -1,5 +1,5 @@
 """
-sim_engine.py — pure physics step for the 2-D Braitenberg simulator.
+sim_engine.py — pure physics step for the 2-D LBP simulator.
 
 No Qt, no display logic. All functions take explicit arguments and are
 testable in isolation.

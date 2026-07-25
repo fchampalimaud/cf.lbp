@@ -1,592 +1,615 @@
 {
-  "version": 1,
-  "motor_layer": "motor",
-  "hidden_cols": [],
-  "disabled_cols": [],
-  "col_labels": {},
-  "sensors": [
-    {
-      "type": "CollisionSensor",
-      "name": "bumper",
-      "n": 2,
-      "angle_spread_deg": 90.0,
-      "arc_angle_deg": 40.0,
-      "radius": 1.2,
-      "scale": 100.0,
-      "bias": 0.0,
-      "noise_std": 20.0,
-      "activation": "linear",
-      "viz_layer": 5
-    },
-    {
-      "type": "RGBCameraSensor",
-      "name": "sensor2",
-      "width": 64,
-      "height": 48,
-      "fov_deg": 90.0,
-      "center_angle_deg": 0.0,
-      "max_range": 120.0,
-      "lateralized": true,
-      "overlap": 0
-    },
-    {
-      "type": "GradientSensor",
-      "name": "Rw",
-      "n": 2,
-      "angle_spread_deg": 30.0,
-      "center_angle_deg": 0.0,
-      "dist": 0.1,
-      "color_channel": "None",
-      "gradient": "A",
-      "scale": 50.0,
-      "activation": "linear",
-      "neuromodulator_transmitter": "dopamine",
-      "neuromodulator_color": "#FF0000",
-      "viz_layer": 1
-    },
-    {
-      "type": "GradientSensor",
-      "name": "Cost",
-      "n": 2,
-      "angle_spread_deg": 30.0,
-      "center_angle_deg": 0.0,
-      "dist": 0.12,
-      "gradient": "B",
-      "scale": 1.0,
-      "activation": "linear",
-      "viz_layer": 1
-    }
-  ],
-  "layers": [
-    {
-      "type": "SumLayer",
-      "name": "motor",
-      "layer": 7,
-      "activation": "linear",
-      "scale": 1.0,
-      "n": 2,
-      "viz_row": 0
-    },
-    {
-      "type": "ConstantLayer",
-      "name": "Drive",
-      "layer": 6,
-      "value": 50.0,
-      "n": 2,
-      "noise_std": 0.0
-    },
-    {
-      "type": "LeakyLayer",
-      "name": "bumper_short",
-      "layer": 5,
-      "tau_rise": 0.1,
-      "tau_decay": 0.5,
-      "bias": 0.0,
-      "activation": "relu",
-      "n": 2,
-      "derivative": false,
-      "noise_std": 0.0,
-      "noise_tau": 0.0,
-      "scale": 1.0
-    },
-    {
-      "type": "LeakyLayer",
-      "name": "bumper_long",
-      "layer": 5,
-      "tau_rise": 0.1,
-      "tau_decay": 1.0,
-      "bias": 0.0,
-      "activation": "relu",
-      "n": 2,
-      "derivative": false,
-      "noise_std": 0.0,
-      "noise_tau": 0.0,
-      "scale": 1.0
-    },
-    {
-      "type": "LeakyLayer",
-      "name": "fw",
-      "layer": 6,
-      "tau_rise": 0.1,
-      "tau_decay": 0.1,
-      "bias": 0.0,
-      "activation": "relu",
-      "n": 2,
-      "derivative": false,
-      "noise_std": 0.0,
-      "noise_tau": 0.0,
-      "scale": 1.0
-    },
-    {
-      "type": "LeakyLayer",
-      "name": "bw",
-      "layer": 6,
-      "tau_rise": 0.1,
-      "tau_decay": 0.1,
-      "bias": 0.0,
-      "activation": "relu",
-      "n": 2,
-      "derivative": false,
-      "noise_std": 0.0,
-      "noise_tau": 0.0,
-      "scale": 1.0
-    },
-    {
-      "type": "Conv2dLayer",
-      "name": "rg",
-      "layer": 2,
-      "n_filters": 4,
-      "kernel_size": 1,
-      "stride": 1,
-      "padding": "same",
-      "pool": "global_avg",
-      "activation": "relu",
-      "tau_rise": 0.1,
-      "tau_decay": 0.1,
-      "tau_a": 0.5,
-      "beta": 2.0,
-      "bias": 0.0,
-      "scale": 1.0,
-      "lateralized": false
-    },
-    {
-      "type": "ThreeFactorLayer",
-      "name": "layer9",
-      "layer": 3,
-      "n": 4,
-      "alpha_pos": 0.1,
-      "alpha_neg": 0.01,
-      "reward_modulator": "dopamine",
-      "tau_rise": 0.0,
-      "tau_decay": 0.0,
-      "activation": "heaviside",
-      "bias": 0.0,
-      "scale": 50.0,
-      "weight_decay": 0.001,
-      "w_min": "-1.0",
-      "w_max": "1.0",
-      "competition": "wta",
-      "k": 1,
-      "modulators": [
-        [
-          "dopamine",
-          1.0,
-          "none"
-        ]
-      ],
-      "viz_row": 0
-    }
-  ],
-  "connections": [
-    {
-      "src": "bumper",
-      "tgt": "bumper_short",
-      "W": [
-        [
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0
-        ]
-      ]
-    },
-    {
-      "src": "bumper",
-      "tgt": "bumper_long",
-      "W": [
-        [
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0
-        ]
-      ]
-    },
-    {
-      "src": "bumper_long",
-      "tgt": "bw",
-      "W": [
-        [
-          0.0,
-          1.0
-        ],
-        [
-          1.0,
-          0.0
-        ]
-      ]
-    },
-    {
-      "src": "bumper_short",
-      "tgt": "bw",
-      "W": [
-        [
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0
-        ]
-      ]
-    },
-    {
-      "src": "Drive",
-      "tgt": "fw",
-      "W": [
-        [
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0
-        ]
-      ]
-    },
-    {
-      "src": "fw",
-      "tgt": "motor",
-      "W": [
-        [
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0
-        ]
-      ]
-    },
-    {
-      "src": "bw",
-      "tgt": "motor",
-      "W": [
-        [
-          -1.0,
-          0.0
-        ],
-        [
-          0.0,
-          -1.0
-        ]
-      ]
-    },
-    {
-      "src": "sensor2_L",
-      "tgt": "rg",
-      "W": [
-        [
-          [
-            [
-              1.0
-            ]
-          ],
-          [
-            [
-              -1.0
-            ]
-          ],
-          [
-            [
-              0.0
-            ]
-          ]
-        ],
-        [
-          [
-            [
-              -1.0
-            ]
-          ],
-          [
-            [
-              1.0
-            ]
-          ],
-          [
-            [
-              0.0
-            ]
-          ]
-        ]
-      ],
-      "init_W": [
-        [
-          [
-            [
-              1.0
-            ]
-          ],
-          [
-            [
-              -1.0
-            ]
-          ],
-          [
-            [
-              0.0
-            ]
-          ]
-        ],
-        [
-          [
-            [
-              -1.0
-            ]
-          ],
-          [
-            [
-              1.0
-            ]
-          ],
-          [
-            [
-              0.0
-            ]
-          ]
-        ]
-      ]
-    },
-    {
-      "src": "sensor2_R",
-      "tgt": "rg",
-      "W": [
-        [
-          [
-            [
-              1.0
-            ]
-          ],
-          [
-            [
-              -1.0
-            ]
-          ],
-          [
-            [
-              0.0
-            ]
-          ]
-        ],
-        [
-          [
-            [
-              -1.0
-            ]
-          ],
-          [
-            [
-              1.0
-            ]
-          ],
-          [
-            [
-              0.0
-            ]
-          ]
-        ]
-      ],
-      "init_W": [
-        [
-          [
-            [
-              1.0
-            ]
-          ],
-          [
-            [
-              -1.0
-            ]
-          ],
-          [
-            [
-              0.0
-            ]
-          ]
-        ],
-        [
-          [
-            [
-              -1.0
-            ]
-          ],
-          [
-            [
-              1.0
-            ]
-          ],
-          [
-            [
-              0.0
-            ]
-          ]
-        ]
-      ]
-    },
-    {
-      "src": "rg",
-      "tgt": "layer9",
-      "W": [
-        [
-          0.7773050665855408,
-          0.36752328276634216,
-          -0.6784588694572449,
-          0.6673023700714111
-        ],
-        [
-          -0.6929236650466919,
-          0.5027002096176147,
-          -0.6077718734741211,
-          -0.4485112130641937
-        ],
-        [
-          0.9874749779701233,
-          -0.6034923791885376,
-          0.17974326014518738,
-          0.38616833090782166
-        ],
-        [
-          0.41366830468177795,
-          0.026169434189796448,
-          -0.5419288873672485,
-          0.8626872301101685
-        ]
-      ],
-      "init_W": [
-        [
-          0.784502,
-          0.370926,
-          -0.684738,
-          0.673478
-        ],
-        [
-          -0.699335,
-          0.507358,
-          -0.613397,
-          -0.452663
-        ],
-        [
-          0.996611,
-          -0.609079,
-          0.181407,
-          0.389743
-        ],
-        [
-          0.417496,
-          0.0264117,
-          -0.546944,
-          0.87067
-        ]
-      ],
-      "params": {
-        "type": 5,
-        "uniform": {
-          "amp": 1.0
+    "version": 1,
+    "motor_layer": "motor",
+    "hidden_cols": [],
+    "disabled_cols": [],
+    "col_labels": {},
+    "sensors": [
+        {
+            "type": "CollisionSensor",
+            "name": "bumper",
+            "n": 2,
+            "angle_spread_deg": 90.0,
+            "arc_angle_deg": 40.0,
+            "radius": 1.2,
+            "scale": 100.0,
+            "bias": 0.0,
+            "noise_std": 20.0,
+            "tau_rise": null,
+            "tau_decay": null,
+            "activation": "linear",
+            "differential": false,
+            "robot_address": "",
+            "viz_layer": 5
         },
-        "cosine": {
-          "amp": 1.0,
-          "ph0": 0.0,
-          "step": 90.0
+        {
+            "type": "RGBCameraSensor",
+            "name": "sensor2",
+            "width": 64,
+            "height": 48,
+            "fov_deg": 90.0,
+            "center_angle_deg": 0.0,
+            "max_range": 120.0,
+            "lateralized": true,
+            "overlap": 0,
+            "noise_std": 0.0,
+            "tau_rise": null,
+            "tau_decay": null,
+            "differential": false,
+            "activation": "linear",
+            "robot_address": ""
         },
-        "gaussian": {
-          "amp": 1.0,
-          "sig": 0.2,
-          "off": 0.0,
-          "base": 0.0
+        {
+            "type": "GradientSensor",
+            "name": "Rw",
+            "n": 2,
+            "angle_spread_deg": 30.0,
+            "center_angle_deg": 0.0,
+            "dist": 0.1,
+            "color_channel": "None",
+            "gradient": "A",
+            "scale": 50.0,
+            "tau_rise": null,
+            "tau_decay": null,
+            "activation": "linear",
+            "differential": false,
+            "noise_std": 0.0,
+            "robot_address": "",
+            "neuromodulator_transmitter": "dopamine",
+            "neuromodulator_color": "#FF0000",
+            "viz_layer": 1
         },
-        "mexican_hat": {
-          "exc": 2.0,
-          "sige": 0.35,
-          "inh": 1.0,
-          "sigi": 0.75
-        },
-        "one_to_one": {
-          "amp": 1.0,
-          "off": 0
-        },
-        "rand_uniform": {
-          "amp": 1.0
-        },
-        "rand_normal": {
-          "std": 0.1
-        },
-        "expression": {
-          "code": ""
+        {
+            "type": "GradientSensor",
+            "name": "Cost",
+            "n": 2,
+            "angle_spread_deg": 30.0,
+            "center_angle_deg": 0.0,
+            "dist": 0.12,
+            "color_channel": "",
+            "gradient": "B",
+            "scale": 1.0,
+            "tau_rise": null,
+            "tau_decay": null,
+            "activation": "linear",
+            "differential": false,
+            "noise_std": 0.0,
+            "robot_address": "",
+            "viz_layer": 1
         }
-      }
-    },
-    {
-      "src": "layer9",
-      "tgt": "fw",
-      "W": [
-        [
-          -1.0,
-          0.0,
-          -1.0,
-          0.0
-        ],
-        [
-          0.0,
-          -1.0,
-          0.0,
-          -1.0
-        ]
-      ],
-      "init_W": [
-        [
-          -1.0,
-          0.0,
-          -1.0,
-          0.0
-        ],
-        [
-          0.0,
-          -1.0,
-          0.0,
-          -1.0
-        ]
-      ],
-      "params": {
-        "type": 8,
-        "uniform": {
-          "amp": 1.0
+    ],
+    "layers": [
+        {
+            "type": "SumLayer",
+            "name": "motor",
+            "layer": 7,
+            "activation": "linear",
+            "scale": 1.0,
+            "n": 2,
+            "viz_row": 0
         },
-        "cosine": {
-          "amp": 1.0,
-          "ph0": 0.0,
-          "step": 180.0
+        {
+            "type": "ConstantLayer",
+            "name": "Drive",
+            "layer": 6,
+            "value": 50.0,
+            "n": 2,
+            "noise_std": 0.0
         },
-        "gaussian": {
-          "amp": 1.0,
-          "sig": 0.2,
-          "off": 0.0,
-          "base": 0.0
+        {
+            "type": "LeakyLayer",
+            "name": "bumper_short",
+            "layer": 5,
+            "tau_rise": 0.1,
+            "tau_decay": 0.5,
+            "bias": 0.0,
+            "activation": "relu",
+            "n": 2,
+            "derivative": false,
+            "noise_std": 0.0,
+            "noise_tau": 0.0,
+            "scale": 1.0
         },
-        "mexican_hat": {
-          "exc": 2.0,
-          "sige": 0.35,
-          "inh": 1.0,
-          "sigi": 0.75
+        {
+            "type": "LeakyLayer",
+            "name": "bumper_long",
+            "layer": 5,
+            "tau_rise": 0.1,
+            "tau_decay": 1.0,
+            "bias": 0.0,
+            "activation": "relu",
+            "n": 2,
+            "derivative": false,
+            "noise_std": 0.0,
+            "noise_tau": 0.0,
+            "scale": 1.0
         },
-        "one_to_one": {
-          "amp": 1.0,
-          "off": 0
+        {
+            "type": "LeakyLayer",
+            "name": "fw",
+            "layer": 6,
+            "tau_rise": 0.1,
+            "tau_decay": 0.1,
+            "bias": 0.0,
+            "activation": "relu",
+            "n": 2,
+            "derivative": false,
+            "noise_std": 0.0,
+            "noise_tau": 0.0,
+            "scale": 1.0
         },
-        "rand_uniform": {
-          "amp": 1.0
+        {
+            "type": "LeakyLayer",
+            "name": "bw",
+            "layer": 6,
+            "tau_rise": 0.1,
+            "tau_decay": 0.1,
+            "bias": 0.0,
+            "activation": "relu",
+            "n": 2,
+            "derivative": false,
+            "noise_std": 0.0,
+            "noise_tau": 0.0,
+            "scale": 1.0
         },
-        "rand_normal": {
-          "std": 0.1
+        {
+            "type": "Conv2dLayer",
+            "name": "rg",
+            "layer": 2,
+            "n_filters": 4,
+            "kernel_size": 1,
+            "stride": 1,
+            "padding": "same",
+            "pool": "global_avg",
+            "activation": "relu",
+            "tau_rise": 0.1,
+            "tau_decay": 0.1,
+            "tau_a": 0.5,
+            "beta": 2.0,
+            "bias": 0.0,
+            "scale": 1.0,
+            "noise_std": 0.0,
+            "noise_tau": 0.0,
+            "lateralized": false
         },
-        "expression": {
-          "code": ""
+        {
+            "type": "ThreeFactorLayer",
+            "name": "layer9",
+            "layer": 3,
+            "n": 4,
+            "alpha_pos": 0.1,
+            "alpha_neg": 0.01,
+            "reward_modulator": "dopamine",
+            "tau_rise": 0.0,
+            "tau_decay": 0.0,
+            "activation": "heaviside",
+            "bias": 0.0,
+            "scale": 50.0,
+            "weight_decay": 0.001,
+            "w_min": -1.0,
+            "w_max": 1.0,
+            "competition": "wta",
+            "k": 1,
+            "modulators": [
+                [
+                    "dopamine",
+                    1.0,
+                    "none"
+                ]
+            ],
+            "viz_row": 0
         }
-      }
-    }
-  ]
+    ],
+    "connections": [
+        {
+            "src": "bumper",
+            "tgt": "bumper_short",
+            "W": [
+                [
+                    1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    1.0
+                ]
+            ]
+        },
+        {
+            "src": "bumper",
+            "tgt": "bumper_long",
+            "W": [
+                [
+                    1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    1.0
+                ]
+            ]
+        },
+        {
+            "src": "bumper_long",
+            "tgt": "bw",
+            "W": [
+                [
+                    0.0,
+                    1.0
+                ],
+                [
+                    1.0,
+                    0.0
+                ]
+            ]
+        },
+        {
+            "src": "bumper_short",
+            "tgt": "bw",
+            "W": [
+                [
+                    1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    1.0
+                ]
+            ]
+        },
+        {
+            "src": "Drive",
+            "tgt": "fw",
+            "W": [
+                [
+                    1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    1.0
+                ]
+            ]
+        },
+        {
+            "src": "fw",
+            "tgt": "motor",
+            "W": [
+                [
+                    1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    1.0
+                ]
+            ]
+        },
+        {
+            "src": "bw",
+            "tgt": "motor",
+            "W": [
+                [
+                    -1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    -1.0
+                ]
+            ]
+        },
+        {
+            "src": "sensor2_L",
+            "tgt": "rg",
+            "W": [
+                [
+                    [
+                        [
+                            1.0
+                        ]
+                    ],
+                    [
+                        [
+                            -1.0
+                        ]
+                    ],
+                    [
+                        [
+                            0.0
+                        ]
+                    ]
+                ],
+                [
+                    [
+                        [
+                            -1.0
+                        ]
+                    ],
+                    [
+                        [
+                            1.0
+                        ]
+                    ],
+                    [
+                        [
+                            0.0
+                        ]
+                    ]
+                ]
+            ],
+            "init_W": [
+                [
+                    [
+                        [
+                            1.0
+                        ]
+                    ],
+                    [
+                        [
+                            -1.0
+                        ]
+                    ],
+                    [
+                        [
+                            0.0
+                        ]
+                    ]
+                ],
+                [
+                    [
+                        [
+                            -1.0
+                        ]
+                    ],
+                    [
+                        [
+                            1.0
+                        ]
+                    ],
+                    [
+                        [
+                            0.0
+                        ]
+                    ]
+                ]
+            ]
+        },
+        {
+            "src": "sensor2_R",
+            "tgt": "rg",
+            "W": [
+                [
+                    [
+                        [
+                            1.0
+                        ]
+                    ],
+                    [
+                        [
+                            -1.0
+                        ]
+                    ],
+                    [
+                        [
+                            0.0
+                        ]
+                    ]
+                ],
+                [
+                    [
+                        [
+                            -1.0
+                        ]
+                    ],
+                    [
+                        [
+                            1.0
+                        ]
+                    ],
+                    [
+                        [
+                            0.0
+                        ]
+                    ]
+                ]
+            ],
+            "init_W": [
+                [
+                    [
+                        [
+                            1.0
+                        ]
+                    ],
+                    [
+                        [
+                            -1.0
+                        ]
+                    ],
+                    [
+                        [
+                            0.0
+                        ]
+                    ]
+                ],
+                [
+                    [
+                        [
+                            -1.0
+                        ]
+                    ],
+                    [
+                        [
+                            1.0
+                        ]
+                    ],
+                    [
+                        [
+                            0.0
+                        ]
+                    ]
+                ]
+            ]
+        },
+        {
+            "src": "rg",
+            "tgt": "layer9",
+            "W": [
+                [
+                    0.7773050665855408,
+                    0.36752328276634216,
+                    -0.6784588694572449,
+                    0.6673023700714111
+                ],
+                [
+                    -0.6929236650466919,
+                    0.5027002096176147,
+                    -0.6077718734741211,
+                    -0.4485112130641937
+                ],
+                [
+                    0.9874749779701233,
+                    -0.6034923791885376,
+                    0.17974326014518738,
+                    0.38616833090782166
+                ],
+                [
+                    0.41366830468177795,
+                    0.026169434189796448,
+                    -0.5419288873672485,
+                    0.8626872301101685
+                ]
+            ],
+            "init_W": [
+                [
+                    0.784502,
+                    0.370926,
+                    -0.684738,
+                    0.673478
+                ],
+                [
+                    -0.699335,
+                    0.507358,
+                    -0.613397,
+                    -0.452663
+                ],
+                [
+                    0.996611,
+                    -0.609079,
+                    0.181407,
+                    0.389743
+                ],
+                [
+                    0.417496,
+                    0.0264117,
+                    -0.546944,
+                    0.87067
+                ]
+            ],
+            "params": {
+                "type": 5,
+                "uniform": {
+                    "amp": 1.0
+                },
+                "cosine": {
+                    "amp": 1.0,
+                    "ph0": 0.0,
+                    "step": 90.0
+                },
+                "gaussian": {
+                    "amp": 1.0,
+                    "sig": 0.2,
+                    "off": 0.0,
+                    "base": 0.0
+                },
+                "mexican_hat": {
+                    "exc": 2.0,
+                    "sige": 0.35,
+                    "inh": 1.0,
+                    "sigi": 0.75
+                },
+                "one_to_one": {
+                    "amp": 1.0,
+                    "off": 0
+                },
+                "rand_uniform": {
+                    "amp": 1.0
+                },
+                "rand_normal": {
+                    "std": 0.1
+                },
+                "expression": {
+                    "code": ""
+                }
+            }
+        },
+        {
+            "src": "layer9",
+            "tgt": "fw",
+            "W": [
+                [
+                    -1.0,
+                    0.0,
+                    -1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    -1.0,
+                    0.0,
+                    -1.0
+                ]
+            ],
+            "init_W": [
+                [
+                    -1.0,
+                    0.0,
+                    -1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    -1.0,
+                    0.0,
+                    -1.0
+                ]
+            ],
+            "params": {
+                "type": 8,
+                "uniform": {
+                    "amp": 1.0
+                },
+                "cosine": {
+                    "amp": 1.0,
+                    "ph0": 0.0,
+                    "step": 180.0
+                },
+                "gaussian": {
+                    "amp": 1.0,
+                    "sig": 0.2,
+                    "off": 0.0,
+                    "base": 0.0
+                },
+                "mexican_hat": {
+                    "exc": 2.0,
+                    "sige": 0.35,
+                    "inh": 1.0,
+                    "sigi": 0.75
+                },
+                "one_to_one": {
+                    "amp": 1.0,
+                    "off": 0
+                },
+                "rand_uniform": {
+                    "amp": 1.0
+                },
+                "rand_normal": {
+                    "std": 0.1
+                },
+                "expression": {
+                    "code": ""
+                }
+            }
+        }
+    ]
 }

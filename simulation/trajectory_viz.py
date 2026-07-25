@@ -1,5 +1,5 @@
 """
-trajectory_viz.py — Trajectory visualiser for the 2-D Braitenberg simulator.
+trajectory_viz.py — Trajectory visualiser for the 2-D LBP simulator.
 
 Architecture (each layer is independently importable):
 

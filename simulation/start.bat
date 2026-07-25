@@ -32,7 +32,7 @@ set "PATH=%USERPROFILE%\.local\bin;%USERPROFILE%\.cargo\bin;%PATH%"
 echo Starting simulator...
 echo.
 cd /d "%~dp0"
-uv run --python 3.11 --with-requirements requirements.txt python BraitenbergSimulator.py
+uv run --python 3.11 --with-requirements requirements.txt python LBPSimulator.py
 
 :: Keep the window open if something went wrong
 if %ERRORLEVEL% neq 0 (

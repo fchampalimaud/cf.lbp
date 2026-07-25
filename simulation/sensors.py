@@ -145,6 +145,25 @@ class BaseSensor(DynamicsBase):
         mg1 = getattr(b1, 'mirror_group', None)
         return bool(mg0 and mg0 == mg1)
 
+    # ── Visualization / serialization protocol ─────────────────────────────────
+
+    is_image_node = False  # overridden to True by CameraSensor
+
+    _ANGLE_ATTRS = frozenset({'angle_spread', 'center_angle', 'arc_angle', 'fov', 'vertical_angle'})
+
+    def thumbnail_frames(self, disp_h=32):
+        """Yield (key, uint8_data) tuples for image thumbnail display. Default: nothing."""
+        yield from ()
+
+    @property
+    def viz_color(self):
+        """Color used for the node in the network visualizer."""
+        return getattr(self, '_viz_color', None)
+
+    def n_per_side(self):
+        """Number of outputs per lateralized half (1 for cameras, self.n for other sensors)."""
+        return self.n or 1
+
     def process_robot_value(self, raw, sim_cfg) -> np.ndarray:
         """Apply the full pipeline (scale, bias, noise, tau, activation) to a raw robot input.
 
@@ -203,9 +222,9 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
     _viz_lw     = 1.2
 
     def __init__(self, n=2, angle_spread=30.0, center_angle=0.0, dist=SENSOR_DIST,
-                 color_channel=None, gradient=None, scale=1.0, noise_std=0.0,
-                 tau_rise=None, tau_decay=None,
-                 activation='linear', differential=False, name='light', group=None,
+                 color_channel='', gradient=None, scale=1.0, tau_rise=None,
+                 tau_decay=None, activation='linear',
+                 differential=False, noise_std=0.0, name='light', group=None,
                  modulators=None, robot_address=''):
         self.n              = n
         self.angle_spread   = np.radians(angle_spread)
@@ -295,9 +314,9 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
     _viz_lw     = 1.5
 
     def __init__(self, n=2, angle_spread=30.0, center_angle=0.0, dist=SENSOR_DIST,
-                 color_channel=None, scale=1.0, noise_std=0.0,
-                 tau_rise=None, tau_decay=None,
-                 activation='linear', differential=False, name='objects', group=None,
+                 color_channel='', scale=1.0, tau_rise=None,
+                 tau_decay=None, activation='linear',
+                 differential=False, noise_std=0.0, name='objects', group=None,
                  modulators=None, robot_address=''):
         self.n              = n
         self.angle_spread   = np.radians(angle_spread)
@@ -404,9 +423,9 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(o_i)\\ \\text{if no dynamics})$$
     viz_type      = 'arc'
 
     def __init__(self, n=4, angle_spread=90.0, arc_angle=45.0,
-                 radius=1.2, scale=1.0, bias=0.0, noise_std=0.0, noise=None,
-                 tau_rise=None, tau_decay=None,
-                 activation='linear', differential=False, name='collision', group=None,
+                 radius=1.2, scale=1.0, bias=0.0, noise_std=0.0, tau_rise=None,
+                 tau_decay=None, activation='linear',
+                 differential=False, noise=None, name='collision', group=None,
                  modulators=None, robot_address=''):
         self.n              = n
         self.angle_spread   = np.radians(angle_spread)
@@ -549,9 +568,9 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
     _viz_dashed = True
     _viz_lw     = 1.2
 
-    def __init__(self, n=5, angle_spread=90.0, max_range=1.0, scale=1.0, noise_std=0.0,
-                 tau_rise=None, tau_decay=None,
-                 activation='linear', differential=False, name='dist', group=None,
+    def __init__(self, n=5, angle_spread=90.0, max_range=1.0, scale=1.0, tau_rise=None,
+                 tau_decay=None, activation='linear',
+                 differential=False, noise_std=0.0, name='dist', group=None,
                  modulators=None, robot_address=''):
         self.n              = n
         self.angle_spread   = np.radians(angle_spread)
@@ -717,7 +736,8 @@ $$\\tau = \\begin{cases}\\tau_{rise} & s_{\\text{target}} > s \\\\ \\tau_{decay}
     viz_type = 'mouth'
 
     def __init__(self, gradient='A', scale=1.0, max_val=1.0, start_val=0.0,
-                 tau_rise=1.0, tau_decay=30.0, differential=False, bias=0.0, noise_std=0.0,
+                 bias=0.0, tau_rise=1.0, tau_decay=30.0, differential=False,
+                 activation='linear', noise_std=0.0,
                  name='gut', group=None, modulators=None, robot_address=''):
         self.n              = 1
         self.gradient       = gradient
@@ -725,7 +745,8 @@ $$\\tau = \\begin{cases}\\tau_{rise} & s_{\\text{target}} > s \\\\ \\tau_{decay}
         self.start_val      = start_val
         self.differential   = differential
         self.bias           = bias
-        self._init_dynamics(tau_rise=tau_rise, tau_decay=tau_decay, scale=scale, noise_std=noise_std)
+        self._init_dynamics(tau_rise=tau_rise, tau_decay=tau_decay,
+                            activation=activation, scale=scale, noise_std=noise_std)
         self.name           = name
         self.group          = group
         self.modulators     = modulators or []
@@ -822,8 +843,8 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
 
     _viz_color = '#AADDFF'
 
-    def __init__(self, joint_id='', use_velocity=False, scale=1.0, noise_std=0.0,
-                 tau_rise=None, tau_decay=None, activation='linear', differential=False,
+    def __init__(self, joint_id='', use_velocity=False, scale=1.0, tau_rise=None,
+                 tau_decay=None, activation='linear', differential=False, noise_std=0.0,
                  name='proprio', group=None, modulators=None, robot_address=''):
         self.n              = 1
         self.joint_id       = joint_id
@@ -907,8 +928,8 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
     viz_type   = 'whisker'
 
     def __init__(self, length=0.15, mount_dist=0.0, mount_angle=0.0,
-                 n=1, scale=1.0, noise_std=0.0, tau_rise=None, tau_decay=None,
-                 activation='linear', differential=False, name='whisker', group=None,
+                 n=1, scale=1.0, tau_rise=None, tau_decay=None, activation='linear',
+                 differential=False, noise_std=0.0, name='whisker', group=None,
                  modulators=None, robot_address=''):
         self.length         = length
         self.mount_dist     = mount_dist
@@ -1055,8 +1076,8 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
 
     def __init__(self, n=8, scale=1.0, phase=0.0,
                  tau_rise=None, tau_decay=None,
-                 noise_std=0.0, noise_tau=0.0,
-                 activation='relu', differential=False, derivative=None,
+                 activation='relu', noise_std=0.0,
+                 noise_tau=0.0, differential=False, derivative=None,
                  name='sky', group=None, modulators=None, robot_address=''):
         self.n              = n
         self.phase          = phase
@@ -1132,19 +1153,46 @@ class CameraSensor(BaseSensor):
     The full 2-D frame is cached in `_last_frame` as (H, W) [gray] or
     (H, W, 3) [RGB] for the network visualiser to read.
     """
-    viz_type = 'camera_fov'
-    in_ch    = 1       # overridden by subclasses; used by FilterStackDialog
-    mode     = 'gray'  # overridden by subclasses; kept for backward-compat checks
+    viz_type      = 'camera_fov'
+    in_ch         = 1       # overridden by subclasses; used by FilterStackDialog
+    mode          = 'gray'  # overridden by subclasses; kept for backward-compat checks
+    is_image_node = True
+
+    def n_per_side(self):
+        return 1
+
+    def thumbnail_frames(self, disp_h=32):
+        frame = getattr(self, '_last_frame', None)
+        if frame is None:
+            return
+        if getattr(self, 'in_ch', 1) == 3:
+            data = (np.clip(frame, 0, 1) * 255).astype(np.uint8)
+        else:
+            g    = frame if frame.ndim == 2 else np.mean(frame, axis=-1)
+            g    = (np.clip(g, 0, 1) * 255).astype(np.uint8)
+            data = np.stack([g, g, g], axis=-1)
+        reps = max(1, disp_h // data.shape[0])
+        data = np.repeat(data, reps, axis=0)[:disp_h]
+        if getattr(self, 'lateralized', False):
+            half    = self.width // 2
+            ovl     = getattr(self, 'overlap', 0)
+            l_end   = int(np.clip(half + ovl, 0, self.width))
+            r_start = int(np.clip(half - ovl, 0, self.width))
+            yield f'{self.name}_L', data[:, :l_end, :]
+            yield f'{self.name}_R', data[:, r_start:, :]
+        else:
+            yield self.name, data
 
     def __init__(self, width=64, height=48, fov=90.0, center_angle=0.0,
-                 max_range=10.0, lateralized=False, overlap=0, differential=False,
-                 noise_std=0.0, tau_rise=None, tau_decay=None,
+                 vertical_angle=0.0, max_range=10.0, lateralized=False, overlap=0,
+                 differential=False, noise_std=0.0, tau_rise=None, tau_decay=None,
                  name='camera', group=None, body_id='root', robot_address='',
                  **_ignored):
         self.width          = width
         self.height         = max(1, height)
         self.fov            = np.radians(fov)
         self.center_angle   = np.radians(center_angle)
+        self.vertical_angle = np.radians(vertical_angle)
         self.max_range      = max_range
         self.lateralized    = lateralized
         self.overlap        = overlap
@@ -1169,6 +1217,7 @@ class CameraSensor(BaseSensor):
             ('height',         int,   48,    'tile rows (1 = single strip)'),
             ('fov',            float, np.radians(90.0), 'field of view in degrees'),
             ('center_angle',   float, 0.0,   'center offset from heading (degrees)'),
+            ('vertical_angle', float, 0.0,   'vertical tilt in degrees (positive = tilt down)'),
             ('max_range',      float, 10.0,  'max ray length (world units)'),
             ('lateralized',    bool,  False, 'split output into left/right halves ({name}_L, {name}_R)'),
             ('overlap',        int,   0,     'pixels past midline included in each half (negative = gap)'),
@@ -1263,7 +1312,7 @@ class CameraSensor(BaseSensor):
     # ------------------------------------------------------------------
 
     def _raycast(self, x, y, theta, world, sim_cfg):
-        """Run all rays and return (width, 3) RGB pixel array."""
+        """Run all rays; return ((width,3) RGB pixels, (width,) distances)."""
         limit  = sim_cfg.arena_scale
         angles = np.linspace(
             theta + self.center_angle + self.fov / 2,
@@ -1287,7 +1336,35 @@ class CameraSensor(BaseSensor):
         pixels = np.where(use_obj[:, np.newaxis],   np.clip(c_obj,  0.0, 1.0), pixels)
         pixels = np.where(use_wall[:, np.newaxis],  np.clip(c_wall, 0.0, 1.0), pixels)
         pixels = np.where(use_arena[:, np.newaxis], 1.0,                       pixels)
-        return pixels
+        return pixels, best_d
+
+    def _build_frame(self, pixels, best_d):
+        """Tile to (H, W, 3), clipping each row's range by vertical_angle.
+
+        Effective max range per row = max_range * cos(row_vert_angle):
+          - top row    → less steep → farther (larger range)
+          - bottom row → more steep → closer  (smaller range)
+        At vertical_angle=0 all rows are identical (no perspective effect).
+        """
+        vert = self.vertical_angle
+        if vert <= 0.0:
+            return np.tile(pixels[np.newaxis, :, :], (self.height, 1, 1))
+        # Per-row vertical angle: assume square pixels so vertical FOV ∝ aspect ratio.
+        aspect   = self.height / max(self.width, 1)
+        vfov     = self.fov * aspect                     # vertical FOV (radians)
+        row_t    = np.linspace(-0.5, 0.5, self.height)  # top=-0.5 (far), bottom=+0.5 (near)
+        row_vert = vert + row_t * vfov                   # per-row tilt below horizontal
+        # Rows above horizontal → full range; rows below → cos-scaled range
+        row_max  = np.where(
+            row_vert <= 0,
+            self.max_range,
+            self.max_range * np.cos(np.clip(row_vert, 0.0, np.pi / 2))
+        )  # (H,)
+        # Mask out pixels beyond each row's effective range
+        out_mask = best_d[np.newaxis, :] >= row_max[:, np.newaxis]  # (H, W)
+        frame    = np.tile(pixels[np.newaxis, :, :], (self.height, 1, 1)).astype(np.float32)
+        frame[out_mask] = 0.0
+        return frame
 
     def sample(self, x, y, theta, world, sim_cfg) -> np.ndarray:
         raise NotImplementedError
@@ -1314,15 +1391,17 @@ $$\\text{output} \\in \\mathbb{R}^{H \\times W} \\quad \\text{(flat row-major)}$
 $$\\text{sensor\\_L} \\in \\mathbb{R}^{H \\times (W/2 + \\text{overlap})}, \\quad \\text{sensor\\_R} \\in \\mathbb{R}^{H \\times (W/2 + \\text{overlap})}$$
 
 Each half connects to its own `Conv2dLayer` (`_L` / `_R` pair). Connect to a `Conv2dLayer` to apply 2-D filters, or use the flat vector directly.
+
+- `vertical_angle` — camera tilt in degrees. Positive = tilted down toward ground, negative = tilted up. Each image row sees a different ground distance: bottom rows see closer, top rows see farther. At 90° the camera looks straight down and the image goes black.
 """
 
     in_ch = 1
     mode  = 'gray'
 
     def sample(self, x, y, theta, world, sim_cfg) -> np.ndarray:
-        pixels = self._raycast(x, y, theta, world, sim_cfg)
-        luma   = np.mean(pixels, axis=-1)                           # (W,)
-        frame  = np.tile(luma[np.newaxis, :], (self.height, 1))    # (H, W)
+        pixels, best_d = self._raycast(x, y, theta, world, sim_cfg)
+        rgb_frame      = self._build_frame(pixels, best_d)         # (H, W, 3)
+        frame          = np.mean(rgb_frame, axis=-1)               # (H, W) luminance
         self._last_frame = frame
         if self.lateralized:
             mid     = self.width // 2
@@ -1330,7 +1409,7 @@ Each half connects to its own `Conv2dLayer` (`_L` / `_R` pair). Connect to a `Co
             r_start = int(np.clip(mid - self.overlap, 0, self.width))
             self._left_output  = frame[:, :l_end  ].reshape(-1).astype(np.float32)
             self._right_output = frame[:, r_start:].reshape(-1).astype(np.float32)
-        out = luma.astype(np.float32)                               # (W,)
+        out = frame[self.height // 2].astype(np.float32)           # (W,) centre row
         return self._process(out, sim_cfg)
 
 
@@ -1351,14 +1430,16 @@ $$\\text{output} \\in \\mathbb{R}^{3 \\times H \\times W} \\quad \\text{(flat: c
 $$\\text{sensor\\_L} \\in \\mathbb{R}^{3 \\times H \\times (W/2 + \\text{overlap})}, \\quad \\text{sensor\\_R} \\in \\mathbb{R}^{3 \\times H \\times (W/2 + \\text{overlap})}$$
 
 Connect to a `Conv2dLayer` with `in_ch=3` (set automatically from camera mode).
+
+- `vertical_angle` — camera tilt in degrees. Positive = tilted down toward ground, negative = tilted up. Each image row sees a different ground distance: bottom rows see closer, top rows see farther. At 90° the camera looks straight down and the image goes black.
 """
 
     in_ch = 3
     mode  = 'rgb'
 
     def sample(self, x, y, theta, world, sim_cfg) -> np.ndarray:
-        pixels = self._raycast(x, y, theta, world, sim_cfg)
-        frame  = np.tile(pixels[np.newaxis, :, :], (self.height, 1, 1))  # (H, W, 3)
+        pixels, best_d = self._raycast(x, y, theta, world, sim_cfg)
+        frame  = self._build_frame(pixels, best_d)                        # (H, W, 3)
         self._last_frame = frame
         if self.lateralized:
             mid     = self.width // 2

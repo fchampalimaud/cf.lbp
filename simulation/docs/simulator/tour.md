@@ -5,8 +5,7 @@ This page is a reference for every panel and control in the window. Other tutori
 ## Launching { #launching }
 
 ```bash
-cd simulation/2d
-python BraitenbergSimulator.py
+python LBPSimulator.py
 ```
 
 The window opens with the robot centred in an empty arena. Nothing moves until you press [Run](#run-stop).
@@ -67,7 +66,7 @@ All simulation controls live in one group with no sub-sections.
 
 ### Brain selector { #brain-selector }
 
-A drop-down listing every Python file found in `simulation/2d/brains/`. Select a brain to load it; the [Brain Parameters](#brain-parameters) group below updates to show its [Params](braitenberg-code.md#parameters).
+A drop-down listing every Python file found in `brains/`. Select a brain to load it; the [Brain Parameters](#brain-parameters) group below updates to show its [Params](coding-brains.md#creating-your-brain-file).
 
 ### ⟳ Reload { #reload }
 
@@ -83,7 +82,7 @@ Opens the network editor window, which shows the brain's layers and connections 
 
 ### Brain Parameters { #brain-parameters }
 
-Auto-generated from the brain's [`Param`](braitenberg-code.md#parameters) descriptors. Each slider controls one parameter in real time. The **↺ Reset Defaults** button at the bottom restores all sliders to their coded defaults.
+Auto-generated from the brain's [`Param`](coding-brains.md#creating-your-brain-file) descriptors. Each slider controls one parameter in real time. The **↺ Reset Defaults** button at the bottom restores all sliders to their coded defaults.
 
 ---
 
@@ -120,7 +119,7 @@ Solid circles that the robot physically cannot pass through. Added the same way 
 
 ### Sessions { #sessions }
 
-Saves and loads the complete state of the world: gradient patches, objects, arena shape, simulation speed, and the current brain's parameter values. Sessions are stored as JSON files in `simulation/2d/configs/`.
+Saves and loads the complete state of the world: gradient patches, objects, arena shape, simulation speed, and the current brain's parameter values. Sessions are stored as JSON files in `configs/`.
 
 **Name** — the filename (without `.json`) for the next save.
 **Save** — writes the current state to `configs/<name>.json`.
@@ -141,7 +140,7 @@ Records sensor and motor data to a timestamped CSV file during a run.
 
 ## Physics tab { #physics-tab }
 
-Exposes the raw simulation parameters defined in [`SimConfig`](sim_config.py): `dt`, `arena_scale`, `motor_gain`, `sense_radius`, `sensor_angle`, `body_radius`, and others. Changing these takes effect on the next [Reset](#reset).
+Exposes the raw simulation parameters defined in `SimConfig`: `dt`, `arena_scale`, `motor_gain`, `sense_radius`, `sensor_angle`, `body_radius`, and others. Changing these takes effect on the next [Reset](#reset).
 
 ---
 

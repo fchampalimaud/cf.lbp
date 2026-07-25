@@ -1,4 +1,4 @@
-# 2D Braitenberg Simulator
+# 2D LBP Simulator
 
 A self-contained Python application for building and running neural-circuit behaviours on a simulated differential-drive robot. Everything runs on your laptop — no hardware required.
 
@@ -6,16 +6,16 @@ A self-contained Python application for building and running neural-circuit beha
 
 ```bash
 git clone <repo-url>
-cd cf.lbp/simulation
+cd simulation/2d
 pip install -r requirements.txt
-python BraitenbergSimulator.py
+python LBPSimulator.py
 ```
 
 ## Where to start
 
 - [Tour of the simulator](simulator/tour.md) — every panel, button, and control
-- [Braitenberg with Code](simulator/braitenberg-code.md) — build your first vehicle in five minutes
-- [Braitenberg with Layers](simulator/braitenberg-neural.md) — express the same logic as a neural circuit
+- [Coding Brains](simulator/coding-brains.md) — build your first vehicle in five minutes
+- [Wiring Brains](simulator/wiring-brains.md) — express the same logic as a neural circuit
 
 ## Key concepts
 

@@ -1,5 +1,5 @@
 """
-logger.py — structured data logger for the 2-D Braitenberg simulator.
+logger.py — structured data logger for the 2-D LBP simulator.
 
 Records per-tick robot state and world landmark state to a JSON-lines file.
 Each row is a self-contained dict; rows are separated by newlines.

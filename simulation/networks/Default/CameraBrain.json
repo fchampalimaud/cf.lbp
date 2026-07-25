@@ -1,381 +1,490 @@
 {
-  "version": 1,
-  "motor_layer": "motor",
-  "hidden_cols": [
-    3
-  ],
-  "disabled_cols": [],
-  "col_labels": {},
-  "sensors": [
-    {
-      "type": "CollisionSensor",
-      "name": "bumper",
-      "n": 2,
-      "angle_spread_deg": 90.0,
-      "arc_angle_deg": 40.0,
-      "radius": 1.2,
-      "scale": 100.0,
-      "bias": 0.0,
-      "noise_std": 20.0,
-      "activation": "linear",
-      "viz_layer": 3
-    },
-    {
-      "type": "RGBCameraSensor",
-      "name": "sensor2",
-      "width": 64,
-      "height": 48,
-      "fov_deg": 90.0,
-      "center_angle_deg": 0.0,
-      "max_range": 120.0,
-      "lateralized": true,
-      "overlap": 0
-    },
-    {
-      "type": "GradientSensor",
-      "name": "Rw",
-      "n": 2,
-      "angle_spread_deg": 30.0,
-      "center_angle_deg": 0.0,
-      "dist": 0.1,
-      "color_channel": "None",
-      "gradient": "A",
-      "scale": 1.0,
-      "activation": "linear",
-      "viz_layer": 1
-    },
-    {
-      "type": "GradientSensor",
-      "name": "Cost",
-      "n": 2,
-      "angle_spread_deg": 30.0,
-      "center_angle_deg": 0.0,
-      "dist": 0.12,
-      "gradient": "B",
-      "scale": 1.0,
-      "activation": "linear",
-      "viz_layer": 1
-    }
-  ],
-  "layers": [
-    {
-      "type": "SumLayer",
-      "name": "motor",
-      "layer": 5,
-      "activation": "linear",
-      "scale": 1.0,
-      "n": 2,
-      "viz_row": 0
-    },
-    {
-      "type": "ConstantLayer",
-      "name": "Drive",
-      "layer": 4,
-      "value": 50.0,
-      "n": 2,
-      "noise_std": 0.0
-    },
-    {
-      "type": "LeakyLayer",
-      "name": "bumper_short",
-      "layer": 3,
-      "tau_rise": 0.1,
-      "tau_decay": 0.5,
-      "bias": 0.0,
-      "activation": "relu",
-      "n": 2,
-      "derivative": false,
-      "noise_std": 0.0,
-      "noise_tau": 0.0,
-      "scale": 1.0
-    },
-    {
-      "type": "LeakyLayer",
-      "name": "bumper_long",
-      "layer": 3,
-      "tau_rise": 0.1,
-      "tau_decay": 1.0,
-      "bias": 0.0,
-      "activation": "relu",
-      "n": 2,
-      "derivative": false,
-      "noise_std": 0.0,
-      "noise_tau": 0.0,
-      "scale": 1.0
-    },
-    {
-      "type": "LeakyLayer",
-      "name": "fw",
-      "layer": 4,
-      "tau_rise": 0.1,
-      "tau_decay": 0.1,
-      "bias": 0.0,
-      "activation": "relu",
-      "n": 2,
-      "derivative": false,
-      "noise_std": 0.0,
-      "noise_tau": 0.0,
-      "scale": 1.0
-    },
-    {
-      "type": "LeakyLayer",
-      "name": "bw",
-      "layer": 4,
-      "tau_rise": 0.1,
-      "tau_decay": 0.1,
-      "bias": 0.0,
-      "activation": "relu",
-      "n": 2,
-      "derivative": false,
-      "noise_std": 0.0,
-      "noise_tau": 0.0,
-      "scale": 1.0
-    },
-    {
-      "type": "Conv2dLayer",
-      "name": "rg",
-      "layer": 2,
-      "n_filters": 4,
-      "kernel_size": 1,
-      "stride": 1,
-      "padding": "same",
-      "pool": "global_avg",
-      "activation": "relu",
-      "tau_rise": 0.1,
-      "tau_decay": 0.1,
-      "tau_a": 0.5,
-      "beta": 2.0,
-      "bias": 0.0,
-      "scale": 70.0,
-      "lateralized": false
-    }
-  ],
-  "connections": [
-    {
-      "src": "bumper",
-      "tgt": "bumper_short",
-      "W": [
-        [
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0
-        ]
-      ]
-    },
-    {
-      "src": "bumper",
-      "tgt": "bumper_long",
-      "W": [
-        [
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0
-        ]
-      ]
-    },
-    {
-      "src": "bumper_long",
-      "tgt": "bw",
-      "W": [
-        [
-          0.0,
-          1.0
-        ],
-        [
-          1.0,
-          0.0
-        ]
-      ]
-    },
-    {
-      "src": "bumper_short",
-      "tgt": "bw",
-      "W": [
-        [
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0
-        ]
-      ]
-    },
-    {
-      "src": "Drive",
-      "tgt": "fw",
-      "W": [
-        [
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0
-        ]
-      ]
-    },
-    {
-      "src": "fw",
-      "tgt": "motor",
-      "W": [
-        [
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0
-        ]
-      ]
-    },
-    {
-      "src": "bw",
-      "tgt": "motor",
-      "W": [
-        [
-          -1.0,
-          0.0
-        ],
-        [
-          0.0,
-          -1.0
-        ]
-      ]
-    },
-    {
-      "src": "sensor2_L",
-      "tgt": "rg",
-      "W": [
-        [
-          [
-            [
-              1.0
-            ]
-          ],
-          [
-            [
-              -1.0
-            ]
-          ],
-          [
-            [
-              0.0
-            ]
-          ]
-        ],
-        [
-          [
-            [
-              -1.0
-            ]
-          ],
-          [
-            [
-              1.0
-            ]
-          ],
-          [
-            [
-              0.0
-            ]
-          ]
-        ]
-      ]
-    },
-    {
-      "src": "sensor2_R",
-      "tgt": "rg",
-      "W": [
-        [
-          [
-            [
-              1.0
-            ]
-          ],
-          [
-            [
-              -1.0
-            ]
-          ],
-          [
-            [
-              0.0
-            ]
-          ]
-        ],
-        [
-          [
-            [
-              -1.0
-            ]
-          ],
-          [
-            [
-              1.0
-            ]
-          ],
-          [
-            [
-              0.0
-            ]
-          ]
-        ]
-      ]
-    },
-    {
-      "src": "rg",
-      "tgt": "fw",
-      "W": [
-        [
-          -1.0,
-          0.0,
-          -1.0,
-          0.0
-        ],
-        [
-          0.0,
-          -1.0,
-          0.0,
-          -1.0
-        ]
-      ],
-      "params": {
-        "type": 6,
-        "uniform": {
-          "amp": 1.0
+    "version": 1,
+    "motor_layer": "motor",
+    "hidden_cols": [
+        3
+    ],
+    "disabled_cols": [],
+    "col_labels": {},
+    "sensors": [
+        {
+            "type": "CollisionSensor",
+            "name": "bumper",
+            "n": 2,
+            "angle_spread_deg": 90.0,
+            "arc_angle_deg": 40.0,
+            "radius": 1.2,
+            "scale": 100.0,
+            "bias": 0.0,
+            "noise_std": 20.0,
+            "tau_rise": null,
+            "tau_decay": null,
+            "activation": "linear",
+            "differential": false,
+            "robot_address": "",
+            "viz_layer": 3
         },
-        "cosine": {
-          "amp": 1.0,
-          "ph0": 0.0,
-          "step": 180.0
+        {
+            "type": "RGBCameraSensor",
+            "name": "sensor2",
+            "width": 64,
+            "height": 48,
+            "fov_deg": 90.0,
+            "center_angle_deg": 0.0,
+            "max_range": 120.0,
+            "lateralized": true,
+            "overlap": 0,
+            "noise_std": 0.0,
+            "tau_rise": null,
+            "tau_decay": null,
+            "differential": false,
+            "activation": "linear",
+            "robot_address": ""
         },
-        "gaussian": {
-          "amp": 1.0,
-          "sig": 0.2,
-          "off": 0.0,
-          "base": 0.0
+        {
+            "type": "GradientSensor",
+            "name": "Rw",
+            "n": 2,
+            "angle_spread_deg": 30.0,
+            "center_angle_deg": 0.0,
+            "dist": 0.1,
+            "color_channel": "None",
+            "gradient": "A",
+            "scale": 1.0,
+            "tau_rise": null,
+            "tau_decay": null,
+            "activation": "linear",
+            "differential": false,
+            "noise_std": 0.0,
+            "robot_address": "",
+            "viz_layer": 1
         },
-        "mexican_hat": {
-          "exc": 2.0,
-          "sige": 0.35,
-          "inh": 1.0,
-          "sigi": 0.75
-        },
-        "one_to_one": {
-          "amp": 1.0,
-          "off": 0
-        },
-        "expression": {
-          "code": ""
+        {
+            "type": "GradientSensor",
+            "name": "Cost",
+            "n": 2,
+            "angle_spread_deg": 30.0,
+            "center_angle_deg": 0.0,
+            "dist": 0.12,
+            "color_channel": "",
+            "gradient": "B",
+            "scale": 1.0,
+            "tau_rise": null,
+            "tau_decay": null,
+            "activation": "linear",
+            "differential": false,
+            "noise_std": 0.0,
+            "robot_address": "",
+            "viz_layer": 1
         }
-      }
-    }
-  ]
+    ],
+    "layers": [
+        {
+            "type": "SumLayer",
+            "name": "motor",
+            "layer": 5,
+            "activation": "linear",
+            "scale": 1.0,
+            "n": 2,
+            "viz_row": 0
+        },
+        {
+            "type": "ConstantLayer",
+            "name": "Drive",
+            "layer": 4,
+            "value": 50.0,
+            "n": 2,
+            "noise_std": 0.0
+        },
+        {
+            "type": "LeakyLayer",
+            "name": "bumper_short",
+            "layer": 3,
+            "tau_rise": 0.1,
+            "tau_decay": 0.5,
+            "bias": 0.0,
+            "activation": "relu",
+            "n": 2,
+            "derivative": false,
+            "noise_std": 0.0,
+            "noise_tau": 0.0,
+            "scale": 1.0
+        },
+        {
+            "type": "LeakyLayer",
+            "name": "bumper_long",
+            "layer": 3,
+            "tau_rise": 0.1,
+            "tau_decay": 1.0,
+            "bias": 0.0,
+            "activation": "relu",
+            "n": 2,
+            "derivative": false,
+            "noise_std": 0.0,
+            "noise_tau": 0.0,
+            "scale": 1.0
+        },
+        {
+            "type": "LeakyLayer",
+            "name": "fw",
+            "layer": 4,
+            "tau_rise": 0.1,
+            "tau_decay": 0.1,
+            "bias": 0.0,
+            "activation": "relu",
+            "n": 2,
+            "derivative": false,
+            "noise_std": 0.0,
+            "noise_tau": 0.0,
+            "scale": 1.0
+        },
+        {
+            "type": "LeakyLayer",
+            "name": "bw",
+            "layer": 4,
+            "tau_rise": 0.1,
+            "tau_decay": 0.1,
+            "bias": 0.0,
+            "activation": "relu",
+            "n": 2,
+            "derivative": false,
+            "noise_std": 0.0,
+            "noise_tau": 0.0,
+            "scale": 1.0
+        },
+        {
+            "type": "Conv2dLayer",
+            "name": "rg",
+            "layer": 2,
+            "n_filters": 4,
+            "kernel_size": 1,
+            "stride": 1,
+            "padding": "same",
+            "pool": "global_avg",
+            "activation": "relu",
+            "tau_rise": 0.1,
+            "tau_decay": 0.1,
+            "tau_a": 0.5,
+            "beta": 2.0,
+            "bias": 0.0,
+            "scale": 70.0,
+            "noise_std": 0.0,
+            "noise_tau": 0.0,
+            "lateralized": false
+        }
+    ],
+    "connections": [
+        {
+            "src": "bumper",
+            "tgt": "bumper_short",
+            "W": [
+                [
+                    1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    1.0
+                ]
+            ]
+        },
+        {
+            "src": "bumper",
+            "tgt": "bumper_long",
+            "W": [
+                [
+                    1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    1.0
+                ]
+            ]
+        },
+        {
+            "src": "bumper_long",
+            "tgt": "bw",
+            "W": [
+                [
+                    0.0,
+                    1.0
+                ],
+                [
+                    1.0,
+                    0.0
+                ]
+            ]
+        },
+        {
+            "src": "bumper_short",
+            "tgt": "bw",
+            "W": [
+                [
+                    1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    1.0
+                ]
+            ]
+        },
+        {
+            "src": "Drive",
+            "tgt": "fw",
+            "W": [
+                [
+                    1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    1.0
+                ]
+            ]
+        },
+        {
+            "src": "fw",
+            "tgt": "motor",
+            "W": [
+                [
+                    1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    1.0
+                ]
+            ]
+        },
+        {
+            "src": "bw",
+            "tgt": "motor",
+            "W": [
+                [
+                    -1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    -1.0
+                ]
+            ]
+        },
+        {
+            "src": "sensor2_L",
+            "tgt": "rg",
+            "W": [
+                [
+                    [
+                        [
+                            1.0
+                        ]
+                    ],
+                    [
+                        [
+                            -1.0
+                        ]
+                    ],
+                    [
+                        [
+                            0.0
+                        ]
+                    ]
+                ],
+                [
+                    [
+                        [
+                            -1.0
+                        ]
+                    ],
+                    [
+                        [
+                            1.0
+                        ]
+                    ],
+                    [
+                        [
+                            0.0
+                        ]
+                    ]
+                ]
+            ],
+            "init_W": [
+                [
+                    [
+                        [
+                            1.0
+                        ]
+                    ],
+                    [
+                        [
+                            -1.0
+                        ]
+                    ],
+                    [
+                        [
+                            0.0
+                        ]
+                    ]
+                ],
+                [
+                    [
+                        [
+                            -1.0
+                        ]
+                    ],
+                    [
+                        [
+                            1.0
+                        ]
+                    ],
+                    [
+                        [
+                            0.0
+                        ]
+                    ]
+                ]
+            ]
+        },
+        {
+            "src": "sensor2_R",
+            "tgt": "rg",
+            "W": [
+                [
+                    [
+                        [
+                            1.0
+                        ]
+                    ],
+                    [
+                        [
+                            -1.0
+                        ]
+                    ],
+                    [
+                        [
+                            0.0
+                        ]
+                    ]
+                ],
+                [
+                    [
+                        [
+                            -1.0
+                        ]
+                    ],
+                    [
+                        [
+                            1.0
+                        ]
+                    ],
+                    [
+                        [
+                            0.0
+                        ]
+                    ]
+                ]
+            ],
+            "init_W": [
+                [
+                    [
+                        [
+                            1.0
+                        ]
+                    ],
+                    [
+                        [
+                            -1.0
+                        ]
+                    ],
+                    [
+                        [
+                            0.0
+                        ]
+                    ]
+                ],
+                [
+                    [
+                        [
+                            -1.0
+                        ]
+                    ],
+                    [
+                        [
+                            1.0
+                        ]
+                    ],
+                    [
+                        [
+                            0.0
+                        ]
+                    ]
+                ]
+            ]
+        },
+        {
+            "src": "rg",
+            "tgt": "fw",
+            "W": [
+                [
+                    -1.0,
+                    0.0,
+                    -1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    -1.0,
+                    0.0,
+                    -1.0
+                ]
+            ],
+            "init_W": [
+                [
+                    -1.0,
+                    0.0,
+                    -1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    -1.0,
+                    0.0,
+                    -1.0
+                ]
+            ],
+            "params": {
+                "type": 6,
+                "uniform": {
+                    "amp": 1.0
+                },
+                "cosine": {
+                    "amp": 1.0,
+                    "ph0": 0.0,
+                    "step": 180.0
+                },
+                "gaussian": {
+                    "amp": 1.0,
+                    "sig": 0.2,
+                    "off": 0.0,
+                    "base": 0.0
+                },
+                "mexican_hat": {
+                    "exc": 2.0,
+                    "sige": 0.35,
+                    "inh": 1.0,
+                    "sigi": 0.75
+                },
+                "one_to_one": {
+                    "amp": 1.0,
+                    "off": 0
+                },
+                "expression": {
+                    "code": ""
+                }
+            }
+        }
+    ]
 }

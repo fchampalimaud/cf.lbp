@@ -1,33 +1,39 @@
 {
-  "version": 1,
-  "motor_layer": "motor",
-  "hidden_cols": [],
-  "disabled_cols": [],
-  "col_labels": {},
-  "sensors": [
-    {
-      "type": "RGBCameraSensor",
-      "name": "sensor0",
-      "width": 64,
-      "height": 48,
-      "fov_deg": 90.0,
-      "center_angle_deg": 0.0,
-      "max_range": 10.0,
-      "lateralized": true,
-      "overlap": 0,
-      "viz_layer": 3
-    }
-  ],
-  "layers": [
-    {
-      "type": "MotorLayer",
-      "name": "motor",
-      "layer": 4,
-      "activation": "linear",
-      "n": 2,
-      "scale": 1.0,
-      "robot_address": ""
-    }
-  ],
-  "connections": []
+    "version": 1,
+    "motor_layer": "motor",
+    "hidden_cols": [],
+    "disabled_cols": [],
+    "col_labels": {},
+    "sensors": [
+        {
+            "type": "RGBCameraSensor",
+            "name": "sensor0",
+            "width": 64,
+            "height": 48,
+            "fov_deg": 90.0,
+            "center_angle_deg": 0.0,
+            "max_range": 10.0,
+            "lateralized": true,
+            "overlap": 0,
+            "noise_std": 0.0,
+            "tau_rise": null,
+            "tau_decay": null,
+            "differential": false,
+            "activation": "linear",
+            "robot_address": "",
+            "viz_layer": 3
+        }
+    ],
+    "layers": [
+        {
+            "type": "MotorLayer",
+            "name": "motor",
+            "layer": 4,
+            "activation": "linear",
+            "n": 2,
+            "scale": 1.0,
+            "robot_address": ""
+        }
+    ],
+    "connections": []
 }

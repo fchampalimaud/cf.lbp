@@ -18,7 +18,7 @@ The sensor on the **left** (`light[0]`) returns a value in `[0, 1]` that grows a
 
 ## Creating your brain file
 
-Drop a Python file anywhere in `simulation/2d/brains/`. The simulator discovers it automatically on the next launch (or when you hit **Reload brains**).
+Drop a Python file anywhere in `brains/`. The simulator discovers it automatically on the next launch (or when you hit **Reload brains**).
 
 ```python title="brains/BrainLightSeeker.py"
 import numpy as np

@@ -1,105 +1,120 @@
 {
-  "version": 1,
-  "motor_layer": "motor",
-  "hidden_groups": [],
-  "disabled_groups": [],
-  "sensors": [
-    {
-      "type": "GradientSensor",
-      "name": "sensor0",
-      "n": 2,
-      "angle_spread_deg": 30.0,
-      "center_angle_deg": 0.0,
-      "dist": 0.12,
-      "gradient": "A",
-      "scale": 1.0,
-      "tau_rise": 0.1,
-      "tau_decay": 0.1,
-      "activation": "linear"
-    }
-  ],
-  "layers": [
-    {
-      "type": "SumLayer",
-      "name": "motor",
-      "layer": 2,
-      "n": 2,
-      "activation": "linear"
-    },
-    {
-      "type": "LeakyLayer",
-      "name": "layer1",
-      "layer": 1,
-      "n": 2,
-      "tau_rise": 0.1,
-      "tau_decay": 0.1,
-      "viz_row": 0
-    },
-    {
-      "type": "ConstantLayer",
-      "name": "layer2",
-      "layer": 1,
-      "n": 2,
-      "value": 1.0,
-      "viz_row": 1
-    }
-  ],
-  "connections": [
-    {
-      "src": "sensor0",
-      "tgt": "layer1",
-      "W": [
-        [
-          1.0,
-          1.0
-        ],
-        [
-          1.0,
-          1.0
-        ]
-      ]
-    },
-    {
-      "src": "sensor0",
-      "tgt": "motor",
-      "W": [
-        [
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0
-        ]
-      ]
-    },
-    {
-      "src": "layer2",
-      "tgt": "motor",
-      "W": [
-        [
-          1.0,
-          0.0
-        ],
-        [
-          0.0,
-          1.0
-        ]
-      ]
-    },
-    {
-      "src": "layer1",
-      "tgt": "sensor0",
-      "W": [
-        [
-          -1.0,
-          0.0
-        ],
-        [
-          0.0,
-          -1.0
-        ]
-      ]
-    }
-  ]
+    "version": 1,
+    "motor_layer": "motor",
+    "hidden_cols": [],
+    "disabled_cols": [],
+    "col_labels": {},
+    "sensors": [
+        {
+            "type": "GradientSensor",
+            "name": "sensor0",
+            "n": 2,
+            "angle_spread_deg": 30.0,
+            "center_angle_deg": 0.0,
+            "dist": 0.12,
+            "color_channel": "",
+            "gradient": "A",
+            "scale": 1.0,
+            "tau_rise": 0.1,
+            "tau_decay": 0.1,
+            "activation": "linear",
+            "differential": false,
+            "noise_std": 0.0,
+            "robot_address": ""
+        }
+    ],
+    "layers": [
+        {
+            "type": "SumLayer",
+            "name": "motor",
+            "layer": 2,
+            "activation": "linear",
+            "scale": 1.0,
+            "n": 2
+        },
+        {
+            "type": "LeakyLayer",
+            "name": "layer1",
+            "layer": 1,
+            "tau_rise": 0.1,
+            "tau_decay": 0.1,
+            "bias": 0.0,
+            "activation": "relu",
+            "n": 2,
+            "derivative": false,
+            "noise_std": 0.0,
+            "noise_tau": 0.0,
+            "scale": 1.0,
+            "viz_row": 0
+        },
+        {
+            "type": "ConstantLayer",
+            "name": "layer2",
+            "layer": 1,
+            "value": 1.0,
+            "n": 2,
+            "noise_std": 0.0,
+            "viz_row": 1
+        }
+    ],
+    "connections": [
+        {
+            "src": "sensor0",
+            "tgt": "layer1",
+            "W": [
+                [
+                    1.0,
+                    1.0
+                ],
+                [
+                    1.0,
+                    1.0
+                ]
+            ]
+        },
+        {
+            "src": "sensor0",
+            "tgt": "motor",
+            "W": [
+                [
+                    1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    1.0
+                ]
+            ]
+        },
+        {
+            "src": "layer2",
+            "tgt": "motor",
+            "W": [
+                [
+                    1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    1.0
+                ]
+            ]
+        },
+        {
+            "src": "layer1",
+            "tgt": "sensor0",
+            "W": [
+                [
+                    -1.0,
+                    0.0
+                ],
+                [
+                    0.0,
+                    -1.0
+                ]
+            ]
+        }
+    ],
+    "hidden_groups": [],
+    "disabled_groups": []
 }

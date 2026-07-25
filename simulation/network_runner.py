@@ -8,7 +8,7 @@ imported without subclassing BaseBrain.
 import numpy as np
 import torch
 import torch.nn.functional as F
-from neurons import Conv2dLayer as _Conv2dLayer, LearningLayerBase as _LLB, _activate, Leaky2dLayer as _L2d
+from neurons import Conv2dLayer as _Conv2dLayer, LearningLayerBase as _LLB, _activate, Leaky2dLayer as _L2d, Reichardt2dLayer as _R2d
 
 
 def _is_lat_cam_half(src_name, sensors):
@@ -152,7 +152,7 @@ def step_network(brain, dt):
     from sensors import GrayCameraSensor as _GrayCam, RGBCameraSensor as _RGBCam
     for conn in connections:
         tgt_obj = layer_map.get(conn.tgt)
-        if not isinstance(tgt_obj, _L2d):
+        if not isinstance(tgt_obj, (_L2d, _R2d)):
             continue
         src_sensor = next((s for s in sensors if s.name == conn.src), None)
         if src_sensor is None and conn.src.endswith(('_L', '_R')):
@@ -292,8 +292,8 @@ def step_network(brain, dt):
                 arr = np.asarray(W, dtype=np.float32)
                 if arr.ndim == 0:
                     arr = arr.reshape(1, 1)
-                elif arr.ndim == 1 and not isinstance(layer, _L2d):
-                    # Leaky2dLayer keeps 1-D weights as-is for element-wise passthrough.
+                elif arr.ndim == 1 and not isinstance(layer, (_L2d, _R2d)):
+                    # Leaky2dLayer / Reichardt2dLayer keep 1-D weights as-is for element-wise passthrough.
                     arr = np.diag(arr)
                 brain._w_cache[i] = torch.from_numpy(arr.copy())
             w_cached = brain._w_cache[i]
@@ -319,8 +319,8 @@ def step_network(brain, dt):
                         inp[n_half:] = inp[n_half:] + result.flip(0)
                 else:
                     inp = inp + result
-            elif w_cached.ndim == 1 and isinstance(layer, _L2d):
-                # Leaky2dLayer passthrough: element-wise multiply (avoids n×n diag matrix).
+            elif w_cached.ndim == 1 and isinstance(layer, (_L2d, _R2d)):
+                # Leaky2dLayer / Reichardt2dLayer passthrough: element-wise multiply (avoids n×n diag matrix).
                 # Skip if sizes mismatch (stale connection from a size-change).
                 if src_val.shape[0] == w_cached.shape[0] == layer.n:
                     inp = inp + src_val * w_cached

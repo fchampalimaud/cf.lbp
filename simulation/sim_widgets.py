@@ -1,5 +1,5 @@
 """
-sim_widgets.py — reusable Qt widget helpers for the Braitenberg simulator.
+sim_widgets.py — reusable Qt widget helpers for the LBP simulator.
 
 No simulation logic; pure UI components with no dependency on SimulatorApp.
 """
