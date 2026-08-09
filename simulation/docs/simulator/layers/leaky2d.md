@@ -7,11 +7,12 @@ Pixel-wise temporal filter — applies the same first-order leaky integration as
 | Parameter | Description |
 |---|---|
 | `tau_rise` | Rise time constant (s); default 0.1 |
-| `tau_decay` | Decay time constant (s); defaults to `tau_rise` |
+| `tau_decay` | Decay time constant (s); blank/None = no decay, holds value |
 | `bias` | Constant added to each pixel before integration; default 0.0 |
 | `activation` | Per-pixel nonlinearity: `linear`, `relu`, `sigmoid`, `tanh`; default `linear` |
 | `scale` | Output multiplier; default 1.0 |
-| `derivative` | `True` → outputs x − u (fires on pixel *decrease*); default False |
+| `output_mode` | `none` / `derivative` / `integral` (per pixel); default `none` |
+| `x0` | Initial value of each pixel's `x` (and the `integral` accumulator); default 0.0 |
 | `noise_std` / `noise_tau` | Per-pixel noise (same as LeakyLayer) |
 
 ## Dynamics
@@ -20,17 +21,13 @@ $$\frac{dx}{dt} = \frac{u - x}{\tau}, \quad \tau = \begin{cases} \tau_{rise} & u
 
 $$\text{output pixel} = f(x) \times s$$
 
-## Derivative / motion mode
+## Motion mode
 
-`derivative=True`:
-
-$$\text{output pixel} = f(x - u) \times s$$
-
-x lags u, so x − u > 0 only when u has recently *fallen*. Use `scale = -1` to detect *increases* (brighter = active).
+`output_mode='derivative'` transforms each pixel's raw input into its own rate of change between ticks *before* the leaky filter/activation run. Use `scale = -1` to flip which direction (brightening vs. darkening) reads positive.
 
 ## Optic flow recipe
 
-1. `GrayCameraSensor` → `Leaky2dLayer(tau_rise=0.2, derivative=True, scale=-1, activation='relu')`
+1. `GrayCameraSensor` → `Leaky2dLayer(tau_rise=0.2, output_mode='derivative', scale=-1, activation='relu')`
 2. `Leaky2dLayer` → `Conv2dLayer` to extract spatial motion features.
 
 ## Neuromodulation

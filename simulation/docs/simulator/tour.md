@@ -88,6 +88,32 @@ Auto-generated from the brain's [`Param`](coding-brains.md#creating-your-brain-f
 
 ## World tab { #world-tab }
 
+### World file { #world-file }
+
+Saves and loads the arena state — gradient patches, objects, walls, sky, arena shape, and
+floor texture — independently of any session or brain, the same way brains are stored as
+files in `brains/`. World files are stored as flat JSON in `worlds/`.
+
+**World dropdown** — lists all saved worlds; selecting one loads it immediately.
+**Save** — prompts for a name and writes the current arena state to `worlds/<name>.json`.
+
+### Floor { #floor }
+
+A dropdown selecting the floor texture, drawn from `textures/` (see [Textures](#textures)
+below). **(default)** keeps the built-in checker floor. Floor texture is visible in the
+MuJoCo camera view, not the flat 2D canvas.
+
+### Textures { #textures }
+
+Texture images live as flat PNG files in `textures/`, discovered and picked the same way
+brain files are — drop a new PNG into that directory and it appears in the Floor dropdown
+and the Objects texture picker on next refresh. A few starter textures (checkerboard, grid,
+noise) ship by default.
+
+Textures render in the MuJoCo 3D camera view only — the flat 2D canvas marks a
+textured object or wall with a white fill and a few diagonal lines instead of the actual
+image, since it has no 3D renderer of its own.
+
 ### Trail { #trail-checkbox }
 
 Enables or disables the position trail drawn in the [Arena](#arena). The **Len** spinner sets how many past positions are kept (10–5000).
@@ -111,7 +137,7 @@ Gradient patches are circular fields that sensors can detect. Each patch has a c
 
 ### Solid objects { #objects }
 
-Solid circles that the robot physically cannot pass through. Added the same way as gradient patches using the **Z–U** buttons. The robot's bumper sensors fire on contact.
+Solid circles that the robot physically cannot pass through. Added the same way as gradient patches using the **Z–U** buttons. The robot's bumper sensors fire on contact. The texture dropdown next to the colour swatches assigns a texture (see [Textures](#textures)) to new objects and to polygon walls drawn afterward; the **…** picker sets a custom colour independently of texture.
 
 ---
 

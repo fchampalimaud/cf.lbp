@@ -1,421 +1,97 @@
-# Architecture & Timing
+# Architecture
 
-The simulator is split into classes with distinct responsibilities. Every component in the *Core* layer has no Qt dependency and can be used from scripts or tests.
+This page is a tour of how the simulator works — no programming background assumed. If you've already read [Coding Brains](coding-brains.md) or [Wiring Brains](wiring-brains.md), the "loop" below is the very thing you were building. If you want file names and class responsibilities instead, see the [Class Reference](reference.md).
 
----
-
-## Component overview
-
-```mermaid
-%%{init: {'themeVariables': {'fontSize': '13px'}}}%%
-graph LR
-    subgraph Qt["Qt layer"]
-        App[SimulatorApp]
-        NV[NetworkVisualizerWindow]
-        SW[sim_widgets]
-    end
-
-    subgraph Controllers["Controllers"]
-        SC[SimController]
-        OC[OscChannelManager]
-        WE[WorldEditor]
-        BM[BrainManager]
-    end
-
-    subgraph Core["Core — no Qt dependency"]
-        SE[sim_engine]
-        NR[network_runner]
-        Brain[BaseBrain / DataBrain]
-        CM[CircuitModel]
-        World
-        SimCfg[SimConfig]
-        SIO[session_io]
-        BS[brain_serializer]
-        BE[bonsai_exporter]
-    end
-
-    App --> SC
-    App --> OC
-    App --> WE
-    App --> BM
-    App --> SIO
-    App --> SW
-
-    SC -->|each tick| SE
-    SC -->|each tick| NR
-    SC --> CM
-    SC --> World
-    SC --> SimCfg
-
-    BM -->|populates| CM
-    BM -->|instantiates| Brain
-
-    WE --> World
-
-    NV --> BS
-    NV --> BE
-    NV -->|reads| CM
-```
+It's organized in the order complexity is usually added: one creature, then several creatures at once, then a real robot instead of a simulated body. The same loop diagram reappears in each section with exactly one thing changed, because it really is the same loop underneath in all three cases.
 
 ---
 
-## Per-tick data flow
+## Single agent
 
-```mermaid
-graph LR
-    W[World] --> S
-    Pose[Robot pose] --> S
+### The simulation loop
 
-    S[Sample sensors]
-    S --> L[brain.loop]
-    S --> N[network_runner.step_network]
-    N --> L
-    L --> K[Integrate kinematics]
-    K --> Pose
-```
+![The simulation loop — one tick, one creature](../assets/figures/loop_basic.svg)
+
+Every robot in the simulator runs this loop, over and over, many times a second — this is what one **tick** of the simulation is:
+
+1. **Sense** — read whatever the body's sensors can detect right now: light, a nearby wall, another creature's touch, its own internal state.
+2. **Think** — feed those readings into the creature's "brain." This can be a few lines of Python you wrote yourself, or a small network of neuron-like units you wired up visually — the loop doesn't care which; both end up as a set of motor commands.
+3. **Act** — send those commands to the motors, which move the body.
+
+Moving changes what the sensors will read on the *next* pass through the loop, which is exactly the idea behind a Braitenberg vehicle: behavior emerges from a fixed loop between sensing and acting, not from a plan.
+
+### How fast does the loop run?
+
+![Physics steps far more often than the picture redraws](../assets/figures/loop_timing.svg)
+
+The loop above runs far more often than the screen redraws. Not unlike how your own eyes deliver only a handful of distinct pictures per second even though the neurons behind them are firing much faster, the simulator can run the loop hundreds of times per second while only updating what you actually *see* about a dozen times per second. You won't notice this as a difference in behavior — motion and plots still look smooth — only that "how fast the world changes" and "how fast the picture updates" are two separate numbers. The exact rates, and how real-robot mode adds its own timing on top, are in the [Class Reference](reference.md#timing).
 
 ---
 
-## Timing
+## Multiple agents
 
-The simulator separates **physics/network stepping** from **display rendering** — and in real-robot mode, also from **sensor I/O** and **motor output**.
+### Same loop, many creatures
 
-### Simulation mode
+![Same loop, once per creature](../assets/figures/loop_multi_agent.svg)
 
-```mermaid
-flowchart TD
-    T([Qt Timer\n~every 20 ms]) --> L
+You are not limited to one robot. The simulator can run several creatures at once, and nothing about the loop itself changes — it's simply run once per creature, every tick. A few consequences of that:
 
-    subgraph L [Inner loop — up to 50 ms]
-        P[tick_physics\ndt = 0.01 s] --> N[step_network\ndt = 0.01 s]
-        N --> A[append oscilloscope\ntraces]
-        A -->|deadline not reached| P
-    end
+- Creatures can be **grouped** if they share the same brain — tweak one parameter and every member of the group updates.
+- Clicking a creature **selects** it: its own sensor traces show up on the oscilloscope, without pausing anyone else.
+- All of them share the same arena, so they can sense the same gradients, walls, and objects — and, in the full 3-D physics engine, bump into each other.
 
-    L -->|deadline reached| R[render arena]
-    R --> O[update oscilloscope\ndisplay]
-    O --> T
-```
+![One arena, many creatures](../assets/figures/multi_agent_arena.svg)
 
-Because the inner loop runs many steps before handing control back to the GUI, the **network executes at ~200+ steps/s** while the **display updates at ~14 Hz**.
+### Two computers, one shared arena
 
-| Component | Typical rate |
+![Two computers, one shared arena](../assets/figures/host_client_network.svg)
+
+Multiple creatures don't have to run on the same computer. Two copies of the simulator can connect to each other over a regular network: one becomes the **Host** (it owns the shared arena you see on screen), and others connect as **Clients**, each bringing their own creature and running their own brain on their own computer. Only sensor readings and motor decisions cross the wire — neither computer ever runs the other's brain code. It's the same "many creatures, one arena" idea above, just with the creatures' brains spread across machines instead of all running locally.
+
+---
+
+## Real robot
+
+### Same loop, real hardware
+
+![Same loop, real hardware](../assets/figures/loop_real_robot.svg)
+
+Swap the simulated body for a physical one and the loop doesn't change shape — only how much of it is still just software. Sensor data reaching the brain stays a single, solid, direct link (same message format as in simulation). Everything downstream of the brain — the motor command reaching the robot, the robot acting in the real world, and the world producing the next thing to sense — now happens for real, out in physical hardware, shown dashed. That's why you can develop and tune a brain entirely in simulation and flip a switch later to drive real hardware without touching the brain itself.
+
+This is unrelated to the two-computers case above — one is about *where a creature's brain runs*, the other is about *what body a creature's brain controls*. Either can happen with a single agent or with several running at once.
+
+---
+
+## Views on the same world
+
+Several windows all look at the same arena and circuit from different angles:
+
+| Window | What it shows |
 |---|---|
-| Qt timer fires | ~14 Hz |
-| `tick_physics` + `step_network` | ~230 Hz |
-| Arena repaint | ~14 Hz |
-| Oscilloscope update | ~14 Hz |
+| Arena (main view) | Top-down scene: creatures, trails, gradients, objects, walls |
+| "Top view" toggle | A rendered overhead image from the full 3-D physics engine, laid over the same arena |
+| "Show 3D" button | A separate, interactive 3-D window you can rotate and walk around in |
+| Network visualizer | The circuit diagram you edit by hand — sensors and neurons as nodes, connections as arcs |
+| Network visualizer's 3-D toggle | A rotatable 3-D rendering of *that same circuit diagram* — it is not a view of the robot's body |
 
-### Real-robot mode
+**Important: these three MuJoCo-related controls are independent, and only one of them affects sensor data.**
 
-Three concurrent activities share the process, each at its own rate.
-
-```mermaid
-flowchart LR
-    subgraph OSC ["OscThread  (one per host:port)"]
-        direction TB
-        O1([wait for\nUDP packet]) --> O2[parse OSC\nmessage]
-        O2 --> O3[sensor._robot_value\n← new value]
-        O3 --> O1
-    end
-
-    subgraph QT ["Qt Timer  (~every 20 ms)"]
-        direction TB
-        Q1([timer fires]) --> QL
-        subgraph QL [Inner loop — up to 50 ms]
-            QR[read _robot_value\napply scale · τ · f] --> QN[step_network\ndt = real elapsed]
-            QN --> QA[append traces]
-            QA -->|deadline not reached| QR
-        end
-        QL -->|deadline| QD[render arena\n+ oscilloscope]
-        QD --> Q1
-    end
-
-    subgraph MT ["MotorThread  (~60 Hz)"]
-        direction TB
-        M1([sleep 16 ms]) --> M2[read\nbrain.motor.output]
-        M2 --> M3[send /wheels\nOSC to robot]
-        M3 --> M1
-    end
-
-    Robot((Robot)) -- bumpers · analogs\nencoders --> OSC
-    OSC -- _robot_value --> QT
-    QT -- motor.output --> MT
-    MT -- /wheels UDP --> Robot
-```
-
-| Thread | Rate | Driven by |
-|---|---|---|
-| OscThread | robot send rate (~60 Hz) | incoming UDP packets |
-| Qt loop — network | ~230 Hz | 50 ms deadline |
-| MotorThread | ~60 Hz | fixed 16 ms sleep |
-
-!!! note "Thread safety"
-    The simulator relies on Python's GIL rather than explicit locks. `OscThread` writes `sensor._robot_value`; the Qt thread reads it — a stale read is at most one robot transmission cycle old, which is harmless. `MotorThread` reads `brain.motor.output` every 16 ms; the worst case is one network step stale, well within motor latency tolerance.
-
----
-
-## Classes
-
-### `SimulatorApp` — thin orchestrator
-
-`LBPSimulator.py`
-
-`SimulatorApp` is the Qt main window. Its job is layout and wiring: it creates the panels, instantiates the controller objects, and routes Qt signals to them. It contains no simulation logic, physics state, or save/load code — those are all delegated.
-
----
-
-### `SimController` — simulation loop
-
-`sim_controller.py`
-
-`SimController` owns everything that changes every tick: the `QTimer`, the robot's current position and heading, the running/paused flag, speed multiplier, real-time mode, manual-control motor override, the active task, and the `SimLogger`. It calls `sim_engine.tick_physics` and `network_runner.step_network` each frame and dispatches display updates to `ArenaWidget` and `OscChannelManager`.
-
----
-
-### `OscChannelManager` — oscilloscope
-
-`osc_controller.py`
-
-`OscChannelManager` owns the set of tracked oscilloscope channels, their colours, per-channel multiplier spinboxes, and trace ring-buffers. It discovers which channels the active brain and circuit expose and rebuilds the plot layout when the brain changes.
-
----
-
-### `WorldEditor` — arena editing
-
-`world_editor.py`
-
-`WorldEditor` owns the draw-mode state machine: which mode is active (gradient patch, solid object, wall, robot drag), which palette entry is selected, and any in-progress polygon. It implements the arena mouse handlers that mutate `World` and request a display refresh.
-
----
-
-### `session_io` — save / load
-
-`session_io.py`
-
-`session_io` provides two pure functions — `save_session` and `load_session` — that serialise and deserialise the full simulator state (brain params, world patches, sim config, oscilloscope multipliers) as JSON.
-
----
-
-### `brain_serializer` — code generation
-
-`brain_serializer.py`
-
-`brain_serializer` contains pure functions for writing brain `.py` files from a live circuit. Keeping it separate from the visualiser means the same code-generation logic is available from tests or command-line tools.
-
----
-
-### `bonsai_exporter` — Bonsai XML export
-
-`bonsai_exporter.py`
-
-Converts a `CircuitModel` into LBP.Torch Bonsai XML that can be pasted directly into a Bonsai workflow. It traces only the layers reachable from the motor output, maps sensor dynamics and activations to their Bonsai equivalents, and generates the input-preparation, graph-construction, and forward-pass branches.
-
----
-
-### `network_runner` — neural forward pass
-
-`network_runner.py`
-
-`network_runner.step_network` is the neural forward pass extracted from `BaseBrain`. It reads `layers`, `connections`, and `sensors` from the brain instance, propagates signals through the weight matrices, applies neuromodulation, and mutates `layer.output` in place.
-
----
-
-### `sim_engine` — pure physics step
-
-`sim_engine.py`
-
-A module of pure functions. The main entry point takes the current robot state, calls all sensors, runs the brain's `loop()`, and integrates the differential-drive kinematics one timestep forward. No Qt imports.
-
-The `MuJoCoEngine` class follows the same interface but delegates integration to a MuJoCo model, so the brain and sensor code runs unchanged whether the physics is custom or MuJoCo.
-
----
-
-### `World` — the physical environment
-
-`world.py`
-
-`World` owns everything that is not the robot: gradient patches, solid obstacles, polygon walls, the arena boundary, and the sky (for the compass sensor). It is a plain data container — it does not know about rendering or physics.
-
----
-
-### `SimConfig` — shared simulation parameters
-
-`sim_config.py`
-
-`SimConfig` holds knobs that are global to a session: timestep `dt`, arena size, robot body radius, maximum speed, and similar constants. It is a `BaseConfig` subclass, so any `Param` declared on it automatically generates a GUI slider.
-
-| Parameter | Default | Description |
-|---|---|---|
-| `dt` | 0.01 s | Simulation timestep |
-| `arena_scale` | 5.0 m | Arena half-width |
-| `motor_gain` | 1.0 | Motor speed multiplier |
-| `body_radius` | 0.2 m | Robot body radius |
-| `sense_radius` | 1.0 m | Sensor ray length |
-| `init_x`, `init_y` | 0, 0 | Robot start position |
-| `stim_radius` | 0.5 m | Radius of new gradient patches |
-| `toggle_stim` | on | Show / hide stimulus patches |
-| `fixate_robot` | off | Freeze robot position |
-
----
-
-### `BaseSensor` / sensor subclasses — transduction
-
-`sensors.py`
-
-`BaseSensor` defines the contract every sensor must satisfy: a `sample(x, y, theta, world, sim_cfg)` method that maps the robot's current pose and world state to a numpy array. The result is stored on the brain as `brain.<sensor.name>` so `loop()` can read it by name.
-
-All sensors share an optional output pipeline: Gaussian noise → asymmetric leaky dynamics (`tau_rise` / `tau_decay`) → activation function → differential mode.
-
-```mermaid
-%%{init: {'themeVariables': {'fontSize': '13px'}}}%%
-graph LR
-    BS[BaseSensor]
-    BS --> GS[GradientSensor]
-    BS --> CS[ColorSensor]
-    BS --> DS[DistanceSensor]
-    BS --> CL[CollisionSensor]
-    BS --> WH[WhiskerSensor]
-    BS --> GC[GrayCameraSensor]
-    BS --> RC[RGBCameraSensor]
-    BS --> IN[InteroceptiveSensor]
-    BS --> PR[ProprioceptiveSensor]
-    BS --> SK[SkyCompassSensor]
-```
-
-| Class | What it detects |
+| Control | What it actually gates |
 |---|---|
-| `GradientSensor` | Soft circular gradient patches; casts n rays in a fan, returns field intensity per ray |
-| `ColorSensor` | Solid coloured circular objects via ray-circle intersection |
-| `DistanceSensor` | Normalised proximity to the nearest wall or obstacle (1 = touching, 0 = at max range) |
-| `CollisionSensor` | Contact within n arc sectors around the robot perimeter (1 = contact, 0 = clear) |
-| `WhiskerSensor` | Tactile whisker: bending proportion from 0 (no contact) to 1 (contact at base) |
-| `GrayCameraSensor` | Wide-angle raycasted image (luminance); output shape `(H × W,)` |
-| `RGBCameraSensor` | Wide-angle raycasted image (colour, CHW); output shape `(3 × H × W,)` |
-| `InteroceptiveSensor` | Internal gut state: integrates gradient exposure at the mouth over time (scalar) |
-| `ProprioceptiveSensor` | Joint angle or angular velocity of articulated body segments |
-| `SkyCompassSensor` | Polarised-light sky compass (DRA); encodes heading relative to sun direction |
+| **"3D (MuJoCo)" checkbox** | Whether the MuJoCo engine exists at all. Whenever it's checked, `SimController._loop()` calls `MuJoCoEngine.render_cameras()` **every frame, unconditionally** — every `CameraSensor`'s `_last_frame` (what the brain actually sees) is overwritten with a real MuJoCo render, textures included. This has nothing to do with "Top view" or "Show 3D" below. |
+| **"Top view" button** | Purely cosmetic: swaps the *arena canvas* between the plain 2-D top-down drawing and a MuJoCo overhead preview image (`render_overhead()`). Does not touch any sensor. |
+| **"Show 3D" button** | Opens the separate interactive 3-D viewer window. Also does not touch any sensor. |
 
-Both camera sensors support `lateralized=True`, which splits the image at the horizontal midline into `sensor_L` and `sensor_R` halves, each feeding its own `Conv2dLayer`.
+In other words: **camera sensors go through MuJoCo the moment the "3D (MuJoCo)" checkbox is checked**, even if the arena canvas still looks like the plain flat 2-D view (Top view/Show 3D off). Don't infer what a camera sensor is seeing from what the arena canvas looks like — check the checkbox, not the display mode.
+
+`GradientSensor`/`SkyCompassSensor` etc. are never routed through MuJoCo regardless of any of these three controls, and never will be — MuJoCo has no notion of a gradient field or sky polarization, so they always run the analytic 2-D geometry in `sensors.py`, on purpose (see `MuJoCoEngine.tick_physics_batch`'s docstring).
+
+`CollisionSensor` is a partial exception: when the "3D (MuJoCo)" checkbox is checked, sensors mounted on the robot's root body read MuJoCo's own contact array instead of the analytic geometry — MuJoCo already computes contacts every tick for physics regardless, so this is much cheaper (see TODO.md Performance). This works for any `radius` (literal touch or lookahead) because each sector gets its own small, real, non-physical geom built directly into the robot body, positioned and sized to match that sensor's own probe radius and arc — "is sector *i* hit" is just "does MuJoCo's contact list include this specific geom", decided by MuJoCo's actual collision engine rather than by approximating it, which is also why one large/close object correctly triggers several adjacent sectors at once. Only a sensor mounted on a non-root body (e.g. a whisker joint pair) falls back to the analytic path — check `MuJoCoEngine._mujoco_collision_eligible()` if you need to know exactly which sensors qualify. `DistanceSensor` still always runs the analytic path (unchanged, still a TODO item).
 
 ---
 
-### `LayerBase` / neuron layer subclasses — neural dynamics
+## Where to go next
 
-`neurons.py`
-
-`LayerBase` is a thin `nn.Module` mixin that adds display and neuromodulation attributes shared by every layer type (`name`, `color`, `group`, `modulators`, …). All concrete layer classes inherit from it and register themselves in `LayerBase._registry` for JSON deserialisation.
-
-```mermaid
-%%{init: {'themeVariables': {'fontSize': '13px'}}}%%
-graph LR
-    LB[LayerBase]
-    LB --> LL[LeakyLayer]
-    LB --> AL[AdaptiveLayer]
-    AL --> ML[MatsuokaLayer *deprecated*]
-    LB --> CL[ConstantLayer]
-    LB --> SL[SumLayer]
-    SL --> MOT[MotorLayer]
-    LB --> PL[PulseLayer]
-    LB --> SNL[SineLayer]
-    LB --> RL[RingAttractorLayer]
-    LB --> CV[Conv2dLayer]
-    LB --> L2[Leaky2dLayer]
-```
-
-| Class | Dynamics |
-|---|---|
-| `LeakyLayer` | First-order low-pass filter (`dx/dt = (u−x)/τ`); asymmetric rise/decay, derivative mode, OU noise |
-| `AdaptiveLayer` | Leaky integrator with spike-frequency adaptation; `w > 0` + `n=2` gives half-centre oscillation |
-| `MatsuokaLayer` | *(deprecated — use `AdaptiveLayer`)* Thin wrapper kept for loading old JSON networks |
-| `ConstantLayer` | Fixed output; tonic drive source, ignores incoming connections |
-| `SumLayer` | Instantaneous weighted sum; no dynamics, no memory |
-| `MotorLayer` | `SumLayer` + robot actuation; sends output via OSC to `robot_address` in real-robot mode |
-| `PulseLayer` | Plateau-potential neurons with sustained activation and inhibitory reset |
-| `SineLayer` | Autonomous sine-wave generator; ignores incoming connections |
-| `RingAttractorLayer` | N leaky neurons on a ring; recurrent connectivity via a self-connection (Mexican-hat kernel) |
-| `Conv2dLayer` | 2-D convolution over camera input; per-filter global pooling; optional leaky dynamics and adaptation |
-| `Leaky2dLayer` | Pixel-wise leaky integrator that preserves full spatial image structure; feeds into `Conv2dLayer` |
-| `AccumulatorLayer` | (no description) |
-| `DeltaLayer` | (no description) |
-| `Reichardt2dLayer` | (no description) |
-| `TDLayer` | (no description) |
-| `ThreeFactorLayer` | (no description) |
-
----
-
-### `CircuitModel` — shared circuit state
-
-`circuit_model.py`
-
-`CircuitModel` is a plain container holding the four lists that define the active circuit: `sensors`, `layers`, `connections`, and `bodies`/`joints`. `connections` is a list of `Connection` dataclass objects (`src`, `tgt`, `W`, `learning`, `lr`). It is owned by `SimulatorApp` and shared by reference with `SimController`, `NetworkVisualizerWindow`, and `BrainManager`.
-
----
-
-### `BaseBrain` / `DataBrain` — the control law
-
-`brain_base.py`
-
-`BaseBrain` is the base class every brain plugin must inherit. Class-level `Param` and `ChoiceParam` descriptors declare tunable knobs that `BaseConfig.__init__` copies to instance attributes; the GUI reads the metadata to build sliders automatically.
-
-`DataBrain` extends `BaseBrain` for brains loaded from a JSON network file. It rebuilds `layers`, `connections`, and `sensors` from the serialised description so the brain file contains only data — no Python logic.
-
----
-
-### `BrainManager` — plugin loading and circuit wiring
-
-`brain_manager.py`
-
-`BrainManager` discovers Python files in `brains/`, imports them, finds the class that inherits `BaseBrain`, instantiates it, and populates the `CircuitModel`. It also synthesises the motor `SumLayer` for each joint and wires `ProprioceptiveSensor` instances onto articulated bodies automatically.
-
----
-
-### `RigidBody` / `Joint` — articulated robot body
-
-`rigid_body.py`
-
-`RigidBody` is a named disk with a radius. The robot always has a root body (the drive disk). Extra bodies can be attached via `Joint`s — for example, a passive or motor-driven segment that carries its own sensors.
-
----
-
-### `RobotDriver` — real-robot I/O
-
-`robot_driver.py`
-
-`RobotDriver` isolates all real-robot communication. It manages one background thread per unique `robot_address` string found among the active sensors. Thread type is determined by sensor class: `CameraThread` for camera sensors (UDP JPEG client), `OscThread` for everything else (UDP OSC server). Each thread writes decoded data into `sensor._robot_value` so the simulation loop can read it without touching any sockets.
-
-See [Running on the real robot](real-robot.md) for the full usage guide.
-
----
-
-## File map
-
-```
-LBPSimulator.py   main window (SimulatorApp)
-sim_controller.py         simulation loop
-sim_engine.py             pure physics step (also MuJoCoEngine)
-sim_engine_mujoco.py      MuJoCo physics bridge
-network_runner.py         neural forward pass
-neurons.py                all layer classes + DynamicsBase
-sensors.py                all sensor classes + SENSOR_REGISTRY
-circuit_model.py          CircuitModel, Connection
-brain_base.py             BaseBrain, DataBrain, Param, ChoiceParam
-brain_manager.py          brain discovery, loading, circuit wiring
-brain_serializer.py       JSON ↔ circuit serialisation
-bonsai_exporter.py        CircuitModel → LBP.Torch Bonsai XML
-world.py                  World — patches, objects, walls, sky
-world_editor.py           arena draw-mode state machine
-rigid_body.py             RigidBody, Joint
-osc_controller.py         OscChannelManager (oscilloscope)
-session_io.py             save/load session JSON
-robot_driver.py           real-robot OSC + camera threads
-sim_config.py             SimConfig (global simulation parameters)
-sim_widgets.py            reusable Qt widgets
-sim_constants.py          shared numeric constants
-trajectory_viz.py         post-run trajectory visualiser
-export_network_svg.py     export network graph as SVG
-brains/                   hot-pluggable brain plugins
-networks/                 saved network JSON files
-tasks/                    pluggable world dynamics (BaseTask subclasses)
-configs/                  saved session configs
-```
+- [Class Reference](reference.md) — every source file, its main classes, and what they own.
+- [Coding Brains](coding-brains.md) — write your first brain plugin.
+- [Wiring Brains](wiring-brains.md) — build a brain visually from sensors and neuron layers.

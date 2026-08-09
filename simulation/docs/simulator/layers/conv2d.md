@@ -13,7 +13,7 @@
 | `pool` | `global_avg`, `global_max`, or `none`; default `global_avg` |
 | `activation` | Nonlinearity on feature maps before pooling; default `relu` |
 | `tau_rise` | Leaky dynamics rise τ on pooled output (0 = off); default 0.0 |
-| `tau_decay` | Leaky dynamics decay τ; defaults to `tau_rise` |
+| `tau_decay` | Leaky dynamics decay τ; blank/None = no decay, holds value |
 | `tau_a` | Adaptation time constant (0 = off); default 0.0 |
 | `beta` | Adaptation strength (0 = off); default 0.0 |
 | `bias` | Constant added to each pooled output; default 0.0 |

@@ -6,6 +6,12 @@ This tutorial implements the same two vehicles using **layers and connections**.
 
 ---
 
+## Getting started
+
+Before starting, select **`BrainGUI`** from the [Brain selector](tour.md#brain-selector). This is the brain file that enables the [Network visualizer](tour.md#network-viz)'s graphical interface.
+
+---
+
 ## The structure
 
 A neural brain declares three class attributes in addition to its Params:
@@ -132,3 +138,4 @@ Once the brain is running, open the **Network editor** (the graph icon in the to
 - Add a second layer between `smooth` and `motor` and give it `activation='relu'` — observe how the threshold changes the robot's sensitivity near the edge of a patch.
 - Explore `AdaptiveLayer` with `w > 0` and `n=2`, which oscillates autonomously (half-centre oscillator). Wire a light sensor to its input and watch the oscillation frequency change with stimulus intensity.
 - Once you have a circuit you like, use **Copy Bonsai** to export the network to a LBP.Torch workflow and run it on the real robot.
+- Make the robot's response context-dependent with [Neuromodulators](neuromodulators.md).

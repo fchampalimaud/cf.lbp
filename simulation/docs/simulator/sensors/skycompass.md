@@ -4,7 +4,7 @@
 
 Encodes the robot's heading relative to the sun via a cosine tuning curve, mimicking insect dorsal rim area (DRA) photoreceptors.
 
-Requires `world.sky["enabled"] = True`.
+Always senses, whether or not the polarization field is shown in the arena — the "Sky: Polarization field" checkbox and drag control only set/display the sun direction, they don't gate sensing.
 
 ## Tuning curve
 
@@ -26,7 +26,7 @@ $$\text{output} = f(x) \quad (\text{or}\ f(r)\ \text{if no dynamics})$$
 |---|---|
 | `n` | Number of DRA neurons (heading directions sampled) |
 | `phase` | Rotates neuron 0 to align with a reference direction |
-| `derivative` | `True` → fires on falling edges (heading change detection) |
+| `output_mode` | `none` / `derivative` (heading change detection) / `integral` |
 | `noise_std` / `noise_tau` | Additive Ornstein–Uhlenbeck noise on raw signal |
 
 ## Neuromodulation

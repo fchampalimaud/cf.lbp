@@ -47,7 +47,6 @@ nav:
     - Overview: index.md
     - Install: simulator/install.md
     - Simulator: simulator/tour.md
-    - Architecture: simulator/architecture.md
   - Creating Worlds: simulator/creating-worlds.md
   - Coding Brains: simulator/coding-brains.md
   - Wiring Brains:
@@ -69,6 +68,7 @@ nav:
       - MotorLayer: simulator/layers/motor.md
       - ConstantLayer: simulator/layers/constant.md
       - LeakyLayer: simulator/layers/leaky.md
+      - ProductLayer: simulator/layers/product.md
       - AdaptiveLayer: simulator/layers/adaptive.md
       - PulseLayer: simulator/layers/pulse.md
       - SineLayer: simulator/layers/sine.md
@@ -80,6 +80,11 @@ nav:
       - DeltaLayer: simulator/layers/delta.md
       - ThreeFactorLayer: simulator/layers/three_factor.md
       - MatsuokaLayer: simulator/layers/matsuoka.md
+    - Neuromodulators: simulator/neuromodulators.md
+  - Developer:
+    - Architecture: simulator/architecture.md
+    - Class Reference: simulator/reference.md
+    - Unit Tests: simulator/tests.md
   # - Real Robot: simulator/real-robot.md
 
 extra_css:

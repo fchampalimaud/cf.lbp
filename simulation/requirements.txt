@@ -11,3 +11,7 @@ torch>=2.0
 
 # Developer tools (scripts/)
 libcst>=1.1
+
+# Testing (tests/)
+pytest>=7.0
+pytest-qt>=4.2
