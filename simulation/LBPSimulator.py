@@ -1,5 +1,6 @@
 import sys
 import os
+import time
 
 _splash = None  # replaced by _Splash instance when running as __main__
 
@@ -67,6 +68,17 @@ if __name__ == "__main__":
     _p.setPen(QPen(QColor('#8898aa')))
     _p.drawText(0, 215, _W, 28, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
                 'S I M U L A T O R')
+    # Version (read the VERSION file directly — src/ isn't on sys.path yet here)
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'VERSION'), encoding='utf-8') as _vf:
+            _version = _vf.read().strip() or '0.0.0'
+    except OSError:
+        _version = '0.0.0'
+    _f3 = QFont('Segoe UI', 9)
+    _p.setFont(_f3)
+    _p.setPen(QPen(QColor('#5a6478')))
+    _p.drawText(0, 246, _W, 20, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
+                f'v{_version}')
     # Progress bar track
     _p.setBrush(QBrush(QColor('#2a3040')))
     _p.setPen(Qt.PenStyle.NoPen)
@@ -120,7 +132,7 @@ from sim_app_session import _SessionMixin
 from sim_app_ui import _UiBuilderMixin
 
 from neurons import MotorLayer
-from sensors import ManualBumpSensor
+from sensors import ManualBumpSensor, ManualCueSensor
 from brain_base import Param, ChoiceParam, BaseConfig, BaseBrain, DataBrain
 from brain_manager import BrainManager
 from sim_config import SimConfig
@@ -129,10 +141,11 @@ from session_io import save_session, load_session
 from world_serializer import discover_worlds, save_world_file, load_world_file
 
 from arena_widget import ArenaViewBox, RobotItem, ChildBodyItem, CircleItem
-from sim_widgets import MonetarySpinBox, _ManualKeyFilter, _ArrowKeyFilter
+from sim_widgets import MonetarySpinBox, _ManualKeyFilter, _ArrowKeyFilter, _CueKeyFilter
 from world_editor import WorldEditor
 from osc_controller import OscChannelManager
 from sim_controller import SimController
+from app_version import get_app_version
 if _splash: _splash.set_progress(80)
 
 
@@ -142,7 +155,7 @@ if _splash: _splash.set_progress(80)
 class SimulatorApp(_UiBuilderMixin, _BrainMixin, _SessionMixin, QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("LBP Simulator")
+        self.setWindowTitle(f"LBP Simulator v{get_app_version()}")
         self.resize(950, 800)
         screen = QApplication.primaryScreen().availableGeometry()
         self.move((screen.width() - 950) // 2, (screen.height() - 800) // 2)
@@ -167,6 +180,7 @@ class SimulatorApp(_UiBuilderMixin, _BrainMixin, _SessionMixin, QMainWindow):
 
         # ── Logger (shared with SimController) ───────────────────────────────
         self._logger = SimLogger()
+        self._video_recorders = []
 
         # ── Brain manager (per-agent; circuit/brain_mgr are proxy properties) ─
         _brain_mgr0 = BrainManager(_circuit0, self.sim_cfg)
@@ -211,6 +225,12 @@ class SimulatorApp(_UiBuilderMixin, _BrainMixin, _SessionMixin, QMainWindow):
         self._bump_key_filter = _ArrowKeyFilter(self._step_bump_sensors)
         QApplication.instance().installEventFilter(self._bump_key_filter)
 
+        # App-wide and unconditional (not gated behind Manual-drive mode, unlike
+        # _ManualKeyFilter) so a faked ManualCueSensor keeps working while the
+        # brain/network is actually driving the robot.
+        self._cue_key_filter = _CueKeyFilter(self._on_cue_key_change)
+        QApplication.instance().installEventFilter(self._cue_key_filter)
+
         self._editor = WorldEditor(
             world          = self.world,
             sim_cfg        = self.sim_cfg,
@@ -228,7 +248,7 @@ class SimulatorApp(_UiBuilderMixin, _BrainMixin, _SessionMixin, QMainWindow):
 
         # ── Populate combos and auto-load ─────────────────────────────────────
         self._refresh_brain_list()
-        self._refresh_session_list()
+        self._refresh_session_dirs()
         if self._session_combo.count() > 0:
             self._load_session()
         else:
@@ -527,6 +547,8 @@ class SimulatorApp(_UiBuilderMixin, _BrainMixin, _SessionMixin, QMainWindow):
 
         self._robot_hz_labels: dict = {}        # osc_path → QLabel  (sensors)
         self._robot_motor_hz_labels: dict = {}  # osc_path → QLabel  (motors)
+        self._robot_last_seen: dict = {}        # osc_path → monotonic time of last nonzero Hz
+        self._robot_connect_t = None            # monotonic time robot mode was last enabled
 
         self._robot_tab_timer = QTimer(self)
         self._robot_tab_timer.setInterval(1000)
@@ -552,7 +574,7 @@ class SimulatorApp(_UiBuilderMixin, _BrainMixin, _SessionMixin, QMainWindow):
             addr = getattr(sensor, 'robot_address', '').strip()
             if not addr:
                 continue
-            _, _, osc_path, _, _ = _parse_address(addr)
+            _, _, osc_path, *_ = _parse_address(addr)
             hz_lbl = self._add_robot_row('S', sensor.name, osc_path or addr)
             if osc_path:
                 self._robot_hz_labels[osc_path] = hz_lbl
@@ -563,7 +585,7 @@ class SimulatorApp(_UiBuilderMixin, _BrainMixin, _SessionMixin, QMainWindow):
             addr = getattr(layer, 'robot_address', '').strip()
             if not addr:
                 continue
-            _, _, osc_path, _, _ = _parse_address(addr)
+            _, _, osc_path, *_ = _parse_address(addr)
             hz_lbl = self._add_robot_row('M', layer.name, osc_path or addr)
             if osc_path:
                 self._robot_motor_hz_labels[osc_path] = hz_lbl
@@ -598,18 +620,45 @@ class SimulatorApp(_UiBuilderMixin, _BrainMixin, _SessionMixin, QMainWindow):
         self._robot_rows_vl.addWidget(row)
         return hz_lbl
 
+    _ROBOT_STALE_GRACE = 3.0   # seconds of zero Hz before flagging a sensor row as stale
+
     def _update_robot_hz(self):
         """Called every second — refresh Hz labels only when robot mode is active."""
         if not self._sim_ctrl._robot_mode:
             return
+        now = time.monotonic()
         sensor_rates = self._sim_ctrl._robot_driver.get_rates()
+        stale_count = 0
         for path, lbl in self._robot_hz_labels.items():
-            lbl.setText(f"{sensor_rates.get(path, 0.0):.0f} Hz")
+            rate = sensor_rates.get(path, 0.0)
+            lbl.setText(f"{rate:.0f} Hz")
+            if rate > 0:
+                self._robot_last_seen[path] = now
+                lbl.setStyleSheet("")
+            else:
+                since = now - self._robot_last_seen.get(path, self._robot_connect_t or now)
+                if since > self._ROBOT_STALE_GRACE:
+                    lbl.setStyleSheet("color: #cc3333; font-weight: bold;")
+                    stale_count += 1
+                else:
+                    lbl.setStyleSheet("")
         mt = self._sim_ctrl._motor_thread
         if mt:
             motor_rates = mt.send_rates()
             for path, lbl in self._robot_motor_hz_labels.items():
                 lbl.setText(f"{motor_rates.get(path, 0.0):.0f} Hz")
+
+        # No sensor has produced a single packet since connecting (or all went
+        # silent for longer than the grace period) — the socket can be "Online"
+        # (bound fine) while the robot itself is off/unreachable, since UDP
+        # gives no OS-level error for that. Surface it as a visible warning
+        # instead of leaving the checkbox's static "Online" as the only signal.
+        if self._robot_hz_labels and stale_count == len(self._robot_hz_labels):
+            self._robot_status_lbl.setText("● No data from robot")
+            self._robot_status_lbl.setStyleSheet("color: #cc3333; font-weight: bold;")
+        else:
+            self._robot_status_lbl.setText("● Online")
+            self._robot_status_lbl.setStyleSheet("color: green; font-weight: bold;")
 
     # ── Draw mode button management ───────────────────────────────────────────
 
@@ -750,6 +799,12 @@ class SimulatorApp(_UiBuilderMixin, _BrainMixin, _SessionMixin, QMainWindow):
             self._btn_run_stop.setText("▶ Run")
             self._btn_run_stop.setStyleSheet(self._make_btn("▶ Run", C['success']).styleSheet())
 
+        if self._video_auto_cb.isChecked():
+            if text == "●  RUNNING" and not self._video_recorders:
+                self._video_start()
+            elif text == "■  STOPPED" and self._video_recorders:
+                self._video_stop()
+
     def _on_run_stop(self):
         if self._sim_ctrl.running:
             self._sim_ctrl.stop()
@@ -763,6 +818,11 @@ class SimulatorApp(_UiBuilderMixin, _BrainMixin, _SessionMixin, QMainWindow):
         for sensor in self.circuit.sensors:
             if isinstance(sensor, ManualBumpSensor):
                 sensor.step(direction)
+
+    def _on_cue_key_change(self, letter, pressed):
+        for sensor in self.circuit.sensors:
+            if isinstance(sensor, ManualCueSensor) and sensor.key == letter:
+                sensor.set_pressed(pressed)
 
     def _get_motor_override(self):
         return self._manual_motors() if self._manual_active else None
@@ -884,13 +944,18 @@ class SimulatorApp(_UiBuilderMixin, _BrainMixin, _SessionMixin, QMainWindow):
         self._sim_ctrl.enable_robot_mode(bool(state))
         self._rebuild_channels()
         if state:
+            self._robot_last_seen = {}
+            self._robot_connect_t = time.monotonic()
             self._robot_status_lbl.setText("● Online")
             self._robot_status_lbl.setStyleSheet("color: green; font-weight: bold;")
         else:
+            self._robot_last_seen = {}
+            self._robot_connect_t = None
             self._robot_status_lbl.setText("● Offline")
             self._robot_status_lbl.setStyleSheet("color: gray; font-weight: bold; font-size: 8pt;")
             for lbl in {**self._robot_hz_labels, **self._robot_motor_hz_labels}.values():
                 lbl.setText("-- Hz")
+                lbl.setStyleSheet("")
 
     # ── MuJoCo ───────────────────────────────────────────────────────────────
 
@@ -1149,6 +1214,23 @@ class SimulatorApp(_UiBuilderMixin, _BrainMixin, _SessionMixin, QMainWindow):
             self._arena.remove_robot_item(pos)
         self._sim_ctrl.remove_agent(agent_id)   # also detaches it from the group
 
+    def _remove_selected_agent(self):
+        """Remove the specific agent currently selected (Delete key), regardless
+        of its position within its group; removes the group too if left empty."""
+        agent_id = self._sim_ctrl._selected_id
+        if agent_id is None or len(self._sim_ctrl._agents) <= 1:
+            return
+        group_id = self._sim_ctrl.group_of_agent(agent_id)
+        pos = self._sim_ctrl.index_of_agent(agent_id)
+        if pos is not None:
+            self._arena.remove_robot_item(pos)
+        self._sim_ctrl.remove_agent(agent_id)   # also detaches it from the group
+        if group_id is not None:
+            group = self._sim_ctrl.get_group(group_id)
+            if group is not None and not group.member_ids:
+                self._sim_ctrl.remove_group(group_id)
+        self._refresh_agent_list()
+
     def _on_arena_click(self, x, y, btn):
         """Select the nearest agent when the user left-clicks the arena."""
         # WorldEditor already consumes left-clicks in these modes (placing a polygon
@@ -1236,6 +1318,9 @@ class SimulatorApp(_UiBuilderMixin, _BrainMixin, _SessionMixin, QMainWindow):
     # ── Keyboard ──────────────────────────────────────────────────────────────
 
     def keyPressEvent(self, ev):
+        if ev.key() == Qt.Key_Delete:
+            self._remove_selected_agent()
+            return
         key = ev.text().upper()
         for letter, name, color, bg in GRADIENT_COLORS:
             if key == letter:

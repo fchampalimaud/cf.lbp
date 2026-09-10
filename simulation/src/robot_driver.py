@@ -22,7 +22,7 @@ Usage (from sim_controller)
     driver = RobotDriver()
     driver.start(circuit.sensors)          # each sensor carries its own robot_address
     ...
-    host, port, osc_path = RobotDriver._parse_address(motor_layer.robot_address)
+    host, port, osc_path, *_ = RobotDriver._parse_address(motor_layer.robot_address)
     driver.send_motor(host, port, osc_path, mL, mR)
     ...
     driver.stop()
@@ -60,19 +60,30 @@ def _osc_build(address: str, *args) -> bytes:
 
 
 def _parse_address(addr: str):
-    """Parse 'host:port[/osc_path][[type_tag]][(i,j,...)]' into components.
+    """Parse 'host:port[/osc_path][[type_tag]][(i,j,...)][{formula}]' into components.
 
-    Returns (host, port, osc_path, type_tag, indices) where:
+    Returns (host, port, osc_path, type_tag, indices, formula) where:
       type_tag : str  — OSC type string from [...], e.g. 'idddd'; '' if absent
       indices  : list[int] | None — element indices from (...); None = use all
+      formula  : str  — optional Python expression from {...}, evaluated once per
+                 selected raw value with `x` bound to that value (see
+                 _eval_formula); '' if absent, meaning passthrough
 
     Examples:
-      '192.168.0.1:2390/analogs[idddd](1,2)'  → ('192.168.0.1', 2390, '/analogs', 'idddd', [1, 2])
-      '192.168.0.1:2390/wheels'               → ('192.168.0.1', 2390, '/wheels', '', None)
-      '192.168.0.1:2390'                      → ('192.168.0.1', 2390, '', '', None)
+      '192.168.0.1:2390/analogs[idddd](1,2)'            → ('192.168.0.1', 2390, '/analogs', 'idddd', [1, 2], '')
+      '192.168.0.1:2390/analogs[iiiii](1,4){1-x/1024}'  → ('192.168.0.1', 2390, '/analogs', 'iiiii', [1, 4], '1-x/1024')
+      '192.168.0.1:2390/wheels'                         → ('192.168.0.1', 2390, '/wheels', '', None, '')
+      '192.168.0.1:2390'                                → ('192.168.0.1', 2390, '', '', None, '')
     """
     if not addr:
-        return '', 0, '', '', None
+        return '', 0, '', '', None, ''
+
+    # Strip trailing {formula}
+    formula = ''
+    m = re.search(r'\{([^}]*)\}\s*$', addr)
+    if m:
+        formula = m.group(1).strip()
+        addr = addr[:m.start()].rstrip()
 
     # Strip trailing (i,j,...) index list
     indices = None
@@ -102,10 +113,24 @@ def _parse_address(addr: str):
 
     try:
         h, p = addr.rsplit(':', 1)
-        return h.strip(), int(p), osc_path, type_tag, indices
+        return h.strip(), int(p), osc_path, type_tag, indices, formula
     except (ValueError, AttributeError):
         pass
-    return addr.strip(), 0, osc_path, type_tag, indices
+    return addr.strip(), 0, osc_path, type_tag, indices, formula
+
+
+def _eval_formula(formula: str, x):
+    """Evaluate a robot_address {...} calibration formula against the whole
+    selected value array at once (x is the array, not a per-element scalar —
+    plain arithmetic broadcasts fine, and it also allows cross-element
+    formulas like `x - x.mean()`).
+
+    Same trust model as the connection-weight expression editor
+    (network_viz_dialogs.py's exec(code, env)) — no sandboxing beyond binding
+    `x` (and `np`) to the caller's names; a malformed formula raises and the
+    caller drops the packet rather than silently miscalibrating a sensor.
+    """
+    return eval(formula, {'x': x, 'np': np})  # noqa: S307
 
 
 def _osc_parse(data: bytes):
@@ -149,10 +174,13 @@ class OscThread(threading.Thread):
     Binds a UDP socket to *local_port* and receives OSC messages.
     Dispatches by osc_path to the registered sensors' _robot_value buffers.
 
-    robot_address format: 'host:port/osc_path[type_tag](i,j,...)'
+    robot_address format: 'host:port/osc_path[type_tag](i,j,...){formula}'
       /osc_path  — OSC address to listen for (also accepted from sensor.osc_path)
       [type_tag] — expected OSC type string, e.g. 'idddd'; used for validation
       (i,j,...)  — zero-based indices of values to extract; must match sensor.n
+      {formula}  — optional per-value calibration expression (e.g. raw ADC
+                   counts to normalised units), `x` bound to the raw value,
+                   applied after indices are selected — see _eval_formula
     """
 
     def __init__(self, local_port: int, sensors):
@@ -176,13 +204,14 @@ class OscThread(threading.Thread):
         self._recv_counts: dict = {}
         self._recv_t: float = time.perf_counter()
 
-        # map osc_path → [(sensor, type_tag, indices), ...]
+        # map osc_path → [(sensor, type_tag, indices, formula), ...]
         self._dispatch = {}
         for s in sensors:
             addr = getattr(s, 'robot_address', '')
-            _, _, path, type_tag, indices = _parse_address(addr)
+            _, _, path, type_tag, indices, formula = _parse_address(addr)
             print(f'[Robot] registering sensor "{s.name}": path={path!r} '
-                  f'type_tag={type_tag!r} indices={indices} n={getattr(s, "n", None)}')
+                  f'type_tag={type_tag!r} indices={indices} formula={formula!r} '
+                  f'n={getattr(s, "n", None)}')
             if not path:
                 print(f'[Robot]   → skipped (no osc_path in robot_address)')
                 continue
@@ -190,7 +219,7 @@ class OscThread(threading.Thread):
             if indices is not None and n is not None and len(indices) != n:
                 print(f'[Robot]   → skipped: index count {len(indices)} != n={n}')
                 continue
-            self._dispatch.setdefault(path, []).append((s, type_tag, indices))
+            self._dispatch.setdefault(path, []).append((s, type_tag, indices, formula))
             print(f'[Robot]   → registered on path {path!r}')
         print(f'[Robot] OscThread dispatch table: {list(self._dispatch.keys())}')
 
@@ -212,28 +241,42 @@ class OscThread(threading.Thread):
 
     def run(self):
         pkt_count = 0
-        while not self._stop.is_set():
-            try:
-                data, _ = self._sock.recvfrom(65535)
-            except socket.timeout:
-                continue
-            pkt_count += 1
-            address, values, _ = _osc_parse(data)
-            if address is None or not values:
-                continue
-            targets = self._dispatch.get(address, [])
-            if not targets:
-                continue
-            self._recv_counts[address] = self._recv_counts.get(address, 0) + 1
-            for sensor, _, indices in targets:
-                arr = np.array(values, dtype=np.float32)
-                if indices is not None:
-                    try:
-                        arr = arr[indices]
-                    except IndexError:
-                        continue
-                sensor._robot_value = arr
-        self._sock.close()
+        try:
+            while not self._stop.is_set():
+                try:
+                    data, _ = self._sock.recvfrom(65535)
+                except socket.timeout:
+                    continue
+                except OSError as e:
+                    # e.g. WinError 10054 (connection reset) after an ICMP port-unreachable
+                    # reply — transient on a UDP link, must not kill the thread or the
+                    # socket leaks (and the next re-connect silently double-binds the port).
+                    print(f'[Robot] OscThread:{self._port} recv error (ignored): {e}')
+                    continue
+                pkt_count += 1
+                address, values, _ = _osc_parse(data)
+                if address is None or not values:
+                    continue
+                targets = self._dispatch.get(address, [])
+                if not targets:
+                    continue
+                self._recv_counts[address] = self._recv_counts.get(address, 0) + 1
+                for sensor, _, indices, formula in targets:
+                    arr = np.array(values, dtype=np.float32)
+                    if indices is not None:
+                        try:
+                            arr = arr[indices]
+                        except IndexError:
+                            continue
+                    if formula:
+                        try:
+                            arr = np.asarray(_eval_formula(formula, arr), dtype=np.float32)
+                        except Exception as e:
+                            print(f'[Robot] {sensor.name}: formula {formula!r} failed: {e}')
+                            continue
+                    sensor._robot_value = arr
+        finally:
+            self._sock.close()
 
     def stop(self):
         self._stop.set()
@@ -270,11 +313,16 @@ class MotorThread(threading.Thread):
     def run(self):
         next_t = time.perf_counter()
         while not self._stop_evt.is_set():
-            for host, port, osc_path, vL, vR in self._get_cmds():
-                self._driver.send_motor(host, port, osc_path, vL, vR)
-                self.last_vL = float(int(round(vL)))
-                self.last_vR = float(int(round(vR)))
-                self._send_counts[osc_path] = self._send_counts.get(osc_path, 0) + 1
+            try:
+                for host, port, osc_path, vL, vR in self._get_cmds():
+                    self._driver.send_motor(host, port, osc_path, vL, vR)
+                    self.last_vL = float(int(round(vL)))
+                    self.last_vR = float(int(round(vR)))
+                    self._send_counts[osc_path] = self._send_counts.get(osc_path, 0) + 1
+            except OSError as e:
+                # transient send error must not kill the motor-send thread for
+                # the rest of the session.
+                print(f'[Robot] MotorThread send error (ignored): {e}')
             next_t += self._period
             slack = next_t - time.perf_counter()
             if slack > 0:
@@ -313,32 +361,39 @@ class CameraThread(threading.Thread):
         last_ka = 0.0
         buf = b''
 
-        while not self._stop.is_set():
-            now = time.monotonic()
-            if now - last_ka >= self.KEEPALIVE_INTERVAL:
+        try:
+            while not self._stop.is_set():
+                now = time.monotonic()
+                if now - last_ka >= self.KEEPALIVE_INTERVAL:
+                    try:
+                        sock.sendto(b'\x00', (self._host, self._port))
+                    except OSError:
+                        pass
+                    last_ka = now
+
                 try:
-                    sock.sendto(b'\x00', (self._host, self._port))
-                except OSError:
-                    pass
-                last_ka = now
+                    chunk, _ = sock.recvfrom(65535)
+                except socket.timeout:
+                    continue
+                except OSError as e:
+                    # transient recv error (e.g. ICMP port-unreachable reset on Windows) —
+                    # must not kill the thread without closing the socket, or a later
+                    # reconnect silently double-binds the port.
+                    print(f'[Robot] CameraThread:{self._host}:{self._port} recv error (ignored): {e}')
+                    continue
 
-            try:
-                chunk, _ = sock.recvfrom(65535)
-            except socket.timeout:
-                continue
-
-            buf += chunk
-            # Extract complete JPEG frames (SOI=0xFFD8 … EOI=0xFFD9)
-            while True:
-                start = buf.find(b'\xff\xd8')
-                end   = buf.find(b'\xff\xd9', start + 2) if start != -1 else -1
-                if start == -1 or end == -1:
-                    break
-                frame_bytes = buf[start:end + 2]
-                buf = buf[end + 2:]
-                self._decode_and_push(frame_bytes)
-
-        sock.close()
+                buf += chunk
+                # Extract complete JPEG frames (SOI=0xFFD8 … EOI=0xFFD9)
+                while True:
+                    start = buf.find(b'\xff\xd8')
+                    end   = buf.find(b'\xff\xd9', start + 2) if start != -1 else -1
+                    if start == -1 or end == -1:
+                        break
+                    frame_bytes = buf[start:end + 2]
+                    buf = buf[end + 2:]
+                    self._decode_and_push(frame_bytes)
+        finally:
+            sock.close()
 
     def _decode_and_push(self, jpeg_bytes: bytes):
         try:

@@ -8,26 +8,32 @@ testable in isolation.
 import inspect
 import numpy as np
 import torch
-from sensors import SENSOR_DIST
+from sensors import SENSOR_DIST, DistanceSensor, CollisionSensor
 
 WHEEL_DIAMETER = 0.06
 MAX_SPEED_MS   = (196 * np.pi * WHEEL_DIAMETER) / 60.0
 
 
-def _sample_sensors(brain, sensors, x, y, theta, world, sim_cfg, poses=None):
+def _sample_sensors(brain, sensors, x, y, theta, world, sim_cfg, poses=None, other_agents=None):
     """Sample all sensors into brain attributes. Returns (mL, mR).
 
     If poses is provided ({body_id: (x, y, theta)}), sensors mounted on a
     child body are sampled from that body's world pose instead of the root.
     Sensors with multiple body_ids (mirrored pairs) are sampled once per body
     and the outputs are concatenated.
+
+    other_agents, if given, is a list of {'x','y','r'} circles for every
+    other agent in the session (see sim_controller._tick) — DistanceSensor
+    and CollisionSensor treat them as additional obstacles.
     """
     root_pose = (x, y, theta)
     for sensor in sensors:
+        kwargs = ({'other_agents': other_agents}
+                  if other_agents and isinstance(sensor, (DistanceSensor, CollisionSensor)) else {})
         body_ids = getattr(sensor, 'body_ids', None) or ['root']
         if len(body_ids) == 1:
             sx, sy, sth = poses.get(body_ids[0], root_pose) if poses and body_ids[0] != 'root' else root_pose
-            out = sensor.sample(sx, sy, sth, world, sim_cfg)
+            out = sensor.sample(sx, sy, sth, world, sim_cfg, **kwargs)
         else:
             parts = []
             sensor._contact_dist_per_body = {}
@@ -37,11 +43,11 @@ def _sample_sensors(brain, sensors, x, y, theta, world, sim_cfg, poses=None):
                     orig = sensor.mount_angle
                     sensor.mount_angle = -orig
                     try:
-                        parts.append(sensor.sample(sx, sy, sth, world, sim_cfg))
+                        parts.append(sensor.sample(sx, sy, sth, world, sim_cfg, **kwargs))
                     finally:
                         sensor.mount_angle = orig
                 else:
-                    parts.append(sensor.sample(sx, sy, sth, world, sim_cfg))
+                    parts.append(sensor.sample(sx, sy, sth, world, sim_cfg, **kwargs))
                 if hasattr(sensor, '_contact_dist'):
                     sensor._contact_dist_per_body[bid] = sensor._contact_dist
             out = np.concatenate(parts)
@@ -253,18 +259,21 @@ def _clamp_to_arena(bot_pos, world, sim_cfg):
 
 
 def tick_physics(bot_pos, brain, sensors, world, sim_cfg, circuit=None,
-                 motor_override=None) -> dict:
+                 motor_override=None, other_agents=None) -> dict:
     """
     Run one physics step. Mutates bot_pos, brain state, and joint angles in-place.
 
     Parameters
     ----------
-    bot_pos  : list[float]    [x, y, theta] — modified in-place
-    brain    : BaseBrain
-    sensors  : list           explicit sensor objects, or empty list for legacy mode
-    world    : World
-    sim_cfg  : SimConfig
-    circuit  : CircuitModel   optional; required for hierarchical body FK + joint motors
+    bot_pos      : list[float]    [x, y, theta] — modified in-place
+    brain        : BaseBrain
+    sensors      : list           explicit sensor objects, or empty list for legacy mode
+    world        : World
+    sim_cfg      : SimConfig
+    circuit      : CircuitModel   optional; required for hierarchical body FK + joint motors
+    other_agents : list           optional; {'x','y','r'} circles for every other agent in
+                                   the session, seen by DistanceSensor/CollisionSensor as
+                                   additional obstacles (see sim_controller._tick)
 
     Returns
     -------
@@ -292,7 +301,7 @@ def tick_physics(bot_pos, brain, sensors, world, sim_cfg, circuit=None,
         #                         from the PREVIOUS tick, giving a one-tick delay
         #  3. _run_joint_motors — read freshly computed motor output → write joint.vel
         #                         for step 1 of the NEXT tick
-        mL, mR = _sample_sensors(brain, sensors, x, y, theta, world, sim_cfg, poses)
+        mL, mR = _sample_sensors(brain, sensors, x, y, theta, world, sim_cfg, poses, other_agents)
         raw['mL'] = mL
         raw['mR'] = mR
         for sensor in sensors:

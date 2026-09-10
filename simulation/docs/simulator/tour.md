@@ -159,8 +159,19 @@ A secondary selector for pre-defined evaluation scenarios. Select a task and pre
 
 Records sensor and motor data to a timestamped CSV file during a run.
 
-**● Record** — starts logging. The label updates with the output path.
-**■ Stop** — stops logging and closes the file.
+**● Record** / **■ Stop** — start and stop logging; **Visualize trajectories** opens the recorded run in the trajectory viewer. While logging, the status bar shows a **● REC** indicator.
+
+### Video { #video }
+
+Records the arena view as an H.264 `.mp4` file, ready to drop straight into a slide deck. If the Network Visualizer window is open when recording starts, it is captured to a second, independent `.mp4` file at the same time. Files are written to `logs/videos/`.
+
+**Name** — base filename; each output file gets an `_arena` or `_network` suffix.
+**Add timestamp** — when checked, inserts a date-time stamp between the base name and the suffix so repeated recordings don't overwrite each other.
+**Auto (Run/Stop)** — when checked, recording starts automatically when the main **▶ Run** button starts the simulation and stops automatically when it stops, instead of using the Record/Stop buttons here.
+**Speed** — playback speed multiplier (default 1×). Frames are always grabbed at a fixed real-time rate; Speed instead changes the frame rate stored in the file, so e.g. 2× plays back twice as fast and 0.5× is slow motion, with no dropped or duplicated frames.
+**● Record** / **■ Stop** — start and stop capture manually. While recording, the status bar shows a **● REC** indicator (combined with the Logger's, if both are active).
+
+Requires the optional `imageio` / `imageio-ffmpeg` packages (see `requirements.txt`); without them, Record shows an error dialog instead of a file.
 
 ---
 

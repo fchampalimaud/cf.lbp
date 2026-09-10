@@ -218,6 +218,10 @@ class _RenderMixin:
 
             kind = self._connection_kind(src_obj, tgt_obj, W, ns, nt)
 
+            if kind == self._CK_TEACH:
+                self._draw_teach_connection(src, tgt, W, ns, nt, positions,
+                                            sel_layer=sel_layer, sel_idx=sel_idx)
+                continue
             if kind == self._CK_TD:
                 self._draw_td_connection(src, tgt, W, ns, nt, positions,
                                          sel_layer=sel_layer, sel_idx=sel_idx)
@@ -406,6 +410,38 @@ class _RenderMixin:
                     self._draw_edge(p_s, p_t, w, sb, sn=sn_key, tn=tn_key,
                                     lw=3.0, color=amber_active, style=st,
                                     mark=True, marker_style='tick', tgt_gap=0.4)
+
+    def _draw_teach_connection(self, src, tgt, W, ns, nt, positions,
+                              sel_layer=None, sel_idx=None):
+        """Draw a SnapshotLayer's teach connection — solid green, fixed style.
+
+        Unlike _draw_td_connection, there is no ghost-for-zero-weight and no
+        sign-based solid/dashed distinction: this connection isn't a trained
+        Hebbian weight and isn't a signed synapse in the functional sense —
+        it's a fixed structural readout (see SnapshotLayer.help_text). Every
+        edge gets the same appearance regardless of W's actual value.
+        """
+        teach_color = self._TEACH_EDGE + (210,)
+        for i in range(nt):
+            if sel_idx is not None and tgt == sel_layer and i != sel_idx:
+                continue
+            tn_key = f'{tgt}_{i}'
+            if tn_key not in positions:
+                continue
+            p_t = positions[tn_key]
+            for j in range(ns):
+                if sel_idx is not None and src == sel_layer and j != sel_idx:
+                    continue
+                sn_key = f'{src}_{j}'
+                if sn_key not in positions:
+                    continue
+                w = float(W[i, j]) if W.ndim == 2 else float(W.flat[0])
+                p_s = positions[sn_key]
+                mid_y = (p_s[1] + p_t[1]) / 2
+                sb = self._CROSS_BOW if mid_y >= 0.5 else -self._CROSS_BOW
+                self._draw_edge(p_s, p_t, w, sb, sn=sn_key, tn=tn_key,
+                                lw=3.0, color=teach_color, style=Qt.SolidLine,
+                                mark=False, tgt_gap=0.4)
 
     def _draw_dense_connection(self, src, tgt, W, ns, nt, positions,
                                sel_layer=None, sel_idx=None):
@@ -638,7 +674,9 @@ class _RenderMixin:
         self._infer_and_set_n()
 
         for item in (self._edge_items + self._panel_items + self._text_items
-                     + list(self._container_label_items.values()) + self._note_items):
+                     + list(self._container_label_items.values())
+                     + [it for items in self._container_note_items.values() for it in items]
+                     + self._note_items):
             try:
                 self._plot.removeItem(item)
             except Exception:
@@ -695,6 +733,8 @@ class _RenderMixin:
         self._note_item_map     = {}
         self._panel_rect_map    = {}
         self._container_label_items   = {}
+        self._container_note_items    = {}
+        self._container_note_icon_pos = {}
         self._text_items        = []
         self._text_map          = {}
         self._node_container_map      = {}
@@ -1001,7 +1041,6 @@ class _RenderMixin:
             img_item.setRect(*cam_rect)
             self._camera_items[key] = img_item
             self._camera_rects[key] = cam_rect
-            _dlbl = _mirror_name(lyr.name)  # None if not lateralized
             _dlbl = (lyr.name[:-2] + ('_0' if lyr.name.endswith('_L') else '_1')
                      if lyr.name.endswith(('_L', '_R')) else lyr.name)
             lbl = pg.TextItem(_dlbl, color=C['dark'], anchor=(0.5, 1.0))
@@ -1167,8 +1206,8 @@ class _RenderMixin:
                 self._src_nodes[node_key] = nt
                 if nt not in self._wave_phase:
                     self._wave_phase[nt] = 0.0
-            rcv = [mn for mn, _sc, _si in getattr(obj, 'modulators', [])
-                   if mn in self._mod_colors]
+            rcv = [row[0] for row in getattr(obj, 'modulators', [])
+                   if row[0] in self._mod_colors]
             if rcv:
                 self._rcv_nodes[node_key] = rcv
 
@@ -1204,13 +1243,19 @@ class _RenderMixin:
         self._draw_notes()
 
     def _panel_label_text(self, container):
-        """Text for a column panel's title: either the manual nickname or, for a
-        shared (multi-z) column, an auto-title of whoever currently wins."""
+        """Text for a column panel's title: an auto-title of whoever currently
+        wins if this column is shared across z-levels; else the manual
+        "Set label..." nickname if one has been set; else the name of
+        whichever occupant was added to the circuit first, so a fresh
+        container starts out captioned instead of blank."""
         ghost_count = getattr(self, '_ghost_count', {})
         container_winner_names = getattr(self, '_container_winner_names', {})
         if ghost_count.get(container, 0) > 0 and container_winner_names.get(container):
             return ', '.join(container_winner_names[container])
-        return self._container_labels.get(self._container_key(container))
+        label = self._container_labels.get(self._container_key(container))
+        if label:
+            return label
+        return self._first_occupant_name(container)
 
     def _ghost_display_name(self, name):
         """A ghost's own container label if it has one, else its raw name."""
@@ -1360,8 +1405,71 @@ class _RenderMixin:
                 self._plot.addItem(lbl_item)
                 self._container_label_items[container] = lbl_item
 
+            note_text = self._container_notes.get(self._container_key(container), '')
+            if note_text:
+                icon_x = x_col + r + px + _he - self._CONTAINER_NOTE_PAD
+                icon_y = rect_bot + self._CONTAINER_NOTE_PAD
+                note_items = self._make_container_note_items(icon_x, icon_y)
+                for item in note_items:
+                    self._plot.addItem(item)
+                self._container_note_items[container]    = note_items
+                self._container_note_icon_pos[container] = (icon_x, icon_y)
+
     _NOTE_FILL   = '#F5E08A'
     _NOTE_BORDER = '#C8A030'
+
+    def _make_container_note_items(self, x, y):
+        """Build the small note-glyph items for a container — same colours as
+        a collapsed sticky note, just smaller and anchored to a fixed point
+        (the container's bottom-right corner) instead of being draggable."""
+        icon = pg.ScatterPlotItem(
+            x=[x], y=[y], size=self._CONTAINER_NOTE_ICON_PX * 2, symbol='o',
+            pen=pg.mkPen(self._NOTE_BORDER, width=1.2),
+            brush=pg.mkBrush(self._NOTE_FILL),
+        )
+        icon.setZValue(20)
+        label_font = QFont(self._NOTE_FONT_FAMILY, self._NOTE_FONT_SIZE - 1)
+        label_font.setBold(True)
+        label = pg.TextItem('N', anchor=(0.5, 0.5), color=self._NOTE_BORDER)
+        label.setFont(label_font)
+        label.setPos(x, y)
+        label.setZValue(21)
+        return [icon, label]
+
+    def _refresh_container_note(self, container):
+        """Redraw a single container's note glyph in place after an edit —
+        mirrors _refresh_container_label."""
+        old = self._container_note_items.pop(container, None)
+        self._container_note_icon_pos.pop(container, None)
+        if old is not None:
+            for item in old:
+                try:
+                    self._plot.removeItem(item)
+                except Exception:
+                    pass
+        note_text = self._container_notes.get(self._container_key(container), '')
+        if not note_text:
+            return
+        r, px = self._NODE_R, self._PAD_X
+        py = 0.04
+        container_nodes = [nk for nk, c in self._node_container_map.items() if c == container]
+        if not container_nodes:
+            return
+        x_col = self._container_x_map.get(container, 0.5)
+        col_ys = [self._positions[nk][1] for nk in container_nodes if nk in self._positions]
+        if not col_ys:
+            return
+        rect_bot = min(col_ys) - r - py
+        _span    = getattr(self, '_container_span_map', {}).get(container, 1)
+        _x_unit  = getattr(self, '_x_unit', 1.0)
+        _he      = (_span - 1) / 2.0 * _x_unit
+        icon_x = x_col + r + px + _he - self._CONTAINER_NOTE_PAD
+        icon_y = rect_bot + self._CONTAINER_NOTE_PAD
+        note_items = self._make_container_note_items(icon_x, icon_y)
+        for item in note_items:
+            self._plot.addItem(item)
+        self._container_note_items[container]    = note_items
+        self._container_note_icon_pos[container] = (icon_x, icon_y)
 
     def _make_note_items(self, note):
         """Build the graphics items for one note (collapsed icon, or box+text+toggle)."""

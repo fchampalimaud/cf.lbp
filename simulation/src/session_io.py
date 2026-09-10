@@ -8,11 +8,12 @@ import json
 import os
 
 from sim_constants import _NumpyEncoder
+from app_version import get_app_version
 
 
 def save_session(path, module_name, brain, sim_cfg, world,
                  speed_mult, trail_length, arena_round, multipliers,
-                 groups=None, net_cfg=None):
+                 groups=None, net_cfg=None, patches=None):
     """
     Write a session JSON to *path*.
 
@@ -28,15 +29,21 @@ def save_session(path, module_name, brain, sim_cfg, world,
     arena_round  : True if arena is circular
     multipliers  : dict of oscilloscope channel → scale value
     groups       : optional list of agent-group dicts for multiagent sessions
+    patches      : optional override for world.patches — used by the caller to
+                   translate a mounted-gradient patch's 'mounted_on' agent id
+                   into a stable positional index (see sim_app_session), since
+                   raw agent ids are re-minted on every session reload. Defaults
+                   to world.patches verbatim if not given.
     """
     os.makedirs(os.path.dirname(path) if os.path.dirname(path) else '.', exist_ok=True)
     data = {
+        'saved_with_app_version': get_app_version(),
         'module_name':      module_name,
         'class_name':       brain.__class__.__name__,
         'sim_params':       {k: getattr(sim_cfg, k) for k in sim_cfg.get_param_metadata()},
         'brain_params':     {k: getattr(brain, k)   for k in brain.get_param_metadata()},
         'plot_multipliers': multipliers,
-        'patches':          world.patches,
+        'patches':          patches if patches is not None else world.patches,
         'objects':          world.objects,
         'walls':            world.walls,
         'sky':              world.sky,

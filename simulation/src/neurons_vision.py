@@ -71,6 +71,16 @@ $$u_{eff} = \\text{pooled} - \\beta \\, a, \\quad \\frac{da}{dt} = \\frac{\\text
 Larger β → stronger suppression of sustained responses (burst-then-adapt).
 Smaller τ_a → faster adaptation, more transient responses.
 
+**Order of operations** (per tick, picking up from `pooled` above) — note:
+`noise_std`/`noise_tau` are exposed as parameters but are **not** currently
+applied anywhere in this layer's per-tick update:
+1. `u = pooled + bias`
+2. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
+3. subtract adaptation: `u -= β × a` (if `tau_a > 0` and `beta > 0`)
+4. `x = leaky(u)` — τ_rise/τ_decay (passthrough when `tau_rise = 0`)
+5. update adaptation from the pre-scale `x`: `a += (x − a) / τ_a × dt` (if `tau_a > 0` and `beta > 0`)
+6. `output = x × scale`
+
 - `pool='global_avg'` / `'global_max'` — output shape: `(n_filters,)`
 - `pool='none'` — output shape: `(n_filters, H_out, W_out)`
 - Use `padding='valid'` with zero-sum kernels to avoid edge artifacts.
@@ -81,7 +91,7 @@ Smaller τ_a → faster adaptation, more transient responses.
 
 - `neuromodulator_transmitter` — name of the signal this layer emits; its mean output is published to the bus each tick and can modulate any layer that lists it in `modulators`.
 - `neuromodulator_color` — display color for this neuromodulator in the visualizer.
-- `modulators` — list of `(name, scale, site)` triples:
+- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral):
   - `site="pre"`: multiplies the input sum by `1 + scale × signal` before integration.
   - `site="post"`: multiplies the output by `1 + scale × signal` after integration.
   - `site="none"`: declares the neuromodulator for learning/visualization only — no signal amplification.
@@ -276,6 +286,13 @@ its own rate of change between ticks *before* the leaky filter/activation
 run. Use `scale = -1` to flip which direction (brightening vs. darkening)
 reads positive.
 
+**Order of operations** (per tick, per pixel):
+1. `u = pixel + bias`
+2. add noise to `u` (if `noise_std > 0`)
+3. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
+4. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration
+5. `output pixel = activation(x) × scale`
+
 **Optic flow recipe:**
 1. Connect `GrayCameraSensor` → `Leaky2dLayer(tau_rise=0.2, output_mode='derivative', scale=-1, activation='relu')`
 2. Connect `Leaky2dLayer` → `Conv2dLayer` to extract spatial motion features.
@@ -285,7 +302,7 @@ reads positive.
 **Neuromodulation:**
 
 - `neuromodulator_transmitter` — name of the signal this layer emits.
-- `modulators` — list of `(name, scale, site)` triples (pre / post / none).
+- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral) (pre / post / none).
 """
 
     viz_n        = 1     # show as a single image node in the network visualizer (like a camera)
@@ -499,7 +516,25 @@ Positive output → motion in the preferred direction. Negative → opposite dir
 3. `global_avg`/`global_max`: pool the raw signed $R$ map first, **then** apply
    activation to that single scalar. `pool='none'`: activation is applied per pixel
    (there's no pooling to protect).
-4. Add bias → optional noise → optional leaky dynamics → × scale
+4. Add bias → optional noise → optional `output_mode` transform → optional
+   adaptation subtraction → leaky dynamics → update adaptation → × scale
+   (full per-tick breakdown below)
+
+**Order of operations** (per tick, in full):
+1. reshape the flat input vector to `(in_ch, H, W)`
+2. update the delay buffer: `I_del += (I_cur − I_del) × min(1, dt / τ_delay)` — exponential low-pass of the image
+3. for each of the `n_directions` preferred directions `(dy, dx)`:
+   - shift `I_cur` and `I_del` by `(dy, dx)`
+   - `R = mean_channels(I_del × I_cur_shifted − I_del_shifted × I_cur)`
+   - `global_avg`: `pooled_k = activation(mean(R))`; `global_max`: `pooled_k = activation(max(R))`; `none`: `pooled_k = activation(R)` per pixel
+4. stack the `n_directions` responses into `pooled`
+5. `u = pooled + bias`
+6. add noise to `u` (if `noise_std > 0`)
+7. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
+8. subtract adaptation: `u -= β × a` (if `tau_a > 0` and `beta > 0`)
+9. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration
+10. update adaptation from the pre-scale `x`: `a += (x − a) / τ_a × dt` (if `tau_a > 0` and `beta > 0`)
+11. `output = x × scale`
 
 **Why pool before activation (global_avg/global_max):**
 $R$ is signed and spatially balanced — positive pixels vote for this direction,
@@ -530,7 +565,7 @@ problem either way — every built-in activation is monotonic, so
 
 - `neuromodulator_transmitter` — name of the signal this layer emits; its mean output is published to the bus each tick.
 - `neuromodulator_color` — display color for this neuromodulator in the visualizer.
-- `modulators` — list of `(name, scale, site)` triples:
+- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral):
   - `site="pre"`: multiplies the pooled output by `1 + scale × signal` before dynamics.
   - `site="post"`: multiplies the output by `1 + scale × signal` after dynamics.
   - `site="none"`: declares the neuromodulator for learning/visualization only.

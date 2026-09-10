@@ -12,6 +12,7 @@ import json
 import os
 
 from sim_constants import _NumpyEncoder
+from app_version import get_app_version
 
 
 def discover_worlds():
@@ -22,7 +23,8 @@ def discover_worlds():
 def serialize_world_json(world) -> dict:
     """Return a dict capturing the persistable state of *world*."""
     return {
-        'version':       1,
+        'version':              1,
+        'saved_with_app_version': get_app_version(),
         'patches':       world.patches,
         'objects':       world.objects,
         'walls':         world.walls,

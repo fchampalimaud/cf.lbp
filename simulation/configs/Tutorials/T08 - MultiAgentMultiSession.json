@@ -1,0 +1,131 @@
+{
+    "saved_with_app_version": "0.7.0",
+    "module_name": "BrainGUI",
+    "class_name": "BrainGUI",
+    "sim_params": {
+        "dt": 0.01,
+        "arena_scale": 4.0,
+        "motor_gain": 1.0,
+        "sense_radius": 1.0,
+        "init_x": -1.0,
+        "init_y": 0.0,
+        "stim_radius": 0.5,
+        "body_radius": 0.1,
+        "sensor_angle": 0.14,
+        "toggle_stim": 1,
+        "fixate_robot": 0.0
+    },
+    "brain_params": {
+        "network_project": "Tutorials",
+        "network_file": "T08 - GradientBrain.json"
+    },
+    "plot_multipliers": {
+        "mL": 1.0,
+        "mR": 1.0
+    },
+    "patches": [
+        {
+            "x": -1.8704453441295548,
+            "y": -0.9352226720647767,
+            "r": 1.5615976094075859,
+            "color": [
+                1.0,
+                0.0,
+                0.0
+            ],
+            "label": "A"
+        },
+        {
+            "x": -1.8763526915413462,
+            "y": -1.482490926693198,
+            "r": 2.2284980917772286,
+            "color": [
+                0.0,
+                1.0,
+                0.0
+            ],
+            "label": "B",
+            "mounted_on": 2
+        },
+        {
+            "x": 0.017004048582995424,
+            "y": 1.122267206477733,
+            "r": 1.5647420792024238,
+            "color": [
+                1.0,
+                0.0,
+                0.0
+            ],
+            "label": "A"
+        }
+    ],
+    "objects": [
+        {
+            "x": 1.06594360086768,
+            "y": -0.8563991323210409,
+            "r": 0.1679916994387427,
+            "color": [
+                1.0,
+                0.0,
+                0.0
+            ],
+            "texture": null,
+            "external": true
+        },
+        {
+            "x": 2.8516268980477237,
+            "y": 0.01822125813449027,
+            "r": 0.22167117247073723,
+            "color": [
+                1.0,
+                0.0,
+                0.0
+            ],
+            "texture": null,
+            "external": true
+        },
+        {
+            "x": 2.541865509761389,
+            "y": 0.3644251626898054,
+            "r": 0.35937938515369816,
+            "color": [
+                1.0,
+                0.0,
+                0.0
+            ],
+            "texture": null,
+            "external": true
+        }
+    ],
+    "walls": [],
+    "sky": {
+        "enabled": false,
+        "angle": 0.0
+    },
+    "floor_texture": null,
+    "speed_mult": 200,
+    "trail_length": 1000,
+    "arena_round": true,
+    "agents": [
+        {
+            "module_name": "BrainGUI",
+            "name": "Blah",
+            "color": "#4a7fcb",
+            "n": 2,
+            "brain_params": {
+                "network_project": "Tutorials",
+                "network_file": "T08 - GradientBrain.json"
+            }
+        },
+        {
+            "module_name": "BrainGUI",
+            "name": "Group 2",
+            "color": "#22BB22",
+            "n": 1,
+            "brain_params": {
+                "network_project": "Tutorials",
+                "network_file": "T08 - DistanceAndGradientBrain.json"
+            }
+        }
+    ]
+}

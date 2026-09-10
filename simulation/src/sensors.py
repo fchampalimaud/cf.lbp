@@ -64,6 +64,8 @@ class BaseSensor(DynamicsBase):
     output_mode  = 'none'   # class-level default; overridden per instance
     _prev_output = None     # cleared on reset(); used by output_mode='derivative'
     _integral    = None     # cleared on reset(); used by output_mode='integral'
+    _noise_buf   = None     # cleared on reset(); OU noise state, used when noise_tau > 0
+    _mod_row_state = None   # dict, cleared/initialized on reset(); per-(name,mode) modulator-row state
 
     # Set True by subclasses that already add their own noise_std-scaled noise
     # in sample() (e.g. gated by a hit/event) before calling _process() — prevents
@@ -92,6 +94,46 @@ class BaseSensor(DynamicsBase):
             return self._integral.copy()
         return out
 
+    def _transform_modulator_value(self, key, mode, value, dt):
+        """Apply a modulator response mode to a raw scalar reading from the mod bus.
+
+        See `LayerBase._transform_modulator_value` (neurons_base.py) for the
+        full contract — this is the sensor-side twin, kept independent of
+        this sensor's own `_prev_output`/`_integral` (its own output_mode
+        state) and of every other modulator row.
+        """
+        if self._mod_row_state is None:
+            self._mod_row_state = {}
+        if mode == 'derivative':
+            state = self._mod_row_state.setdefault(key, {'prev': value})
+            prev = state['prev']
+            state['prev'] = value
+            return (value - prev) / max(float(dt), 1e-9)
+        if mode == 'integral':
+            state = self._mod_row_state.setdefault(key, {'integral': 0.0})
+            state['integral'] += value * dt
+            return state['integral']
+        return value
+
+    def _apply_noise(self, raw, dt):
+        """Add noise to raw. White noise (fresh independent sample each tick)
+        if noise_tau == 0; otherwise an Ornstein-Uhlenbeck process with that
+        correlation time — numpy equivalent of DynamicsBase._apply_noise
+        (neurons_base.py), which sensors can't use directly since it's torch-
+        based and depends on _init_dynamics_buffers, a layer-only call."""
+        noise_std = getattr(self, 'noise_std', 0.0)
+        if not noise_std:
+            return raw
+        noise_tau = getattr(self, 'noise_tau', 0.0)
+        if noise_tau and noise_tau > 0:
+            if self._noise_buf is None or self._noise_buf.shape != np.shape(raw):
+                self._noise_buf = np.zeros_like(raw, dtype=float)
+            self._noise_buf = self._noise_buf + (
+                -self._noise_buf / noise_tau + noise_std * np.random.randn(*np.shape(raw))
+            ) * dt
+            return raw + self._noise_buf
+        return raw + np.random.randn(*np.shape(raw)) * noise_std
+
     def _ray_angles(self):
         """Fan of n ray angles centred at self.center_angle ± self.angle_spread/2."""
         if self.n == 1:
@@ -101,7 +143,10 @@ class BaseSensor(DynamicsBase):
         return np.linspace(centre + spread / 2, centre - spread / 2, self.n)
 
     def _process(self, raw, sim_cfg):
-        """Apply optional noise, output_mode, asymmetric leaky dynamics, and activation.
+        """Apply bias, optional noise, output_mode, asymmetric leaky dynamics,
+        activation, and finally scale — same pipeline order as DynamicsBase-driven
+        layers (see LeakyLayer.step): bias joins the raw input first, scale is the
+        only thing applied after activation.
 
         output_mode transforms the raw (post-noise) reading BEFORE the leaky
         filter/activation below run, not the final output — otherwise an
@@ -109,9 +154,9 @@ class BaseSensor(DynamicsBase):
         even after the true reading returned to zero, since it never touched
         the raw signal at all.
         """
-        noise_std = getattr(self, 'noise_std', 0.0)
-        if noise_std > 0.0 and not self._noise_applied_in_sample:
-            raw = raw + np.random.randn(*np.shape(raw)) * noise_std
+        raw = raw + getattr(self, 'bias', 0.0)
+        if not self._noise_applied_in_sample:
+            raw = self._apply_noise(raw, sim_cfg.dt)
         raw = self._apply_output_mode(raw, sim_cfg.dt)
         tr = getattr(self, 'tau_rise', None)
         td = getattr(self, 'tau_decay', None)
@@ -127,6 +172,7 @@ class BaseSensor(DynamicsBase):
             out = raw
         self._pre_activation_output = out.copy()
         out = _activate(out, getattr(self, 'activation', 'linear'))
+        out = out * getattr(self, 'scale', 1.0)
         return out
 
     @classmethod
@@ -134,6 +180,7 @@ class BaseSensor(DynamicsBase):
         """Canonical base param entries appended to every sensor's dialog."""
         return [
             ('noise_std',     float, 0.0,      'Gaussian noise σ added each tick (0 = off)'),
+            ('noise_tau',     float, 0.0,      'OU correlation time (0 = white noise)'),
             ('tau_rise',      float, '',        'rise τ in seconds (empty = passthrough)'),
             ('tau_decay',     float, '',        'decay τ in seconds (empty = passthrough)'),
             ('activation',    str,   'linear',  'nonlinearity applied after dynamics',
@@ -155,6 +202,8 @@ class BaseSensor(DynamicsBase):
         self._x = None
         self._prev_output = None
         self._integral = None
+        self._noise_buf = None
+        self._mod_row_state = {}
 
     def is_lateralized(self, circuit=None) -> bool:
         """True when this sensor has a lateralized L/R structure (camera or mirrored joint pair)."""
@@ -194,15 +243,12 @@ class BaseSensor(DynamicsBase):
         return self.n or 1
 
     def process_robot_value(self, raw, sim_cfg) -> np.ndarray:
-        """Apply the full pipeline (scale, bias, noise, tau, activation) to a raw robot input.
+        """Apply the full pipeline (bias, noise, tau, activation, scale) to a raw robot input.
 
         Subclasses override this to add sensor-specific noise.
-        Default: scale + bias → _process (tau, activation).
         """
         raw = np.asarray(raw, dtype=float)
-        scale = getattr(self, 'scale', 1.0)
-        bias  = getattr(self, 'bias',  0.0)
-        return np.asarray(self._process(raw * scale + bias, sim_cfg), dtype=np.float32)
+        return np.asarray(self._process(raw, sim_cfg), dtype=np.float32)
 
     def sample(self, x, y, theta, world, sim_cfg) -> np.ndarray:
         raise NotImplementedError
@@ -227,21 +273,29 @@ $$\\alpha_i = \\text{center\\_angle} + \\text{fan}(i, n, \\text{angle\\_spread})
 
 $$p_i = \\bigl(x + d\\cos(\\theta+\\alpha_i),\\; y + d\\sin(\\theta+\\alpha_i)\\bigr)$$
 
-$$r_i = \\text{gradient}(p_i,\\; \\text{label}) \\times \\text{scale}$$
+$$r_i = \\text{gradient}(p_i,\\; \\text{label})$$
 
 `gradient = ''` — responds to all labels. `color_channel = 'R'/'G'/'B'` — single channel.
 
 **Output pipeline** (all sensors):
 
-$$\\tau = \\begin{cases}\\tau_{rise} & r > x \\\\ \\tau_{decay} & r \\leq x\\end{cases}, \\quad \\frac{dx}{dt} = \\frac{r - x}{\\tau}$$
+$$\\tau = \\begin{cases}\\tau_{rise} & u > x \\\\ \\tau_{decay} & u \\leq x\\end{cases}, \\quad \\frac{dx}{dt} = \\frac{u - x}{\\tau}$$
 
-$$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
+$$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times \\text{scale}\\ \\text{if no dynamics})$$
+
+**Order of operations** (per tick):
+1. `r_i = gradient(p_i, label)` — raw ray reading above
+2. `u = r_i + bias`
+3. add noise to `u` (if `noise_std > 0`)
+4. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
+5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (passthrough if no τ set)
+6. `output = activation(x) × scale`
 
 ---
 
 **Neuromodulation:**
 
-- `modulators` — list of `(name, scale, site)` triples. Multiplies the sensor output each tick by `1 + Σ (scale × signal)`. The `site` field is accepted but not used — all modulators contribute a single gain.
+- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral). Multiplies the sensor output each tick by `1 + Σ (scale × signal)`. The `site` field is accepted but not used — all modulators contribute a single gain.
   - `scale > 0` → excitatory (boosts sensitivity); `scale < 0` → inhibitory.
 """
 
@@ -251,9 +305,9 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
     _viz_lw     = 1.2
 
     def __init__(self, n=2, angle_spread=30.0, center_angle=0.0, dist=SENSOR_DIST,
-                 color_channel='', gradient=None, scale=1.0, tau_rise=None,
+                 color_channel='', gradient=None, scale=1.0, bias=0.0, tau_rise=None,
                  tau_decay=None, activation='linear',
-                 output_mode='none', noise_std=0.0, name='light', group=None,
+                 output_mode='none', noise_std=0.0, noise_tau=0.0, name='light', group=None,
                  modulators=None, robot_address=''):
         self.n              = n
         self.angle_spread   = np.radians(angle_spread)
@@ -262,8 +316,8 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
         self.color_channel  = color_channel
         self.gradient       = gradient
         self._init_dynamics(tau_rise=tau_rise, tau_decay=tau_decay,
-                            activation=activation, scale=scale, noise_std=noise_std,
-                            output_mode=output_mode)
+                            activation=activation, scale=scale, bias=bias,
+                            noise_std=noise_std, noise_tau=noise_tau, output_mode=output_mode)
         self.name           = name
         self.group          = group
         self.modulators     = modulators or []
@@ -284,9 +338,10 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
             ('color_channel', str,   '',               'R, G, B or empty for all'),
             ('gradient',      str,   '',               'label A–F or empty for all'),
             ('scale',         float, 1.0,      'output scale'),
+            ('bias',          float, 0.0,      'constant offset added after scale'),
             ('tau_rise',      float, '',       'rise τ (empty = passthrough)'),
             ('tau_decay',     float, '',       'decay τ (empty = passthrough)'),
-            ('activation',    str,   'linear', 'linear, relu, sigmoid, tanh'),
+            ('activation',    str,   'linear', 'output activation', ACTIVATIONS),
             ('output_mode',   str,   'none',   'none / derivative / integral', OUTPUT_MODES),
         ]
 
@@ -298,7 +353,7 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
             sx = x + self.dist * np.cos(sa)
             sy = y + self.dist * np.sin(sa)
             vals.append(world.get_signal(sx, sy, sa, ch, label=self.gradient))
-        return self._process(np.array(vals) * self.scale, sim_cfg)
+        return self._process(np.array(vals), sim_cfg)
 
 
 class ColorSensor(BaseSensor):
@@ -319,21 +374,29 @@ Casts `n` rays in a fan and detects solid coloured circular objects.
 
 **Raw signal** (per ray `i`):
 
-$$r_i = \\text{object\\_color}(\\text{ray}_i,\\; \\text{channel}) \\times \\text{scale}$$
+$$r_i = \\text{object\\_color}(\\text{ray}_i,\\; \\text{channel})$$
 
 Returns 1.0 on a hit (0.0 otherwise) if no colour filter. `color_channel = 'R'/'G'/'B'` reads only that channel.
 
 **Output pipeline** (all sensors):
 
-$$\\tau = \\begin{cases}\\tau_{rise} & r > x \\\\ \\tau_{decay} & r \\leq x\\end{cases}, \\quad \\frac{dx}{dt} = \\frac{r - x}{\\tau}$$
+$$\\tau = \\begin{cases}\\tau_{rise} & u > x \\\\ \\tau_{decay} & u \\leq x\\end{cases}, \\quad \\frac{dx}{dt} = \\frac{u - x}{\\tau}$$
 
-$$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
+$$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times \\text{scale}\\ \\text{if no dynamics})$$
+
+**Order of operations** (per tick):
+1. `r_i = object_color(ray_i, channel)` — raw ray reading above
+2. `u = r_i + bias`
+3. add noise to `u` (if `noise_std > 0`)
+4. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
+5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (passthrough if no τ set)
+6. `output = activation(x) × scale`
 
 ---
 
 **Neuromodulation:**
 
-- `modulators` — list of `(name, scale, site)` triples. Multiplies the sensor output each tick by `1 + Σ (scale × signal)`. The `site` field is accepted but not used — all modulators contribute a single gain.
+- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral). Multiplies the sensor output each tick by `1 + Σ (scale × signal)`. The `site` field is accepted but not used — all modulators contribute a single gain.
   - `scale > 0` → excitatory (boosts sensitivity); `scale < 0` → inhibitory.
 """
 
@@ -343,9 +406,9 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
     _viz_lw     = 1.5
 
     def __init__(self, n=2, angle_spread=30.0, center_angle=0.0, dist=SENSOR_DIST,
-                 color_channel='', scale=1.0, tau_rise=None,
+                 color_channel='', scale=1.0, bias=0.0, tau_rise=None,
                  tau_decay=None, activation='linear',
-                 output_mode='none', noise_std=0.0, name='objects', group=None,
+                 output_mode='none', noise_std=0.0, noise_tau=0.0, name='objects', group=None,
                  modulators=None, robot_address=''):
         self.n              = n
         self.angle_spread   = np.radians(angle_spread)
@@ -353,8 +416,8 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
         self.dist           = dist
         self.color_channel  = color_channel
         self._init_dynamics(tau_rise=tau_rise, tau_decay=tau_decay,
-                            activation=activation, scale=scale, noise_std=noise_std,
-                            output_mode=output_mode)
+                            activation=activation, scale=scale, bias=bias,
+                            noise_std=noise_std, noise_tau=noise_tau, output_mode=output_mode)
         self.name           = name
         self.group          = group
         self.modulators     = modulators or []
@@ -371,9 +434,10 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
             ('dist',          float, 0.12,             'placement distance'),
             ('color_channel', str,   '',               'R, G, B or empty for all'),
             ('scale',         float, 1.0,              'output scale'),
+            ('bias',          float, 0.0,      'constant offset added after scale'),
             ('tau_rise',      float, '',       'rise τ (empty = passthrough)'),
             ('tau_decay',     float, '',       'decay τ (empty = passthrough)'),
-            ('activation',    str,   'linear', 'linear, relu, sigmoid, tanh'),
+            ('activation',    str,   'linear', 'output activation', ACTIVATIONS),
             ('output_mode',   str,   'none',   'none / derivative / integral', OUTPUT_MODES),
         ]
 
@@ -385,7 +449,7 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
             sx = x + self.dist * np.cos(sa)
             sy = y + self.dist * np.sin(sa)
             vals.append(world.get_object_signal(sx, sy, sa, ch))
-        return self._process(np.array(vals) * self.scale, sim_cfg)
+        return self._process(np.array(vals), sim_cfg)
 
 
 
@@ -425,26 +489,38 @@ $$\\text{wall\\_threshold} = \\max\\!\\left(0.01,\\; r_{body} \\times (\\text{ra
 
 $$h_i = \\begin{cases}1 & \\text{any probe in sector } i \\text{ touches an obstacle} \\\\ 0 & \\text{otherwise}\\end{cases}$$
 
-$$o_i = h_i \\cdot \\text{scale} + \\text{bias} + h_i \\cdot \\text{noise\\_std} \\cdot \\varepsilon_i, \\quad \\varepsilon_i \\sim \\mathcal{N}(0,1)$$
+$$o_i = h_i + h_i \\cdot \\text{noise\\_std} \\cdot \\varepsilon_i, \\quad \\varepsilon_i \\sim \\mathcal{N}(0,1)$$
 
-(Noise is only added when there is a hit.)
+(Noise is only added when there is a hit, and is applied here — directly on the
+raw 0/1 signal — rather than in the generic noise stage below, so `noise_std`
+is in raw-signal units, not output-scale units.)
 
 **Output pipeline** (all sensors):
 
-$$\\tau = \\begin{cases}\\tau_{rise} & o_i > x \\\\ \\tau_{decay} & o_i \\leq x\\end{cases}, \\quad \\frac{dx}{dt} = \\frac{o_i - x}{\\tau}$$
+$$\\tau = \\begin{cases}\\tau_{rise} & u > x \\\\ \\tau_{decay} & u \\leq x\\end{cases}, \\quad \\frac{dx}{dt} = \\frac{u - x}{\\tau}$$
 
-$$\\text{output} = f(x) \\quad (\\text{or}\\ f(o_i)\\ \\text{if no dynamics})$$
+$$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times \\text{scale}\\ \\text{if no dynamics})$$
+
+**Order of operations** (per tick):
+1. `h_i = 1` if any probe in sector `i` touches an obstacle, else `0`
+2. `o_i = h_i + h_i × noise_std × ε_i` — noise gated on a hit, added directly to the raw signal (no separate noise stage below)
+3. `u = o_i + bias`
+4. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
+5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (passthrough if no τ set)
+6. `output = activation(x) × scale`
 
 - `n` — number of arc sectors (outputs).
 - `angle_spread` — total angular span covered by all sectors (degrees).
 - `arc_angle` — angular width of each individual sector (degrees); controls detection resolution within a sector.
 - `radius` — probe radius as a multiplier on body radius (`1.0` = robot surface, `> 1.0` = lookahead).
 
+In multi-agent sessions, sectors also fire on contact with other agents' bodies (treated as circles of `body_radius`), not just walls/objects.
+
 ---
 
 **Neuromodulation:**
 
-- `modulators` — list of `(name, scale, site)` triples. Multiplies the sensor output each tick by `1 + Σ (scale × signal)`. The `site` field is accepted but not used — all modulators contribute a single gain.
+- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral). Multiplies the sensor output each tick by `1 + Σ (scale × signal)`. The `site` field is accepted but not used — all modulators contribute a single gain.
   - `scale > 0` → excitatory (boosts sensitivity); `scale < 0` → inhibitory.
 """
 
@@ -453,7 +529,7 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(o_i)\\ \\text{if no dynamics})$$
     _noise_applied_in_sample = True  # noise is hit-gated in sample(); don't double-apply in _process()
 
     def __init__(self, n=4, angle_spread=90.0, arc_angle=45.0,
-                 radius=1.2, scale=1.0, bias=0.0, noise_std=0.0, tau_rise=None,
+                 radius=1.2, scale=1.0, bias=0.0, noise_std=0.0, noise_tau=0.0, tau_rise=None,
                  tau_decay=None, activation='linear',
                  output_mode='none', noise=None, name='collision', group=None,
                  modulators=None, robot_address=''):
@@ -464,7 +540,7 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(o_i)\\ \\text{if no dynamics})$$
         _noise_std = float(noise if noise is not None else noise_std)
         self._init_dynamics(tau_rise=tau_rise, tau_decay=tau_decay,
                             activation=activation, scale=scale, bias=bias,
-                            noise_std=_noise_std, output_mode=output_mode)
+                            noise_std=_noise_std, noise_tau=noise_tau, output_mode=output_mode)
         self.name           = name
         self.group          = group
         self.modulators     = modulators or []
@@ -497,18 +573,21 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(o_i)\\ \\text{if no dynamics})$$
     def _get_radius(self, sim_cfg):
         return sim_cfg.body_radius * self.radius
 
-    def sample(self, x, y, theta, world, sim_cfg) -> np.ndarray:
-        hit_arr = self._detect_hits(x, y, theta, world, sim_cfg)
+    def sample(self, x, y, theta, world, sim_cfg, other_agents=None) -> np.ndarray:
+        hit_arr = self._detect_hits(x, y, theta, world, sim_cfg, other_agents)
         return self._finalize_hits(hit_arr, sim_cfg)
 
-    def _detect_hits(self, x, y, theta, world, sim_cfg) -> np.ndarray:
+    def _detect_hits(self, x, y, theta, world, sim_cfg, other_agents=None) -> np.ndarray:
         """Vectorized analytic 2-D geometry check: per sector, is any probe point
-        along its arc within threshold of the arena boundary, an object, or a wall?
+        along its arc within threshold of the arena boundary, an object, a wall,
+        or another agent's body (other_agents, a list of {'x','y','r'} circles —
+        see sim_controller._tick's per-agent snapshot)?
 
         Numpy-vectorized equivalent of the original nested-Python-loop version
         (same math, verified bit-identical) — see TODO.md Performance review.
         Used whenever MuJoCo isn't computing this sensor's hits instead (see
-        MuJoCoEngine.sample_collision_sensors).
+        MuJoCoEngine.sample_collision_sensors, which reads other agents from
+        MuJoCo's own contact array instead of this list).
         """
         r      = self._get_radius(sim_cfg)
         limit  = sim_cfg.arena_scale
@@ -529,10 +608,11 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(o_i)\\ \\text{if no dynamics})$$
         else:
             hit = (np.abs(px) > limit - wall_threshold) | (np.abs(py) > limit - wall_threshold)
 
-        if world.objects:
-            ox  = np.array([o['x'] for o in world.objects])
-            oy  = np.array([o['y'] for o in world.objects])
-            orr = np.array([o['r'] for o in world.objects])
+        objs = world.objects + other_agents if other_agents else world.objects
+        if objs:
+            ox  = np.array([o['x'] for o in objs])
+            oy  = np.array([o['y'] for o in objs])
+            orr = np.array([o['r'] for o in objs])
             d   = np.hypot(px[..., None] - ox, py[..., None] - oy)
             hit |= np.any(d <= (orr + 0.005), axis=-1)
 
@@ -560,18 +640,27 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(o_i)\\ \\text{if no dynamics})$$
 
     def _finalize_hits(self, hit_arr: np.ndarray, sim_cfg) -> np.ndarray:
         """Shared post-processing for any raw per-sector hit array (0/1), regardless
-        of whether it came from _detect_hits (analytic) or MuJoCo's contact data."""
-        out = hit_arr * self.scale + self.bias
+        of whether it came from _detect_hits (analytic) or MuJoCo's contact data.
+
+        Noise is hit-gated here (proportional to hit_arr, zero when no contact)
+        and applied on the raw 0/1 signal, before _process's bias/scale — so
+        noise_std is in raw-signal units, not output-scale units. Uses the
+        shared _apply_noise (white or OU per noise_tau, same as every other
+        sensor) on a zero baseline so the noise term itself is hit-gated
+        without gating away the OU state's own continuity between contacts."""
+        out = hit_arr
         if self.noise_std > 0.0:
-            out = out + hit_arr * np.random.randn(self.n) * self.noise_std
+            noise = self._apply_noise(np.zeros_like(hit_arr, dtype=float), sim_cfg.dt)
+            out = out + hit_arr * noise
         self._values = self._process(out, sim_cfg)
         return self._values
 
     def process_robot_value(self, raw, sim_cfg) -> np.ndarray:
         raw = np.asarray(raw, dtype=float)
-        out = raw * self.scale + self.bias
+        out = raw
         if self.noise_std > 0.0:
-            out = out + raw * np.random.randn(self.n) * self.noise_std
+            noise = self._apply_noise(np.zeros_like(raw, dtype=float), sim_cfg.dt)
+            out = out + raw * noise
         return np.asarray(self._process(out, sim_cfg), dtype=np.float32)
 
 
@@ -591,24 +680,34 @@ Casts `n` rays outward in a fan. Output is normalised proximity: 1.0 = touching,
 
 **Raw signal** (per ray `i`):
 
-$$r_i = \\max\\!\\left(0,\\;1 - \\frac{d_i}{\\text{max\\_range}}\\right) \\times \\text{scale}$$
+$$r_i = \\max\\!\\left(0,\\;1 - \\frac{d_i}{\\text{max\\_range}}\\right)$$
 
 where $d_i$ is the distance to the nearest obstacle along ray $i$.
 
 **Output pipeline** (all sensors):
 
-$$\\tau = \\begin{cases}\\tau_{rise} & r > x \\\\ \\tau_{decay} & r \\leq x\\end{cases}, \\quad \\frac{dx}{dt} = \\frac{r - x}{\\tau}$$
+$$\\tau = \\begin{cases}\\tau_{rise} & u > x \\\\ \\tau_{decay} & u \\leq x\\end{cases}, \\quad \\frac{dx}{dt} = \\frac{u - x}{\\tau}$$
 
-$$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
+$$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times \\text{scale}\\ \\text{if no dynamics})$$
+
+**Order of operations** (per tick):
+1. `r_i = max(0, 1 − d_i / max_range)` — raw ray reading above
+2. `u = r_i + bias`
+3. add noise to `u` (if `noise_std > 0`)
+4. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
+5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (passthrough if no τ set)
+6. `output = activation(x) × scale`
 
 - `angle_spread` — total angular fan width in degrees.
 - `max_range` — rays beyond this distance read 0.
+
+In multi-agent sessions, rays also hit other agents' bodies (treated as circles of `body_radius`), not just walls/objects.
 
 ---
 
 **Neuromodulation:**
 
-- `modulators` — list of `(name, scale, site)` triples. Multiplies the sensor output each tick by `1 + Σ (scale × signal)`. The `site` field is accepted but not used — all modulators contribute a single gain.
+- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral). Multiplies the sensor output each tick by `1 + Σ (scale × signal)`. The `site` field is accepted but not used — all modulators contribute a single gain.
   - `scale > 0` → excitatory (boosts sensitivity); `scale < 0` → inhibitory.
 """
 
@@ -616,17 +715,17 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
     _viz_dashed = True
     _viz_lw     = 1.2
 
-    def __init__(self, n=5, angle_spread=90.0, max_range=1.0, scale=1.0, tau_rise=None,
-                 tau_decay=None, activation='linear',
-                 output_mode='none', noise_std=0.0, name='dist', group=None,
+    def __init__(self, n=5, angle_spread=90.0, max_range=1.0, scale=1.0, bias=0.0,
+                 tau_rise=None, tau_decay=None, activation='linear',
+                 output_mode='none', noise_std=0.0, noise_tau=0.0, name='dist', group=None,
                  modulators=None, robot_address=''):
         self.n              = n
         self.angle_spread   = np.radians(angle_spread)
         self.center_angle   = 0.0
         self.max_range      = max_range
         self._init_dynamics(tau_rise=tau_rise, tau_decay=tau_decay,
-                            activation=activation, scale=scale, noise_std=noise_std,
-                            output_mode=output_mode)
+                            activation=activation, scale=scale, bias=bias,
+                            noise_std=noise_std, noise_tau=noise_tau, output_mode=output_mode)
         self.name           = name
         self.group          = group
         self.modulators     = modulators or []
@@ -640,9 +739,10 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
             ('angle_spread',  float, np.radians(90.0), 'fan width in degrees'),
             ('max_range',     float, 1.0,      'maximum detection range'),
             ('scale',         float, 1.0,      'output scale'),
+            ('bias',          float, 0.0,      'constant offset added after scale'),
             ('tau_rise',      float, '',       'rise τ (empty = passthrough)'),
             ('tau_decay',     float, '',       'decay τ (empty = passthrough)'),
-            ('activation',    str,   'linear', 'linear, relu, sigmoid, tanh'),
+            ('activation',    str,   'linear', 'output activation', ACTIVATIONS),
             ('output_mode',   str,   'none',   'none / derivative / integral', OUTPUT_MODES),
         ]
 
@@ -710,8 +810,9 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
                     min_t = min(min_t, t)
         return min_t
 
-    def sample(self, x, y, theta, world, sim_cfg) -> np.ndarray:
+    def sample(self, x, y, theta, world, sim_cfg, other_agents=None) -> np.ndarray:
         limit = sim_cfg.arena_scale
+        objs  = world.objects + other_agents if other_agents else world.objects
         vals  = []
         for a in self._ray_angles():
             sa     = theta + a
@@ -719,11 +820,11 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
                 d_wall = self._round_wall_dist(x, y, sa, limit)
             else:
                 d_wall = self._wall_dist(x, y, sa, limit)
-            d_obj   = self._object_dist(x, y, sa, world.objects)
+            d_obj   = self._object_dist(x, y, sa, objs)
             d_walls = self._walls_ray_dist(x, y, sa, getattr(world, 'walls', []))
             d       = min(d_wall, d_obj, d_walls)
             vals.append(0.0 if d >= self.max_range else 1.0 - d / self.max_range)
-        return self._process(np.array(vals) * self.scale, sim_cfg)
+        return self._process(np.array(vals), sim_cfg)
 
 
 class InteroceptiveSensor(BaseSensor):
@@ -752,20 +853,21 @@ class InteroceptiveSensor(BaseSensor):
 
 Samples gradient intensity at the **mouth** (heading angle 0) and integrates it over time as an internal energy/satiation state.
 
-**Pipeline (one tick):**
+**Order of operations** (one tick):
 
 1. **Sample** — $r \\in [0,1]$: maximum gradient intensity within `body_radius` of the mouth point.
-2. **Scale & clip** — $s_{\\text{target}} = \\text{clip}(r \\times \\text{scale},\\; 0,\\; 1) \\times \\text{max\\_val}$
+2. **Scale & clip** — $s_{\\text{target}} = \\min(r \\times \\text{scale},\\; 1) \\times \\text{max\\_val}$
    - `scale` controls how sensitive the mouth is to the gradient. At `scale=1` full-intensity gradient drives the state all the way to `max_val`. At `scale=0.5` even a full-intensity patch only drives it to `max_val / 2`.
    - `max_val` is the ceiling of the internal state — the highest value the sensor can reach.
-3. **Integrate** — asymmetric leaky dynamics toward the target:
+3. apply the `output_mode` transform to $s_{\\text{target}}$ — derivative/integral (if not `none`) — **before** the leaky integration below runs, so a derivative/integral tracks the true stimulus, not this sensor's own filter lag.
+4. **Integrate** — asymmetric leaky dynamics toward the (possibly transformed) target:
 
 $$\\tau = \\begin{cases}\\tau_{rise} & s_{\\text{target}} > s \\\\ \\tau_{decay} & s_{\\text{target}} \\leq s\\end{cases}, \\qquad \\frac{ds}{dt} = \\frac{s_{\\text{target}} - s}{\\tau}$$
 
    - `tau_rise` — seconds to reach satiation when food is at the mouth.
    - `tau_decay` — seconds to return to zero when food is absent (should be >> `tau_rise` for realistic hunger).
 
-4. **Clip & output** — $\\text{output} = \\text{clip}(s,\\; 0,\\; \\text{max\\_val}) + \\text{bias}$
+5. **Clip & output** — $\\text{output} = \\text{clip}(s,\\; 0,\\; \\text{max\\_val}) + \\text{bias}$
    - `start_val` — initial value of $s$ at reset (0 = empty stomach, `max_val` = full).
    - `bias` — constant offset added to the output every tick. Use a negative bias to shift the resting output below zero (e.g. to encode a hunger drive rather than a satiation level).
 
@@ -777,7 +879,7 @@ $$\\tau = \\begin{cases}\\tau_{rise} & s_{\\text{target}} > s \\\\ \\tau_{decay}
 
 - `neuromodulator_transmitter` — if set, publishes the sensor's output to the neuromodulator bus under this name (e.g. `"satiety"`). Other layers/sensors can then receive it via their `modulators` list.
 - `neuromodulator_color` — hex color (`#RRGGBB`) used to draw the transmitter signal in the network visualizer. Only meaningful when `neuromodulator_transmitter` is set.
-- `modulators` — list of `(name, scale, site)` triples. Multiplies the sensor output by `1 + Σ (scale × signal)`. The `site` field is accepted but unused (no activation function to gate).
+- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral). Multiplies the sensor output by `1 + Σ (scale × signal)`. The `site` field is accepted but unused (no activation function to gate).
   - `scale > 0` → excitatory; `scale < 0` → inhibitory.
 """
 
@@ -785,7 +887,7 @@ $$\\tau = \\begin{cases}\\tau_{rise} & s_{\\text{target}} > s \\\\ \\tau_{decay}
 
     def __init__(self, gradient='A', scale=1.0, max_val=1.0, start_val=0.0,
                  bias=0.0, tau_rise=1.0, tau_decay=30.0, output_mode='none',
-                 activation='linear', noise_std=0.0,
+                 activation='linear', noise_std=0.0, noise_tau=0.0,
                  name='gut', group=None, modulators=None, robot_address=''):
         self.n              = 1
         self.gradient       = gradient
@@ -794,7 +896,7 @@ $$\\tau = \\begin{cases}\\tau_{rise} & s_{\\text{target}} > s \\\\ \\tau_{decay}
         self.bias           = bias
         self._init_dynamics(tau_rise=tau_rise, tau_decay=tau_decay,
                             activation=activation, scale=scale, noise_std=noise_std,
-                            output_mode=output_mode)
+                            noise_tau=noise_tau, output_mode=output_mode)
         self.name           = name
         self.group          = group
         self.modulators     = modulators or []
@@ -819,6 +921,7 @@ $$\\tau = \\begin{cases}\\tau_{rise} & s_{\\text{target}} > s \\\\ \\tau_{decay}
         self._state = float(self.start_val)
         self._prev_output = None
         self._integral = None
+        self._mod_row_state = {}
 
     def sample(self, x, y, theta, world, sim_cfg) -> np.ndarray:
         mx  = x + sim_cfg.body_radius * np.cos(theta)
@@ -873,15 +976,23 @@ Reads joint angle or angular velocity and optionally applies leaky dynamics.
 
 **Raw signal** (per joint `i`):
 
-$$r_i = \\text{joint}_i.\\text{angle} \\times \\text{scale} \\quad (\\text{or}\\ \\text{vel}\\ \\text{if use\\_velocity=True})$$
+$$r_i = \\text{joint}_i.\\text{angle} \\quad (\\text{or}\\ \\text{vel}\\ \\text{if use\\_velocity=True})$$
 
 `n` is set automatically from the number of joints in the named group.
 
 **Output pipeline** (all sensors):
 
-$$\\tau = \\begin{cases}\\tau_{rise} & r > x \\\\ \\tau_{decay} & r \\leq x\\end{cases}, \\quad \\frac{dx}{dt} = \\frac{r - x}{\\tau}$$
+$$\\tau = \\begin{cases}\\tau_{rise} & u > x \\\\ \\tau_{decay} & u \\leq x\\end{cases}, \\quad \\frac{dx}{dt} = \\frac{u - x}{\\tau}$$
 
-$$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
+$$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times \\text{scale}\\ \\text{if no dynamics})$$
+
+**Order of operations** (per tick):
+1. `r_i = joint_i.angle` (or `.vel` if `use_velocity=True`) — raw reading above
+2. `u = r_i + bias`
+3. add noise to `u` (if `noise_std > 0`)
+4. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
+5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (passthrough if no τ set)
+6. `output = activation(x) × scale`
 
 - `joint_id` — `motor_layer_name` of the joint group. A mirrored wheel pair → `n=2`; a single head joint → `n=1`.
 - `use_velocity = True` — reads angular velocity instead of angle.
@@ -890,21 +1001,22 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
 
 **Neuromodulation:**
 
-- `modulators` — list of `(name, scale, site)` triples. Multiplies the sensor output each tick by `1 + Σ (scale × signal)`. The `site` field is accepted but not used — all modulators contribute a single gain.
+- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral). Multiplies the sensor output each tick by `1 + Σ (scale × signal)`. The `site` field is accepted but not used — all modulators contribute a single gain.
   - `scale > 0` → excitatory (boosts sensitivity); `scale < 0` → inhibitory.
 """
 
     _viz_color = '#AADDFF'
 
-    def __init__(self, joint_id='root', use_velocity=False, scale=1.0, tau_rise=None,
-                 tau_decay=None, activation='linear', output_mode='none', noise_std=0.0,
-                 name='proprio', group=None, modulators=None, robot_address=''):
+    def __init__(self, joint_id='root', use_velocity=False, scale=1.0, bias=0.0,
+                 tau_rise=None, tau_decay=None, activation='linear', output_mode='none',
+                 noise_std=0.0, noise_tau=0.0, name='proprio', group=None, modulators=None,
+                 robot_address=''):
         self.n              = 1
         self.joint_id       = joint_id
         self.use_velocity   = use_velocity
         self._init_dynamics(tau_rise=tau_rise, tau_decay=tau_decay,
-                            activation=activation, scale=scale, noise_std=noise_std,
-                            output_mode=output_mode)
+                            activation=activation, scale=scale, bias=bias,
+                            noise_std=noise_std, noise_tau=noise_tau, output_mode=output_mode)
         self.name           = name
         self.group          = group
         self.modulators     = modulators or []
@@ -919,9 +1031,10 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
             ('joint_id',       str,   'root',   'motor_layer_name of the joint group to read'),
             ('use_velocity',   bool,  False,    'read angular velocity instead of angle'),
             ('scale',          float, 1.0,      'output multiplier'),
+            ('bias',           float, 0.0,      'constant offset added after scale'),
             ('tau_rise',       float, '',       'rise τ (empty = passthrough)'),
             ('tau_decay',      float, '',       'decay τ (empty = passthrough)'),
-            ('activation',     str,   'linear', 'linear, relu, sigmoid, tanh'),
+            ('activation',     str,   'linear', 'output activation', ACTIVATIONS),
             ('output_mode',    str,   'none',   'none / derivative / integral', OUTPUT_MODES),
         ]
 
@@ -929,18 +1042,20 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
         self._x = None
         self._prev_output = None
         self._integral = None
+        self._noise_buf = None
+        self._mod_row_state = {}
 
     def sample(self, x, y, theta, world, sim_cfg) -> np.ndarray:
         if self._joint_refs:
             raw = np.array([
-                (jt.vel if self.use_velocity else jt.angle) * self.scale
+                (jt.vel if self.use_velocity else jt.angle)
                 for jt in self._joint_refs
             ])
         elif self._layer_ref is not None:
             out = self._layer_ref.output
             if out is None:
                 return np.zeros(max(1, self.n))
-            raw = np.atleast_1d(np.asarray(out, dtype=float)) * self.scale
+            raw = np.atleast_1d(np.asarray(out, dtype=float))
         else:
             return np.zeros(max(1, self.n))
         return self._process(raw, sim_cfg)
@@ -967,31 +1082,39 @@ where $d_m$ = `mount_dist`, $\\alpha_m$ = `mount_angle`.
 
 **Raw signal:**
 
-$$r = \\text{clip}\\!\\left(\\frac{\\text{length} - d}{\\text{length}},\\; 0,\\; 1\\right) \\times \\text{scale}$$
+$$r = \\text{clip}\\!\\left(\\frac{\\text{length} - d}{\\text{length}},\\; 0,\\; 1\\right)$$
 
 where $d$ = distance to first obstacle. If no contact: $r = 0$.
 
 **Output pipeline** (all sensors):
 
-$$\\tau = \\begin{cases}\\tau_{rise} & r > x \\\\ \\tau_{decay} & r \\leq x\\end{cases}, \\quad \\frac{dx}{dt} = \\frac{r - x}{\\tau}$$
+$$\\tau = \\begin{cases}\\tau_{rise} & u > x \\\\ \\tau_{decay} & u \\leq x\\end{cases}, \\quad \\frac{dx}{dt} = \\frac{u - x}{\\tau}$$
 
-$$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
+$$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times \\text{scale}\\ \\text{if no dynamics})$$
+
+**Order of operations** (per tick):
+1. `r = clip((length − d) / length, 0, 1)` if contact, else `0` — raw reading above
+2. `u = r + bias`
+3. add noise to `u` (if `noise_std > 0`)
+4. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
+5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (passthrough if no τ set)
+6. `output = activation(x) × scale`
 """
 
     _viz_color = '#DDCC55'
     viz_type   = 'whisker'
 
     def __init__(self, length=0.15, mount_dist=0.0, mount_angle=0.0,
-                 n=1, scale=1.0, tau_rise=None, tau_decay=None, activation='linear',
-                 output_mode='none', noise_std=0.0, name='whisker', group=None,
+                 n=1, scale=1.0, bias=0.0, tau_rise=None, tau_decay=None, activation='linear',
+                 output_mode='none', noise_std=0.0, noise_tau=0.0, name='whisker', group=None,
                  modulators=None, robot_address=''):
         self.length         = length
         self.mount_dist     = mount_dist
         self.mount_angle    = mount_angle
         self.n              = n
         self._init_dynamics(tau_rise=tau_rise, tau_decay=tau_decay,
-                            activation=activation, scale=scale, noise_std=noise_std,
-                            output_mode=output_mode)
+                            activation=activation, scale=scale, bias=bias,
+                            noise_std=noise_std, noise_tau=noise_tau, output_mode=output_mode)
         self.name           = name
         self.group          = group
         self.modulators     = modulators or []
@@ -1007,9 +1130,10 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
             ('mount_angle',  float, 0.0,      'mount angle offset from body heading (radians)'),
             ('n',            int,   1,         'number of neurons'),
             ('scale',        float, 1.0,       'output scale'),
+            ('bias',         float, 0.0,       'constant offset added after scale'),
             ('tau_rise',     float, '',        'rise τ (empty = passthrough)'),
             ('tau_decay',    float, '',        'decay τ (empty = passthrough)'),
-            ('activation',   str,   'linear',  'linear, relu, sigmoid, tanh'),
+            ('activation',   str,   'linear',  'output activation', ACTIVATIONS),
             ('output_mode',  str,   'none',    'none / derivative / integral', OUTPUT_MODES),
         ]
 
@@ -1025,6 +1149,8 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
         self._x = None
         self._prev_output = None
         self._integral = None
+        self._noise_buf = None
+        self._mod_row_state = {}
 
     def sample(self, x, y, theta, world, sim_cfg) -> np.ndarray:
         ox, oy, ray_th = self._mount_pose(x, y, theta)
@@ -1036,7 +1162,7 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
             self._contact_dist = d
             signal = (self.length - d) / self.length   # 0 at tip, 1 at base
             raw = np.full(self.n or 1, float(np.clip(signal, 0.0, 1.0)))
-        return self._process(raw * self.scale, sim_cfg)
+        return self._process(raw, sim_cfg)
 
     def _ray_cast(self, x, y, theta, world, sim_cfg):
         """Return distance to first intersection within whisker length, or None."""
@@ -1104,15 +1230,23 @@ Always senses, whether or not the polarization field is shown in the arena — t
 
 **Tuning curve** (per neuron `k`):
 
-$$r_k = \\cos\\!\\left(\\theta - \\phi_{\\text{sun}} - \\phi_0 - k \\cdot \\frac{2\\pi}{n}\\right) \\times \\text{scale}$$
+$$r_k = \\cos\\!\\left(\\theta - \\phi_{\\text{sun}} - \\phi_0 - k \\cdot \\frac{2\\pi}{n}\\right)$$
 
 where $\\phi_{\\text{sun}} = \\text{sky.angle} + \\pi/2$ (perpendicular to e-vector bars) and $\\phi_0$ = `phase`.
 
 **Output pipeline** (all sensors):
 
-$$\\tau = \\begin{cases}\\tau_{rise} & r > x \\\\ \\tau_{decay} & r \\leq x\\end{cases}, \\quad \\frac{dx}{dt} = \\frac{r - x}{\\tau}$$
+$$\\tau = \\begin{cases}\\tau_{rise} & u > x \\\\ \\tau_{decay} & u \\leq x\\end{cases}, \\quad \\frac{dx}{dt} = \\frac{u - x}{\\tau}$$
 
-$$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
+$$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times \\text{scale}\\ \\text{if no dynamics})$$
+
+**Order of operations** (per tick):
+1. `r_k = cos(θ − φ_sun − φ₀ − k·2π/n)` — raw tuning-curve reading above
+2. `u = r_k + bias`
+3. add noise to `u` (if `noise_std > 0`)
+4. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
+5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (passthrough if no τ set)
+6. `output = activation(x) × scale`
 
 - `n` — number of DRA neurons (heading directions sampled).
 - `phase` — rotates neuron 0 to align with a reference direction.
@@ -1123,14 +1257,14 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
 
 **Neuromodulation:**
 
-- `modulators` — list of `(name, scale, site)` triples. Multiplies the sensor output each tick by `1 + Σ (scale × signal)`. The `site` field is accepted but not used — all modulators contribute a single gain.
+- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral). Multiplies the sensor output each tick by `1 + Σ (scale × signal)`. The `site` field is accepted but not used — all modulators contribute a single gain.
   - `scale > 0` → excitatory (boosts sensitivity); `scale < 0` → inhibitory.
 """
 
     _viz_color = '#FFDD88'
     viz_type   = 'sky'
 
-    def __init__(self, n=8, scale=1.0, phase=0.0,
+    def __init__(self, n=8, scale=1.0, bias=0.0, phase=0.0,
                  tau_rise=None, tau_decay=None,
                  activation='relu', noise_std=0.0,
                  noise_tau=0.0, output_mode='none',
@@ -1138,7 +1272,7 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
         self.n              = n
         self.phase          = phase
         self._init_dynamics(tau_rise=tau_rise, tau_decay=tau_decay,
-                            activation=activation, scale=scale,
+                            activation=activation, scale=scale, bias=bias,
                             noise_std=noise_std, noise_tau=noise_tau,
                             output_mode=output_mode)
         self.name           = name
@@ -1146,7 +1280,6 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
         self.modulators     = modulators or []
         self.robot_address = robot_address
         self._x             = None
-        self._noise         = np.zeros(n)
         self._last_output   = np.zeros(n)
 
     @classmethod
@@ -1154,10 +1287,11 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
         return [
             ('n',              int,   8,        'number of DRA neurons'),
             ('scale',          float, 1.0,      'output multiplier'),
+            ('bias',           float, 0.0,      'constant offset added after scale'),
             ('phase',          float, 0.0,      'phase offset (rad) — aligns neuron 0 to field direction'),
             ('tau_rise',       float, '',       'rise τ (empty = passthrough)'),
             ('tau_decay',      float, '',       'decay τ (empty = passthrough)'),
-            ('activation',     str,   'relu',   'relu / linear / sigmoid / tanh'),
+            ('activation',     str,   'relu',   'output activation', ACTIVATIONS),
             ('noise_std',      float, 0.0,      'noise amplitude'),
             ('noise_tau',      float, 0.0,      'OU correlation time (0 = white noise)'),
             ('output_mode',    str,   'none',   'none / derivative / integral', OUTPUT_MODES),
@@ -1165,23 +1299,17 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
 
     def reset(self):
         self._x           = None
-        self._noise[:]    = 0.0
+        self._noise_buf   = None
         self._last_output = np.zeros(self.n)
         self._prev_output = None
         self._integral = None
+        self._mod_row_state = {}
 
     def sample(self, x, y, theta, world, sim_cfg) -> np.ndarray:
         sun_dir = world.get_sky_sun_dir()
         k   = np.arange(self.n)
         raw = np.cos(theta - sun_dir - self.phase - k * 2 * np.pi / self.n)
-        if self.noise_std > 0:
-            if self.noise_tau > 0:
-                self._noise += (-self._noise / self.noise_tau +
-                                self.noise_std * np.random.normal(0, 1, size=raw.shape)) * sim_cfg.dt
-                raw = raw + self._noise
-            else:
-                raw = raw + np.random.normal(0, self.noise_std, size=raw.shape)
-        result = self._process(raw * self.scale, sim_cfg)
+        result = self._process(raw, sim_cfg)
         self._last_output = result
         if os.environ.get('LBP_DEBUG_COMPASS'):
             self._debug_tick = getattr(self, '_debug_tick', 0) + 1
@@ -1210,15 +1338,23 @@ Pressing the **Up** arrow key advances the bump by one neuron step (`+2π/n`); *
 
 **Tuning curve** (per neuron `k`):
 
-$$r_k = \\cos\\!\\left(k \\cdot \\frac{2\\pi}{n} - \\phi\\right) \\times \\text{scale}$$
+$$r_k = \\cos\\!\\left(k \\cdot \\frac{2\\pi}{n} - \\phi\\right)$$
 
 where $\\phi$ is the internal phase, stepped by `±2π/n` per key press (starts at 0, wraps at `2π`).
 
 **Output pipeline** (all sensors):
 
-$$\\tau = \\begin{cases}\\tau_{rise} & r > x \\\\ \\tau_{decay} & r \\leq x\\end{cases}, \\quad \\frac{dx}{dt} = \\frac{r - x}{\\tau}$$
+$$\\tau = \\begin{cases}\\tau_{rise} & u > x \\\\ \\tau_{decay} & u \\leq x\\end{cases}, \\quad \\frac{dx}{dt} = \\frac{u - x}{\\tau}$$
 
-$$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
+$$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times \\text{scale}\\ \\text{if no dynamics})$$
+
+**Order of operations** (per tick):
+1. `r_k = cos(k·2π/n − φ)` — raw tuning-curve reading above
+2. `u = r_k + bias`
+3. add noise to `u` (if `noise_std > 0`)
+4. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
+5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (passthrough if no τ set)
+6. `output = activation(x) × scale`
 
 - `n` — number of neurons around the bump.
 - `noise_std` / `noise_tau` — additive Ornstein-Uhlenbeck noise on the raw signal.
@@ -1227,20 +1363,20 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
 
 **Neuromodulation:**
 
-- `modulators` — list of `(name, scale, site)` triples. Multiplies the sensor output each tick by `1 + Σ (scale × signal)`. The `site` field is accepted but not used — all modulators contribute a single gain.
+- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral). Multiplies the sensor output each tick by `1 + Σ (scale × signal)`. The `site` field is accepted but not used — all modulators contribute a single gain.
   - `scale > 0` → excitatory (boosts sensitivity); `scale < 0` → inhibitory.
 """
 
     _viz_color = '#C8A0FF'
     viz_type   = None
 
-    def __init__(self, n=8, scale=1.0, tau_rise=None, tau_decay=None,
+    def __init__(self, n=8, scale=1.0, bias=0.0, tau_rise=None, tau_decay=None,
                  activation='relu', noise_std=0.0, noise_tau=0.0,
                  output_mode='none', name='bump', group=None,
                  modulators=None, robot_address=''):
         self.n              = n
         self._init_dynamics(tau_rise=tau_rise, tau_decay=tau_decay,
-                            activation=activation, scale=scale,
+                            activation=activation, scale=scale, bias=bias,
                             noise_std=noise_std, noise_tau=noise_tau,
                             output_mode=output_mode)
         self.name           = name
@@ -1256,8 +1392,9 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
             ('n',              int,   8,        'number of neurons around the bump'),
             ('tau_rise',       float, '',       'rise τ (empty = passthrough)'),
             ('tau_decay',      float, '',       'decay τ (empty = passthrough)'),
-            ('activation',     str,   'relu',   'relu / linear / sigmoid / tanh'),
+            ('activation',     str,   'relu',   'output activation', ACTIVATIONS),
             ('scale',          float, 1.0,      'output multiplier'),
+            ('bias',           float, 0.0,      'constant offset added after scale'),
             ('noise_std',      float, 0.0,      'noise amplitude'),
             ('noise_tau',      float, 0.0,      'OU correlation time (0 = white noise)'),
             ('output_mode',    str,   'none',   'none / derivative / integral', OUTPUT_MODES),
@@ -1268,6 +1405,8 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
         self._phase = 0.0
         self._prev_output = None
         self._integral = None
+        self._noise_buf = None
+        self._mod_row_state = {}
 
     def step(self, direction):
         """Advance (direction>0) or retreat (direction<0) the bump by one neuron step."""
@@ -1276,7 +1415,120 @@ $$\\text{output} = f(x) \\quad (\\text{or}\\ f(r)\\ \\text{if no dynamics})$$
     def sample(self, x, y, theta, world, sim_cfg) -> np.ndarray:
         k   = np.arange(self.n)
         raw = np.cos(k * 2 * np.pi / self.n - self._phase)
-        return self._process(raw * self.scale, sim_cfg)
+        return self._process(raw, sim_cfg)
+
+
+class ManualCueSensor(BaseSensor):
+    """
+    Fake sensor for testing reward/context-driven circuits: outputs 1.0 while
+    a configured keyboard key is held down, 0.0 otherwise. A generic stand-in
+    for any binary event a real sensor would eventually detect (reward
+    arrival, odor context, ...) — not driven by robot pose or world state.
+
+    Example:
+        ManualCueSensor(key='R', name='reward')
+    """
+
+    help_text = """\
+## ManualCueSensor — keyboard-held binary cue
+
+Outputs 1.0 while a configured key is held down, 0.0 otherwise — a stand-in
+for any binary event sensor (reward arrival, odor context, ...) you don't
+have a real detector for yet. This is global to the 2D simulator window — it
+works regardless of Manual-drive mode or which motor command source is
+active, and regardless of which top-level window has keyboard focus.
+
+**Raw signal:**
+
+$$r = \\begin{cases}1 & \\text{key held} \\\\ 0 & \\text{otherwise}\\end{cases}$$
+
+Run this through `tau_decay` to shape a quick tap into a brief phasic pulse
+(e.g. a dopamine-like reward signal), or hold the key down for a sustained
+context cue — same sensor, different use depending on how long you hold the
+key and how the dynamics are configured.
+
+**Output pipeline** (all sensors):
+
+$$\\tau = \\begin{cases}\\tau_{rise} & u > x \\\\ \\tau_{decay} & u \\leq x\\end{cases}, \\quad \\frac{dx}{dt} = \\frac{u - x}{\\tau}$$
+
+$$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times \\text{scale}\\ \\text{if no dynamics})$$
+
+**Order of operations** (per tick):
+1. `r = 1` if the key is held, else `0` — raw reading above
+2. `u = r + bias`
+3. add noise to `u` (if `noise_std > 0`)
+4. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
+5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (passthrough if no τ set)
+6. `output = activation(x) × scale`
+
+- `key` — single keyboard character that drives this sensor (case-insensitive).
+  Avoid keys already bound elsewhere: WASD/Space (manual drive), Up/Down
+  (`ManualBumpSensor`), and world-edit letters (gradients A–F, objects
+  Z/Y/X/W/V/U).
+- `noise_std` / `noise_tau` — additive Ornstein-Uhlenbeck noise on the raw signal.
+
+---
+
+**Neuromodulation:**
+
+- `neuromodulator_transmitter` — if set, publishes this sensor's output to the
+  neuromodulator bus under this name (e.g. `"dopamine"`) — the natural way to
+  wire a faked reward key straight into a `ThreeFactorLayer`'s reward gate.
+- `neuromodulator_color` — hex color for this transmitter in the visualizer.
+- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute /
+  derivative / integral). Multiplies the sensor output each tick by
+  `1 + Σ (scale × signal)`. The `site` field is accepted but not used.
+  - `scale > 0` → excitatory (boosts sensitivity); `scale < 0` → inhibitory.
+"""
+
+    _viz_color = '#FFD866'
+    viz_type   = None
+
+    def __init__(self, key='R', scale=1.0, bias=0.0, tau_rise=None, tau_decay=None,
+                 activation='linear', noise_std=0.0, noise_tau=0.0,
+                 output_mode='none', name='cue', group=None,
+                 modulators=None, robot_address=''):
+        self.n              = 1
+        self.key            = (key or 'R')[:1].upper()
+        self._init_dynamics(tau_rise=tau_rise, tau_decay=tau_decay,
+                            activation=activation, scale=scale, bias=bias,
+                            noise_std=noise_std, noise_tau=noise_tau,
+                            output_mode=output_mode)
+        self.name           = name
+        self.group          = group
+        self.modulators     = modulators or []
+        self.robot_address = robot_address
+        self._x             = None
+        self._pressed       = False
+
+    @classmethod
+    def param_defs(cls):
+        return [
+            ('key',            str,   'R',      'keyboard key that drives this sensor (held = 1)'),
+            ('tau_rise',       float, '',       'rise τ (empty = passthrough)'),
+            ('tau_decay',      float, '',       'decay τ (empty = passthrough)'),
+            ('activation',     str,   'linear', 'output activation', ACTIVATIONS),
+            ('scale',          float, 1.0,      'output multiplier'),
+            ('bias',           float, 0.0,      'constant offset added after scale'),
+            ('noise_std',      float, 0.0,      'noise amplitude'),
+            ('noise_tau',      float, 0.0,      'OU correlation time (0 = white noise)'),
+            ('output_mode',    str,   'none',   'none / derivative / integral', OUTPUT_MODES),
+        ]
+
+    def reset(self):
+        self._x     = None
+        self._prev_output = None
+        self._integral = None
+        self._noise_buf = None
+        self._mod_row_state = {}
+
+    def set_pressed(self, pressed):
+        """Called externally by the app-wide cue-key filter when this sensor's bound key changes state."""
+        self._pressed = bool(pressed)
+
+    def sample(self, x, y, theta, world, sim_cfg) -> np.ndarray:
+        raw = np.array([1.0 if self._pressed else 0.0])
+        return self._process(raw, sim_cfg)
 
 
 class CameraSensor(BaseSensor):
@@ -1323,7 +1575,7 @@ class CameraSensor(BaseSensor):
 
     def __init__(self, width=64, height=48, fov=90.0, center_angle=0.0,
                  vertical_angle=0.0, max_range=10.0, lateralized=False, overlap=0,
-                 output_mode='none', noise_std=0.0, tau_rise=None, tau_decay=None,
+                 output_mode='none', noise_std=0.0, noise_tau=0.0, tau_rise=None, tau_decay=None,
                  name='camera', group=None, body_id='root', robot_address='',
                  **_ignored):
         self.width          = width
@@ -1335,7 +1587,7 @@ class CameraSensor(BaseSensor):
         self.lateralized    = lateralized
         self.overlap        = overlap
         self._init_dynamics(tau_rise=tau_rise, tau_decay=tau_decay,
-                            activation='linear', noise_std=noise_std,
+                            activation='linear', noise_std=noise_std, noise_tau=noise_tau,
                             output_mode=output_mode)
         self.name           = name
         self.group          = group
@@ -1522,13 +1774,23 @@ $$\\text{pixel}_i = \\frac{R_i + G_i + B_i}{3}$$
 
 **Output shape:**
 
-$$\\text{output} \\in \\mathbb{R}^{H \\times W} \\quad \\text{(flat row-major)}$$
-
-**Lateralized** (`lateralized=True`): frame is split at the horizontal midline (with `overlap` pixels):
+**Lateralized** (`lateralized=True`): the frame is split at the horizontal midline (with `overlap` pixels), and each half carries the **full** captured image — use this to feed a `Conv2dLayer` pair with real 2-D spatial structure:
 
 $$\\text{sensor\\_L} \\in \\mathbb{R}^{H \\times (W/2 + \\text{overlap})}, \\quad \\text{sensor\\_R} \\in \\mathbb{R}^{H \\times (W/2 + \\text{overlap})}$$
 
-Each half connects to its own `Conv2dLayer` (`_L` / `_R` pair). Connect to a `Conv2dLayer` to apply 2-D filters, or use the flat vector directly.
+**Not lateralized** (`lateralized=False`, default): the plain `output` read by other layers is only the frame's **centre row** — a `(W,)` vector, *not* the full `(H, W)` image. The complete `(H, W)` frame is still computed every tick and cached in `_last_frame` for the visualizer thumbnail, but only its centre row reaches the network — set `lateralized=True` if a downstream layer needs the full image.
+
+Each half connects to its own `Conv2dLayer` (`_L` / `_R` pair).
+
+**Order of operations** (per tick):
+1. raycast `width` rays across the FOV; each ray returns the colour of the nearest hit (object / wall / arena boundary), or black if nothing within `max_range`
+2. tile the ray colours into `height` rows (`vertical_angle` masks rows beyond a row-dependent, cosine-scaled range to black)
+3. `pixel = (R + G + B) / 3` per pixel → grayscale `(H, W)` frame `r`, cached as `_last_frame`
+4. if `lateralized`: split `r` at the midline (± `overlap`) into `sensor_L`/`sensor_R` — these are the **raw pixel values**, bypassing steps 5-7 below entirely (no noise or dynamics applied)
+5. otherwise: take `r`'s **centre row only** (shape `(W,)`) as `u`
+6. add noise to `u` (if `noise_std > 0`)
+7. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
+8. per-pixel `output = leaky(u)` (if `tau_rise`/`tau_decay` set; else `output = u`) — this sensor's `bias`/`scale`/`activation` aren't exposed as parameters and are fixed at `0` / `1` / `linear`, so they have no effect
 
 - `vertical_angle` — camera tilt in degrees. Positive = tilted down toward ground, negative = tilted up. Each image row sees a different ground distance: bottom rows see closer, top rows see farther. At 90° the camera looks straight down and the image goes black.
 """
@@ -1569,6 +1831,17 @@ $$\\text{sensor\\_L} \\in \\mathbb{R}^{3 \\times H \\times (W/2 + \\text{overlap
 
 Connect to a `Conv2dLayer` with `in_ch=3` (set automatically from camera mode).
 
+Unlike `GrayCameraSensor`, the plain (`lateralized=False`) `output` here is already the **full** frame — see step 4 below — not just a centre row.
+
+**Order of operations** (per tick):
+1. raycast `width` rays across the FOV (same geometry as `GrayCameraSensor`); each ray returns the RGB colour of the nearest hit, or black if nothing within `max_range`
+2. tile into `height` rows (`vertical_angle` masks far rows to black), giving frame `r` (H × W × 3), cached as `_last_frame`
+3. if `lateralized`: split `r` at the midline (± `overlap`) into `sensor_L`/`sensor_R`, transposed to CHW — these are the **raw pixel values**, bypassing steps 5-7 below entirely (no noise or dynamics applied)
+4. otherwise: flatten the **full** frame to CHW as `u` (all rows and channels — not a centre-row subset)
+5. add noise to `u` (if `noise_std > 0`)
+6. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
+7. per-pixel `output = leaky(u)` (if `tau_rise`/`tau_decay` set; else `output = u`) — this sensor's `bias`/`scale`/`activation` aren't exposed as parameters and are fixed at `0` / `1` / `linear`, so they have no effect
+
 - `vertical_angle` — camera tilt in degrees. Positive = tilted down toward ground, negative = tilted up. Each image row sees a different ground distance: bottom rows see closer, top rows see farther. At 90° the camera looks straight down and the image goes black.
 """
 
@@ -1601,6 +1874,7 @@ SENSOR_REGISTRY = {
     'WhiskerSensor':         WhiskerSensor,
     'SkyCompassSensor':      SkyCompassSensor,
     'ManualBumpSensor':      ManualBumpSensor,
+    'ManualCueSensor':       ManualCueSensor,
     'CameraSensor':          GrayCameraSensor,   # backward-compat alias (mode='gray' default)
     'GrayCameraSensor':      GrayCameraSensor,
     'RGBCameraSensor':       RGBCameraSensor,

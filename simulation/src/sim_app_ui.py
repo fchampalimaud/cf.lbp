@@ -80,6 +80,7 @@ class _UiBuilderMixin:
         self._build_session_group(tab_session)
         self._build_task_group(tab_session)
         self._build_logger_group(tab_session)
+        self._build_video_group(tab_session)
         self._build_physics_group(tab_physics)
         self._build_robot_group(tab_robot)
         self._build_network_group(tab_network)
@@ -91,7 +92,10 @@ class _UiBuilderMixin:
         self._status_label.setStyleSheet(f"color:{C['muted']};font-weight:bold;padding:0 8px;")
         self._timing_label = QLabel("")
         self._timing_label.setStyleSheet(f"color:{C['muted']};padding:0 8px;")
+        self._record_label = QLabel("")
+        self._record_label.setStyleSheet(f"color:{C['danger']};font-weight:bold;padding:0 8px;")
         self._status_bar.addWidget(self._status_label)
+        self._status_bar.addPermanentWidget(self._record_label)
         self._status_bar.addPermanentWidget(self._timing_label)
 
         self._osc_hidden_height = 0
@@ -293,7 +297,7 @@ class _UiBuilderMixin:
         vl.addWidget(self._manual_hint)
 
     # _build_brain_group → sim_app_brain._BrainMixin
-    # _build_session_group / _build_task_group / _build_logger_group → sim_app_session._SessionMixin
+    # _build_session_group / _build_task_group / _build_logger_group / _build_video_group → sim_app_session._SessionMixin
 
     def _build_physics_group(self, panel_vl=None):
         gb, vl = self._panel.add_group("Physics", panel_vl)
@@ -669,3 +673,8 @@ class _UiBuilderMixin:
 
         self._set_gradient_mode(GRADIENT_COLORS[0][2], GRADIENT_COLORS[0][0])
         self._set_object_mode(OBJECT_COLORS[0][2], OBJECT_COLORS[0][0])
+        # Real default draw_mode ('move') lives on WorldEditor, which doesn't exist
+        # yet at this point in startup — just sync the button visuals here so they
+        # don't show a stale "Object" selection once the editor is constructed.
+        self._clear_mode_buttons()
+        self._move_btn.setChecked(True)

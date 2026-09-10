@@ -6,6 +6,10 @@ torch>=2.0
 # Optional — in-app help renderer (falls back to system browser if absent)
 # PySide6-WebEngine>=6.5
 
+# Optional — Session tab video capture (falls back to an error dialog if absent)
+# imageio>=2.31
+# imageio-ffmpeg>=0.4
+
 # Optional — multi-body physics
 # mujoco>=3.0
 

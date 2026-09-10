@@ -1,4 +1,5 @@
 import os
+import time
 import numpy as np
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QLabel, QPushButton, QComboBox,
@@ -148,7 +149,7 @@ class _BrainMixin:
     def _load_data_brain_network(self, net_name: str):
         project = getattr(self.brain, 'network_project', '')
         full_name = os.path.join(project, net_name) if project else net_name
-        hidden, disabled, container_labels, conn_params, freshness_issues = \
+        hidden, disabled, container_labels, container_notes, conn_params, freshness_issues = \
             self.brain_mgr.load_network_into_circuit(self.brain, full_name)
         if hidden is None:
             return
@@ -156,15 +157,26 @@ class _BrainMixin:
         self._hidden_containers       = hidden
         self._disabled_containers     = disabled
         self._container_labels        = container_labels
+        self._container_notes         = container_notes
         if self._net_viz:
             self._net_viz._hidden_containers   = hidden
             self._net_viz._disabled_containers = disabled
             self._net_viz._container_labels    = container_labels
+            self._net_viz._container_notes     = container_notes
             self._net_viz._weight_params = conn_params
             self._net_viz.build()
         self._osc_ctrl._osc_items = {'mL', 'mR'}
         self._rebuild_channels()
         self._arena.setup_sensors(self.circuit.sensors, self._osc_ctrl.channel_colors)
+        if self._sim_ctrl.robot.enabled:
+            # Real-robot mode was already on when this (different) network loaded —
+            # RobotDriver was started against the *previous* circuit's sensors and
+            # won't pick up this network's robot_address fields on its own, since
+            # nothing re-triggers a connect except the checkbox itself. Reconnect
+            # now against the freshly loaded circuit.sensors.
+            self._sim_ctrl.enable_robot_mode(True)
+            self._robot_last_seen = {}
+            self._robot_connect_t = time.monotonic()
         poses = _rb_world_poses(self.bot_pos, self.circuit.bodies, self.circuit.joints)
         self._arena.update_child_bodies(poses, self.circuit.bodies, self.sim_cfg)
         if freshness_issues and not getattr(self, '_syncing_group', False):
@@ -235,6 +247,7 @@ class _BrainMixin:
                     self.circuit.bodies,
                     self.circuit.joints,
                     self._connection_params,
+                    container_notes=self._container_notes,
                 )
             except Exception as e:
                 QMessageBox.critical(self, 'Save failed', str(e))
@@ -384,6 +397,7 @@ class _BrainMixin:
             self._net_viz._hidden_containers   = self._hidden_containers
             self._net_viz._disabled_containers = self._disabled_containers
             self._net_viz._container_labels    = self._container_labels
+            self._net_viz._container_notes     = self._container_notes
             self._net_viz.show()
 
     # ── Brain params UI ───────────────────────────────────────────────────────

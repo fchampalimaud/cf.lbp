@@ -678,6 +678,13 @@ class MuJoCoEngine:
             overrides = [None] * n
         orig_fixate = sim_cfg.fixate_robot
 
+        # Snapshot every agent's pre-tick position as a circle, so DistanceSensor/
+        # CollisionSensor's analytic path (used for non-MuJoCo-eligible sensors)
+        # can see other agents as obstacles — same simultaneous-snapshot approach
+        # MuJoCo itself uses below (all positions read before any agent moves).
+        all_circles = [{'x': bp[0], 'y': bp[1], 'r': sim_cfg.body_radius}
+                       for bp, _, _, _ in agent_list]
+
         # Phase 1 — sensor sampling + brain.loop per agent (analytical).
         # fixate_robot=1 suppresses 2D kinematic integration inside _tick_2d.
         # MuJoCo-native collision sensors read data.contact from the PREVIOUS
@@ -688,10 +695,12 @@ class MuJoCoEngine:
             other_sensors = [s for s in sensors if not isinstance(s, CameraSensor)
                               and not (isinstance(s, CollisionSensor)
                                        and _mujoco_collision_eligible(s))]
+            other_agents = all_circles[:i] + all_circles[i + 1:]
             sim_cfg.fixate_robot = 1.0
             try:
                 raw = _tick_2d(bot_pos, brain, other_sensors, world, sim_cfg,
-                               circuit=circuit, motor_override=overrides[i])
+                               circuit=circuit, motor_override=overrides[i],
+                               other_agents=other_agents)
             finally:
                 sim_cfg.fixate_robot = orig_fixate
             self.sample_collision_sensors(bot_pos, brain, sensors, sim_cfg, agent_idx=i)

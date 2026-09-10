@@ -70,6 +70,31 @@ class _ArrowKeyFilter(QObject):
         return False
 
 
+class _CueKeyFilter(QObject):
+    """App-wide event filter driving every `ManualCueSensor`'s held-key state.
+
+    Installed unconditionally (like `_ArrowKeyFilter`, unlike `_ManualKeyFilter`
+    which only exists while Manual-drive mode is on) so a faked cue works even
+    while the brain/network is actually driving the robot. Matches by character
+    text (`event.text()`), the same convention already used for gradient/object
+    world-edit letter keys, since `ManualCueSensor.key` is a free-form letter
+    rather than a fixed Qt.Key_X constant.
+
+    No redelivery dedup needed: like `_ManualKeyFilter`, calling `on_change`
+    more than once for the same physical press/release is harmless (idempotent).
+    """
+    def __init__(self, on_change, parent=None):
+        super().__init__(parent)
+        self._on_change = on_change
+
+    def eventFilter(self, obj, event):
+        if event.type() in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease) and not event.isAutoRepeat():
+            letter = event.text().upper()
+            if letter:
+                self._on_change(letter, event.type() == QEvent.Type.KeyPress)
+        return False
+
+
 class MonetarySpinBox(QDoubleSpinBox):
     """SpinBox that steps through a monetary scale: 0, 0.1, 0.2, 0.5, 1, 2, 5, 10 …"""
     def __init__(self, parent=None):

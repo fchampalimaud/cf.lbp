@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "motor_layer": "motor",
+  "hidden_cols": [],
+  "disabled_cols": [],
+  "container_labels": {},
+  "sensors": [],
+  "layers": [
+    {
+      "type": "MotorLayer",
+      "name": "motor",
+      "layer": 4,
+      "activation": "linear",
+      "n": 2,
+      "scale": 1.0,
+      "alpha": 1.0,
+      "robot_address": ""
+    }
+  ],
+  "connections": []
+}

@@ -174,7 +174,10 @@ class _LayoutMixin:
         Priority: TD → CONV4D → DENSE → THIN → THICK.
         src_obj / tgt_obj are the resolved layer or sensor objects (tgt is always a layer).
         """
-        from neurons import LearningLayerBase as _LLB
+        from neurons import LearningLayerBase as _LLB, SnapshotLayer as _SnapL
+        if (isinstance(tgt_obj, _SnapL) and src_obj is not None
+                and getattr(src_obj, 'name', None) == getattr(tgt_obj, 'teach_source', None)):
+            return self._CK_TEACH
         if isinstance(tgt_obj, _LLB):
             return self._CK_TD
         if W.ndim == 4:
@@ -750,7 +753,18 @@ class _LayoutMixin:
                     layer._ensure_n(W.shape[0])
 
     def _panel_at(self, view_pt):
-        """Return container of the column panel the view-space point falls inside, or None."""
+        """Return container of the column panel the view-space point falls inside, or None.
+
+        Bounds must match _draw_panels' rendered rect exactly:
+        - `he` half-extent widening for containers that span multiple columns
+          (e.g. a wide winner subsuming narrower same-column-at-other-depth
+          containers) — without it, most of a spanning container's visible
+          box was a dead zone that never hit-tested to anything.
+        - vertical extent from the same column-spanning "envelope" used to
+          size the rendered rect (_span_envelope_ys), not just this
+          container's own nodes — a wide panel can be taller than its own
+          occupants if a narrower column it spans over is taller.
+        """
         r, px = self._NODE_R, self._PAD_X
         py = 0.04
         x, y = view_pt.x(), view_pt.y()
@@ -763,12 +777,17 @@ class _LayoutMixin:
                 container_data[container] = {'xs': [], 'ys': []}
             container_data[container]['xs'].append(nx)
             container_data[container]['ys'].append(ny)
+        span_map = getattr(self, '_container_span_map', {})
+        x_unit   = getattr(self, '_x_unit', 1.0)
         for container, data in container_data.items():
             x_col = sum(data['xs']) / len(data['xs'])
-            y_min = min(data['ys']) - r - py
-            y_max = max(data['ys']) + r + py
-            x_min = x_col - r - px
-            x_max = x_col + r + px
+            span  = span_map.get(container, 1)
+            ys    = self._span_envelope_ys(container_data, container, span) or data['ys']
+            y_min = min(ys) - r - py
+            y_max = max(ys) + r + py
+            he    = (span - 1) / 2.0 * x_unit
+            x_min = x_col - r - px - he
+            x_max = x_col + r + px + he
             if x_min <= x <= x_max and y_min <= y <= y_max:
                 return container
         return None
@@ -786,6 +805,20 @@ class _LayoutMixin:
             names = sorted({nk.rsplit('_', 1)[0]
                              for nk, c in self._node_container_map.items() if c == container})
         return '|'.join(sorted(names))
+
+    def _first_occupant_name(self, container):
+        """Name of whichever occupant of *container* was added to the circuit
+        earliest (sensors/layers lists are append-only, so list order is
+        creation order) — used as the default display caption for a
+        container that has no explicit "Set label..." value."""
+        names = {nk.rsplit('_', 1)[0]
+                 for nk, c in self._node_container_map.items() if c == container}
+        if not names:
+            return None
+        for obj in list(self.gui.circuit.sensors) + list(self.gui.circuit.layers):
+            if obj.name in names:
+                return obj.name
+        return None
 
     def _edge_at(self, view_pt):
         """Return (src_name, tgt_name) of the edge nearest to view_pt, or None."""
@@ -1018,6 +1051,11 @@ class _LayoutMixin:
     _NOTE_FONT_FAMILY = 'Segoe UI'
     _NOTE_FONT_SIZE   = 7
 
+    # Container notes — same look as a collapsed sticky note, smaller and
+    # pinned to the container's bottom-right corner instead of draggable.
+    _CONTAINER_NOTE_ICON_PX = 8      # visual radius, in screen pixels (vs. 12 for loose notes)
+    _CONTAINER_NOTE_PAD     = 0.006  # inset from the container rect's corner, in data coords
+
     def _note_font_metrics(self):
         from PySide6.QtGui import QFont, QFontMetrics
         return QFontMetrics(QFont(self._NOTE_FONT_FAMILY, self._NOTE_FONT_SIZE))
@@ -1092,4 +1130,17 @@ class _LayoutMixin:
             if pt.x() >= x1 - toggle_dx and pt.y() >= y1 - toggle_dy:
                 return note, 'toggle'
             return note, 'body'
+        return None
+
+    def _container_note_at(self, pt):
+        """Return the container whose note glyph is hit at view-space point
+        *pt*, or None. Mirrors _note_at's collapsed-icon hit-test, generous
+        click target included."""
+        dx, dy = self._vb.viewPixelSize()
+        r2 = ((self._CONTAINER_NOTE_ICON_PX + 5) * dx) ** 2 + \
+             ((self._CONTAINER_NOTE_ICON_PX + 5) * dy) ** 2
+        for container, (ix, iy) in self._container_note_icon_pos.items():
+            d2 = (pt.x() - ix) ** 2 + (pt.y() - iy) ** 2
+            if d2 <= r2:
+                return container
         return None

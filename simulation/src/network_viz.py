@@ -1,7 +1,7 @@
 import pyqtgraph as pg
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSlider, QPushButton,
-    QCheckBox, QScrollArea, QFrame,
+    QCheckBox, QScrollArea, QFrame, QMessageBox,
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor
@@ -20,6 +20,7 @@ class NetworkVisualizerWindow(_LayoutMixin, _RenderMixin, _DialogsMixin, _Editin
     _EDGE_POS     = '#3A6FA8'
     _HL_EDGE      = '#E07828'
     _TD_EDGE      = (200, 130, 50)   # amber RGB for learnable (LearningLayerBase) connections
+    _TEACH_EDGE   = (60, 170, 70)    # green RGB for SnapshotLayer's teach connection (fixed structural readout)
     _NODE_R       = 0.1125
     _MARKER_R     = 0.066
     _CROSS_BOW    = 0.35
@@ -35,6 +36,7 @@ class NetworkVisualizerWindow(_LayoutMixin, _RenderMixin, _DialogsMixin, _Editin
     _CAM_WEIGHT   = 3.0    # slot weight for image nodes (camera thumbnails need extra vertical space)
 
     # Connection kind tokens — see rules/network_viz.md "Connection classifier".
+    _CK_TEACH  = 'teach'   # SnapshotLayer's teach connection → solid green, fixed style
     _CK_TD     = 'td'      # target is LearningLayerBase → amber style
     _CK_CONV4D = 'conv4d'  # 4-D conv kernel → one arc per filter
     _CK_DENSE  = 'dense'   # max(ns, nt) > _DENSE_THRESHOLD → sampled thin arcs
@@ -96,6 +98,11 @@ class NetworkVisualizerWindow(_LayoutMixin, _RenderMixin, _DialogsMixin, _Editin
         self._z_slider_label.setVisible(False)
         tb_lay.addWidget(self._z_slider_label)
         tb_lay.addWidget(self._z_slider)
+        self._btn_help = QPushButton("?")
+        self._btn_help.setFixedWidth(24)
+        self._btn_help.setToolTip("Mouse controls")
+        self._btn_help.clicked.connect(self._show_mouse_help)
+        tb_lay.addWidget(self._btn_help)
         self._z_cut         = None
         self._active_names  = None
         self._side_view      = None
@@ -125,7 +132,7 @@ class NetworkVisualizerWindow(_LayoutMixin, _RenderMixin, _DialogsMixin, _Editin
             for s in ['GradientSensor', 'ColorSensor',
                       'CollisionSensor', 'DistanceSensor', 'InteroceptiveSensor',
                       'ProprioceptiveSensor', 'WhiskerSensor', 'SkyCompassSensor',
-                      'ManualBumpSensor', 'GrayCameraSensor', 'RGBCameraSensor']
+                      'ManualBumpSensor', 'ManualCueSensor', 'GrayCameraSensor', 'RGBCameraSensor']
         ]))
         pb_vlay.addLayout(_palette_row("Layers:", [
             PaletteChip(t.replace('Layer', ''), t)
@@ -150,7 +157,7 @@ class NetworkVisualizerWindow(_LayoutMixin, _RenderMixin, _DialogsMixin, _Editin
         lbl_learn = QLabel("Learning:")
         lbl_learn.setStyleSheet(f"color:{C['muted']};font-size:9px;margin-left:6px;")
         combo_row.addWidget(lbl_learn)
-        for t in ['TDLayer', 'DeltaLayer', 'ThreeFactorLayer']:
+        for t in ['TDLayer', 'DeltaLayer', 'ThreeFactorLayer', 'SnapshotLayer']:
             combo_row.addWidget(PaletteChip(t.replace('Layer', ''), t))
         self._motifs_palette_widget = QWidget()
         self._motifs_palette_layout = QHBoxLayout(self._motifs_palette_widget)
@@ -357,6 +364,9 @@ class NetworkVisualizerWindow(_LayoutMixin, _RenderMixin, _DialogsMixin, _Editin
         self._panel_rect_map    = {}   # container → PlotDataItem (panel background rect)
         self._container_label_items = {}   # container → TextItem (annotation above rect)
         self._container_labels  = {}   # container identity (occupant name set, '|'-joined) → str
+        self._container_note_items    = {}   # container → [ScatterPlotItem, TextItem] (bottom-right glyph)
+        self._container_note_icon_pos = {}   # container → (x, y) of the glyph, for hit-testing
+        self._container_notes   = {}   # container identity → note text (same keying as labels)
         self._text_items        = []
         self._text_map          = {}   # node_key → TextItem
         self._node_container_map = {}   # node_key → container (int)
@@ -398,4 +408,22 @@ class NetworkVisualizerWindow(_LayoutMixin, _RenderMixin, _DialogsMixin, _Editin
         self._refresh_timer.setInterval(100)
         self._refresh_timer.timeout.connect(self._on_refresh_timer)
         self._refresh_timer.start()
+
+    def _show_mouse_help(self):
+        QMessageBox.information(self, "Mouse controls", """\
+<b>View mode</b><br>
+&bull; Left-click a node — highlight its connections<br>
+&bull; Shift+click nodes — multi-select (right-click for a group menu)<br>
+&bull; Double-click a node — view its parameters<br>
+&bull; Right-click a node / edge / panel — context menu<br>
+<br>
+<b>Edit mode</b><br>
+&bull; Left-click a node — select it<br>
+&bull; Double-click a node — open its properties dialog<br>
+&bull; Drag a node onto another — draw a connection between them<br>
+&bull; Alt+drag a node — move it to a different column<br>
+&bull; Right-click — context menu (delete, rename, weights, ...)<br>
+&bull; Delete — remove the selected node / edge / note<br>
+&bull; Ctrl+C / Ctrl+V — copy / paste the selected subgraph<br>
+&bull; Drag a chip from the palette — add a new sensor / layer / motif""")
 

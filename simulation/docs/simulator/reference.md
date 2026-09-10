@@ -311,8 +311,8 @@ graph LR
 |---|---|
 | `GradientSensor` | Soft circular gradient patches; casts n rays in a fan, returns field intensity per ray |
 | `ColorSensor` | Solid coloured circular objects via ray-circle intersection |
-| `DistanceSensor` | Normalised proximity to the nearest wall or obstacle (1 = touching, 0 = at max range) |
-| `CollisionSensor` | Contact within n arc sectors around the robot perimeter (1 = contact, 0 = clear) |
+| `DistanceSensor` | Normalised proximity to the nearest wall, obstacle, or other agent (1 = touching, 0 = at max range) |
+| `CollisionSensor` | Contact within n arc sectors around the robot perimeter, including other agents (1 = contact, 0 = clear) |
 | `WhiskerSensor` | Tactile whisker: bending proportion from 0 (no contact) to 1 (contact at base) |
 | `GrayCameraSensor` | Wide-angle raycasted image (luminance); output shape `(H × W,)` |
 | `RGBCameraSensor` | Wide-angle raycasted image (colour, CHW); output shape `(3 × H × W,)` |
@@ -365,6 +365,7 @@ graph LR
 | `Reichardt2dLayer` | Elementary motion detector over 2-D input (Reichardt correlator) |
 | `TDLayer` | Temporal-difference learning layer |
 | `ThreeFactorLayer` | Three-factor (Hebbian + neuromodulator) learning layer |
+| `SnapshotLayer` | One-shot vector-memory neuron — overwrites its *outgoing* connection weights from a named source layer on a reward trigger |
 
 ---
 

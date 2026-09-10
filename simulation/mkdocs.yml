@@ -79,6 +79,7 @@ nav:
       - TDLayer: simulator/layers/td.md
       - DeltaLayer: simulator/layers/delta.md
       - ThreeFactorLayer: simulator/layers/three_factor.md
+      - SnapshotLayer: simulator/layers/snapshot.md
       - MatsuokaLayer: simulator/layers/matsuoka.md
     - Neuromodulators: simulator/neuromodulators.md
   - Developer:

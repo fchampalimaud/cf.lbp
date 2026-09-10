@@ -19,7 +19,7 @@ class LearningLayerBase(DynamicsBase, LayerBase):
     def __init__(self, n=1, alpha_pos=0.01, alpha_neg=None,
                  tau_rise=0.0, tau_decay=None, activation='linear',
                  bias=0.0, scale=1.0, noise_std=0.0, noise_tau=0.0, output_mode='none',
-                 reward_modulator='dopamine',
+                 reward_modulator=None,
                  w_min=None, w_max=None,
                  competition='none', k=1,
                  weight_decay=0.0,
@@ -31,6 +31,13 @@ class LearningLayerBase(DynamicsBase, LayerBase):
         self.n              = int(n)
         self.alpha_pos      = float(alpha_pos)
         self.alpha_neg      = float(alpha_neg) if alpha_neg is not None else self.alpha_pos
+        # Legacy field, superseded by a 'drives_plasticity' row in `modulators`.
+        # Defaults to None (not 'dopamine'): network_runner.py applies this
+        # additively and unconditionally whenever truthy, so a non-empty
+        # default here would silently bypass the new threshold gating for
+        # every freshly-created instance. Old saved JSON always has this
+        # field explicitly set (it was unconditionally serialized before
+        # this change), so existing networks are unaffected.
         self.reward_modulator = reward_modulator
         self.w_min          = float(w_min) if w_min not in (None, '', 'none') else None
         self.w_max          = float(w_max) if w_max not in (None, '', 'none') else None
@@ -91,8 +98,13 @@ class LearningLayerBase(DynamicsBase, LayerBase):
         self.output = torch.zeros(self.n)
         return self.output
 
-    def step_td(self, src_inputs, dt):
-        """Forward pass + weight update. Called by the runner with collected connection data."""
+    def step_td(self, src_inputs, dt, outgoing=None):
+        """Forward pass + weight update. Called by the runner with collected connection data.
+
+        `outgoing` is unused here — it exists only so the runner can call every
+        LearningLayerBase-family layer's step_td with the same signature.
+        SnapshotLayer is the one subclass that actually reads it (its
+        plasticity lives on outgoing connections, not incoming ones)."""
         if not src_inputs:
             self.output = torch.zeros(self.n)
             return self.output
@@ -135,7 +147,7 @@ class LearningLayerBase(DynamicsBase, LayerBase):
     def _learning_code_parts(self):
         """Common code parts for all LearningLayerBase subclasses."""
         parts = []
-        if self.reward_modulator != 'dopamine':
+        if self.reward_modulator:   # legacy field — default is now None, not 'dopamine'
             parts.append(f'reward_modulator={self.reward_modulator!r}')
         parts += self._base_code_parts()
         if self.tau_rise:
@@ -178,7 +190,6 @@ learned weight: W[j, i] is neuron j's weight on input i.
 - `alpha_pos` — learning rate for positive δ (acquisition); default 0.01
 - `alpha_neg` — learning rate for negative δ (extinction); default = alpha_pos
 - `gamma` (γ) — discount factor (0–1); default 0.99
-- `reward_modulator` — neuromodulator name carrying the reward signal r; default "dopamine"
 - `tau_rise` — leaky rise τ on V output (0 = off)
 - `tau_decay` — leaky decay τ on V output
 - `activation` — output nonlinearity
@@ -196,10 +207,23 @@ Can be wired to motors: higher V → stronger approach drive.
 
 $$V = \\sum_i W_i \\, s_i, \\quad \\delta = r + \\gamma V - V_{\\text{prev}}, \\quad \\Delta W_i = \\alpha_{\\text{eff}} \\, \\delta \\otimes s_{i,\\text{prev}}$$
 
+**Order of operations** (`step_td`, per tick):
+1. `V = Σ_conn W_conn · s_conn` — weighted sum over incoming connections
+2. apply `output_mode` transform to `V` — derivative/integral (if not `none`)
+3. optional leaky filter: `V = leaky(V + bias)` (only if `tau_rise > 0`)
+4. `δ = r + γ·V − V_prev` (`r` = current reward signal from the modulator bus)
+5. sanitize `δ` (replace NaN/±Inf with 0)
+6. `mask = competition_mask(V)` (`none` → all ones; `wta` → top-k one-hot; `softmax` → softmax(V))
+7. `α_eff = alpha_pos` where `δ ≥ 0`, else `alpha_neg`
+8. for each incoming connection: `ΔW = outer(α_eff · δ · mask, s_prev)`; `W += ΔW`; sanitize; if `weight_decay > 0`: `W *= (1 − weight_decay·dt)`; clamp `W` to `[w_min, w_max]`
+9. store this tick's `s` as `s_prev` and `V` as `V_prev` for next tick
+10. `output = activation(V) × scale × mask`
+
 **Wiring:**
 1. Connect any sensory/feature layer → TDLayer. Initialize the connection W to zeros.
 2. Declare the reward-carrying layer as a neuromodulator transmitter (e.g. "dopamine").
-3. Set `reward_modulator` to that name. The layer reads r from it each tick.
+3. In this layer's modulator receptor table, add a row for that name and check
+   "Drives Plasticity" — the layer reads r from it each tick.
 4. Optionally wire TDLayer output → motor layers for direct actor behaviour.
 
 **Why 1-step TD is sufficient in the ecological setting:**
@@ -223,11 +247,14 @@ settings with spatially co-located cue and reward, prefer **ThreeFactorLayer**.
 """
 
     def __init__(self, n=1, alpha_pos=0.01,
-                 alpha_neg=None, gamma=0.99, reward_modulator='dopamine',
+                 alpha_neg=None, gamma=0.99, reward_modulator=None,
                  tau_rise=0.0, tau_decay=None, activation='linear', bias=0.0, scale=1.0,
                  noise_std=0.0, noise_tau=0.0,
                  weight_decay=0.0, w_min=None, w_max=None, competition='none', k=1,
-                 name='td', alpha=None, **kwargs):  # alpha: legacy pre-alpha_pos/alpha_neg JSON field, ignored (also means ELU's alpha isn't configurable on TDLayer)
+                 name='td', **kwargs):
+        # No local 'alpha' param here (unlike the old pre-alpha_pos/alpha_neg
+        # shim) — lets a real 'alpha' kwarg flow through to DynamicsBase's
+        # ELU alpha instead of being silently swallowed.
         _pos = float(alpha_pos)
         _neg = float(alpha_neg) if alpha_neg is not None else _pos
         super().__init__(n=n, alpha_pos=_pos, alpha_neg=_neg,
@@ -249,7 +276,6 @@ settings with spatially co-located cue and reward, prefer **ThreeFactorLayer**.
             ('alpha_pos',        float, '0.01',     'learning rate for δ ≥ 0 (acquisition)'),
             ('alpha_neg',        float, '0.01',     'learning rate for δ < 0 (extinction)'),
             ('gamma',            float, '0.99',     'discount factor γ (0–1)'),
-            ('reward_modulator', str,   'dopamine', 'neuromodulator name carrying reward r'),
             ('tau_rise',         float, '0.0',      'leaky rise τ on V output (0 = off)'),
             ('tau_decay',        float, '0.0',      'leaky decay τ on V output'),
             ('activation',       str,   'linear',   'output nonlinearity',
@@ -283,7 +309,6 @@ the behavioural extinction timescale.
 - `n` — number of output neurons (parallel critics); default 1
 - `alpha_pos` — learning rate for δ ≥ 0 (acquisition); default 0.05
 - `alpha_neg` — learning rate for δ < 0 (extinction); default 0.005
-- `reward_modulator` — neuromodulator name carrying reward r; default "dopamine"
 - `tau_rise` — leaky rise τ on V output (0 = off)
 - `tau_decay` — leaky decay τ on V output
 - `activation` — output nonlinearity
@@ -301,6 +326,18 @@ Can be wired to motors for direct approach drive.
 
 $$V = \\sum_i W_i \\, s_i, \\quad \\delta = r - V, \\quad \\Delta W_i = \\alpha_{\\text{eff}} \\, \\delta \\otimes s_{i,\\text{prev}}$$
 
+**Order of operations** (`step_td`, per tick):
+1. `V = Σ_conn W_conn · s_conn` — weighted sum over incoming connections
+2. apply `output_mode` transform to `V` — derivative/integral (if not `none`)
+3. optional leaky filter: `V = leaky(V + bias)` (only if `tau_rise > 0`)
+4. `δ = r − V` (`r` = current reward signal from the modulator bus)
+5. sanitize `δ` (replace NaN/±Inf with 0)
+6. `mask = competition_mask(V)` (`none` → all ones; `wta` → top-k one-hot; `softmax` → softmax(V))
+7. `α_eff = alpha_pos` where `δ ≥ 0`, else `alpha_neg`
+8. for each incoming connection: `ΔW = outer(α_eff · δ · mask, s_prev)`; `W += ΔW`; sanitize; if `weight_decay > 0`: `W *= (1 − weight_decay·dt)`; clamp `W` to `[w_min, w_max]`
+9. store this tick's `s` as `s_prev` (and `V` as `V_prev`, unused by this layer's own `δ`)
+10. `output = activation(V) × scale × mask`
+
 **Reset behaviour:** same as TDLayer — episodic state cleared, weights survive.
 
 **When to use:** Conditioning paradigms where the cue and reward may be separated
@@ -316,7 +353,7 @@ settings where reward gates all learning, prefer **ThreeFactorLayer**.
 """
 
     def __init__(self, n=1, alpha_pos=0.05,
-                 alpha_neg=0.005, reward_modulator='dopamine',
+                 alpha_neg=0.005, reward_modulator=None,
                  tau_rise=0.0, tau_decay=None, activation='linear', bias=0.0, scale=1.0,
                  noise_std=0.0, noise_tau=0.0,
                  weight_decay=0.0, w_min=None, w_max=None, competition='none', k=1,
@@ -338,7 +375,6 @@ settings where reward gates all learning, prefer **ThreeFactorLayer**.
             ('n',                int,   '1',        'number of output neurons (parallel critics)'),
             ('alpha_pos',        float, '0.05',     'learning rate for δ ≥ 0 (acquisition)'),
             ('alpha_neg',        float, '0.005',    'learning rate for δ < 0 (extinction)'),
-            ('reward_modulator', str,   'dopamine', 'neuromodulator name carrying reward r'),
             ('tau_rise',         float, '0.0',      'leaky rise τ on V output (0 = off)'),
             ('tau_decay',        float, '0.0',      'leaky decay τ on V output'),
             ('activation',       str,   'linear',   'output nonlinearity',
@@ -378,11 +414,22 @@ $$W \\leftarrow W \\cdot (1 - \\text{decay} \\cdot dt)$$
 Applied every tick regardless of r. Equilibrium weight reflects the balance between
 acquisition rate and decay rate — infrequently rewarded associations fade naturally.
 
+**Order of operations** (`step_td`, per tick):
+1. `V = Σ_conn W_conn · s_conn` — weighted sum over incoming connections
+2. apply `output_mode` transform to `V` — derivative/integral (if not `none`)
+3. optional leaky filter: `V = leaky(V + bias)` (only if `tau_rise > 0`)
+4. `δ = r · V` (`r` = current reward signal from the modulator bus)
+5. sanitize `δ` (replace NaN/±Inf with 0)
+6. `mask = competition_mask(V)` (`none` → all ones; `wta` → top-k one-hot; `softmax` → softmax(V))
+7. `α_eff = alpha_pos` where `δ ≥ 0`, else `alpha_neg`
+8. for each incoming connection: `ΔW = outer(α_eff · δ · mask, s_prev)`; `W += ΔW`; sanitize; then (regardless of `δ`) if `weight_decay > 0`: `W *= (1 − weight_decay·dt)`; clamp `W` to `[w_min, w_max]`
+9. store this tick's `s` as `s_prev`
+10. `output = activation(V) × scale × mask`
+
 **Parameters:**
 - `n` — number of output neurons; default 1
 - `alpha_pos` — learning rate when r·V ≥ 0; default 0.01
 - `alpha_neg` — learning rate when r·V < 0 (punishment); default = alpha_pos
-- `reward_modulator` — neuromodulator name carrying r; default "dopamine"
 - `tau_rise` — leaky rise τ on output (0 = off)
 - `tau_decay` — leaky decay τ on output
 - `activation` — output nonlinearity
@@ -396,7 +443,9 @@ acquisition rate and decay rate — infrequently rewarded associations fade natu
 **Wiring:**
 1. Connect any sensory/feature layer → ThreeFactorLayer (initialise W to zeros).
 2. Declare the reward-carrying layer as a neuromodulator transmitter (e.g. "dopamine").
-3. Set `reward_modulator` to that name.
+3. In this layer's modulator receptor table, add a row for that name and check
+   "Drives Plasticity" (with an optional threshold — the row's transformed
+   value must cross it for that tick to count).
 4. Optionally wire output → motor layers for direct approach drive.
 
 **Reset behaviour:** ↺ Reset clears episodic state but leaves weights intact.
@@ -413,7 +462,7 @@ Use **↺ Reset Weights** to zero all incoming connection weights.
 """
 
     def __init__(self, n=1, alpha_pos=0.01,
-                 alpha_neg=None, reward_modulator='dopamine',
+                 alpha_neg=None, reward_modulator=None,
                  tau_rise=0.0, tau_decay=None, activation='linear', bias=0.0, scale=1.0,
                  noise_std=0.0, noise_tau=0.0,
                  weight_decay=0.0, w_min=None, w_max=None, competition='none', k=1,
@@ -436,7 +485,6 @@ Use **↺ Reset Weights** to zero all incoming connection weights.
             ('n',                int,   '1',        'number of output neurons'),
             ('alpha_pos',        float, '0.01',     'learning rate for r·V ≥ 0'),
             ('alpha_neg',        float, '0.01',     'learning rate for r·V < 0 (punishment)'),
-            ('reward_modulator', str,   'dopamine', 'neuromodulator name carrying reward r'),
             ('tau_rise',         float, '0.0',      'leaky rise τ on output (0 = off)'),
             ('tau_decay',        float, '0.0',      'leaky decay τ on output'),
             ('activation',       str,   'linear',   'output nonlinearity',
@@ -448,6 +496,181 @@ Use **↺ Reset Weights** to zero all incoming connection weights.
     def init_code_parts(self):
         return ([f'n={self.n}', f'alpha_pos={self.alpha_pos}',
                  f'alpha_neg={self.alpha_neg}']
+                + self._learning_code_parts())
+
+
+class SnapshotLayer(LearningLayerBase):
+    help_text = """\
+## SnapshotLayer — one-shot vector-memory neuron (Le Moël et al. 2019)
+
+Implements a **hard-overwrite, one-shot** memory: on a reward trigger, its
+*outgoing* connection weights are set directly to (minus) a named source
+layer's current output — not nudged gradually like `TDLayer`/`DeltaLayer`/
+`ThreeFactorLayer`. Recall is then just this neuron's own output (0 or
+graded) multiplying those frozen weights back out — a snapshot, held exactly
+until the next trigger, regardless of how much the source drifts afterward.
+
+Two categorically different incoming connections, distinguished by `src` name:
+
+- **Teach connection** — `src == teach_source`. A real, ordinary connection
+  (not a neuromodulator-style broadcast — the dependency is structured and
+  per-channel, e.g. one source column informing one output synapse, not a
+  diffuse signal any receptor could pick up). Its raw value is read for the
+  write; it does **not** contribute to this neuron's own output.
+- **Gate connection(s)** — everything else. Drives this neuron's own output
+  normally, exactly like any other layer's inputs.
+
+**Outgoing connections** (this layer → wherever the memory is expressed) are
+not learned via a Hebbian rule — their weights *are* the memory itself,
+directly overwritten on trigger. This is the one layer type in the
+`LearningLayerBase` family whose plasticity lives on its *outgoing* edges,
+not its incoming ones.
+
+**Parameters:**
+- `n` — number of independent memory units; default 1. At `n=1` this matches
+  Le Moël's "single vector-memory neuron" exactly. `n>1` is accepted as a
+  structural parameter but every unit currently writes together on any
+  trigger (no independent per-slot gating yet — see "When to use").
+- `teach_source` — name of the layer whose current output is copied (negated)
+  into every outgoing connection's weights on trigger.
+- `tau_rise` / `tau_decay` — leaky dynamics on this neuron's own output
+  (from gate connections only).
+- `activation`, `bias`, `scale` — standard output shaping.
+- `weight_decay` / `w_min` / `w_max` — applied to the *outgoing* (stored
+  memory) weights every tick, not to any incoming connection: passive
+  forgetting and bounds on the stored content.
+- `competition` / `k` — lateral competition over this neuron's own output
+  (meaningful once `n>1` recall is designed; a no-op at `n=1`).
+
+**Write rule** (Le Moël Eq. 14, on any tick `self._reward` is nonzero — wire
+a `modulators` row with `drives_plasticity=True` on this layer, same
+mechanism every other `LearningLayerBase` layer already uses for reward):
+
+$$W_{\\text{outgoing}} \\leftarrow -\\,\\text{teach\\_source.output}$$
+
+A hard overwrite, not `ΔW = α·δ·s_prev` — old content is fully discarded
+each time, matching the paper's description exactly rather than converging
+toward it gradually.
+
+**Output (recall):** `output = activation(gate_contribution) · scale · mask`
+— completely ordinary, computed only from non-teach incoming connections.
+
+**Order of operations** (`step_td`, per tick):
+1. split incoming connections by `src`: the **teach connection** (`src == teach_source`) vs. everything else (**gate connection(s)**)
+2. `V = Σ_conn W_conn · s_conn` over the gate connections only — the teach connection's value is *not* summed into `V`
+3. apply `output_mode` transform to `V` — derivative/integral (if not `none`)
+4. optional leaky filter: `V = leaky(V + bias)` (only if `tau_rise > 0`)
+5. `mask = competition_mask(V)`
+6. `output = activation(V) × scale × mask`
+7. for each outgoing connection: if `self._reward` is nonzero *and* a teach value was found, hard-overwrite `W_outgoing ← −teach_source.output` (every output column set to the same negated vector)
+8. if `weight_decay > 0`: `W_outgoing *= (1 − weight_decay·dt)` — applied every tick to the outgoing weights, regardless of whether a write happened
+9. sanitize (replace NaN/±Inf with 0) and clamp `W_outgoing` to `[w_min, w_max]`; write back
+
+**Wiring:**
+1. Connect the layer to snapshot (e.g. a path-integration accumulator) →
+   this layer, with a real weight matrix (e.g. identity/one-to-one if
+   preserving per-channel structure matters, as it typically does).
+2. Set `teach_source` to that layer's name.
+3. Connect a gate/recall driver (e.g. a `ConstantLayer`, or a context
+   signal) → this layer — its value becomes this neuron's own output.
+4. Connect this layer → wherever the memory should be expressed (its
+   outgoing connections' weights will be overwritten on trigger — give
+   them any placeholder initial `W` of the correct shape).
+5. Declare a reward-carrying layer as a neuromodulator transmitter, and add
+   a `modulators` row on *this* layer with `drives_plasticity=True`.
+
+**Reset behaviour:** ↺ Reset clears this neuron's own episodic output state,
+but — like every `LearningLayerBase` sibling — leaves connection weights
+(including the stored memory on outgoing connections) intact, since the
+whole point is that the memory survives across resets until next written.
+
+**When to use:** A single, hard-overwritten spatial or feature memory that
+must stay frozen against a live, continuously-changing source until
+explicitly rewritten — e.g. an insect path-integration "vector memory"
+neuron. For `n>1` independent memory slots (e.g. one per remembered
+location, as in trapline foraging), the recall side isn't implemented yet:
+every unit currently reads the same trigger and writes together.
+
+**References:**
+- Le Moël, F., Stone, T., Lihoreau, M., Wystrach, A. & Webb, B. (2019). The
+  Central Complex as a Potential Substrate for Vector Based Navigation.
+  *Frontiers in Psychology*, 10:690.
+- Goulard, R., Heinze, S. & Webb, B. (2023). Emergent spatial goals in an
+  integrative model of the insect central complex. *PLOS Computational
+  Biology*, 19(12): e1011480.
+"""
+
+    def __init__(self, n=1, teach_source=None,
+                 tau_rise=0.0, tau_decay=None, activation='linear', bias=0.0, scale=1.0,
+                 noise_std=0.0, noise_tau=0.0,
+                 weight_decay=0.0, w_min=None, w_max=None, competition='none', k=1,
+                 name='snapshot', **kwargs):
+        super().__init__(n=n,
+                         tau_rise=tau_rise, tau_decay=tau_decay,
+                         activation=activation, bias=bias, scale=scale,
+                         noise_std=noise_std, noise_tau=noise_tau,
+                         w_min=w_min, w_max=w_max, competition=competition, k=k,
+                         weight_decay=weight_decay, name=name, **kwargs)
+        self.teach_source = teach_source
+
+    def step_td(self, src_inputs, dt, outgoing=None):
+        """Forward pass from gate connections only, plus a one-shot overwrite
+        of every outgoing connection's weights when self._reward is nonzero.
+
+        Unlike the base class, this never touches the weights of its own
+        incoming connections — the teach connection's weight is irrelevant
+        (only its raw src_val is read), and the gate connection(s)' weights
+        are ordinary, hand-set, non-plastic values.
+        """
+        teach_val   = None
+        gate_inputs = []
+        for src_val, w_cached, conn_idx, conn in src_inputs:
+            if conn.src == self.teach_source:
+                teach_val = src_val
+            else:
+                gate_inputs.append((src_val, w_cached, conn_idx, conn))
+
+        V = torch.zeros(self.n)
+        for src_val, w_cached, conn_idx, conn in gate_inputs:
+            V = V + w_cached @ src_val
+        V = self._apply_output_mode(V, dt)
+        if self.tau_rise:
+            V = self._apply_leaky(V + self.bias, dt)
+
+        mask = self._competition_mask(V)
+        out  = _activate(V, self.activation, alpha=self.alpha) * self.scale * mask
+        self.output = out.detach()
+
+        if outgoing:
+            w_lo = float(self.w_min) if self.w_min not in (None, '', 'none') else -float('inf')
+            w_hi = float(self.w_max) if self.w_max not in (None, '', 'none') else  float('inf')
+            write = bool(self._reward) and teach_val is not None
+            for w_cached, conn_idx, conn in outgoing:
+                if write and w_cached.shape[0] == teach_val.shape[0]:
+                    new_col = -teach_val.detach()
+                    w_cached.copy_(new_col.unsqueeze(1).expand(-1, w_cached.shape[1]))
+                if self.weight_decay > 0:
+                    w_cached.mul_(1.0 - self.weight_decay * dt)
+                torch.nan_to_num_(w_cached, nan=0.0, posinf=0.0, neginf=0.0)
+                torch.clamp_(w_cached, w_lo, w_hi)
+                conn.W = w_cached.detach().numpy().copy()
+
+        return self.output
+
+    @classmethod
+    def param_defs(cls):
+        return [
+            ('n',            int, '1', 'number of independent memory units (n>1: recall/selection not yet independent per unit)'),
+            ('teach_source', str, '',  'name of the layer whose output is copied (negated) into outgoing weights on write'),
+            ('tau_rise',     float, '0.0',    'leaky rise τ on output (0 = off)'),
+            ('tau_decay',    float, '0.0',    'leaky decay τ on output'),
+            ('activation',   str,   'linear', 'output nonlinearity', ACTIVATIONS),
+            ('bias',         float, '0.0',    'constant added to output'),
+            ('scale',        float, '1.0',    'output scale factor'),
+        ] + cls._shared_learning_param_defs()
+
+    def init_code_parts(self):
+        return ([f'n={self.n}', f'teach_source={self.teach_source!r}']
                 + self._learning_code_parts())
 
 

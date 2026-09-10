@@ -81,7 +81,7 @@ def main():
 
     app = QApplication.instance() or QApplication(sys.argv)
 
-    sensors, layers, connections, hidden, disabled, _container_labels, bodies, joints, _, _notes = \
+    sensors, layers, connections, hidden, disabled, _container_labels, bodies, joints, _, _notes, _container_notes = \
         load_network_file(args.network_json)
 
     circuit = CircuitModel(

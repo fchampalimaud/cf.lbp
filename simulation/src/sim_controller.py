@@ -399,6 +399,21 @@ class SimController(QObject):
             # fix (see TODO.md), not a side effect to be wary of.
             self._emit_frame_ready(overhead_rgb)
 
+    def _sync_mounted_patches(self):
+        """Sync every mounted gradient patch's position to its carrying robot.
+        mounted_on stores a stable agent id (not a list position), so a mount
+        can never silently drift onto the wrong robot after some other agent
+        is added/removed. Called both per-tick (before sensor sampling) and
+        right after reset() repositions agents, so a mounted patch never
+        renders at a stale position."""
+        for patch in self.world.patches:
+            agent_id = patch.get('mounted_on')
+            if agent_id is not None:
+                agent = self.registry._agent_by_id(agent_id)
+                if agent is not None:
+                    patch['x'] = agent.bot_pos[0]
+                    patch['y'] = agent.bot_pos[1]
+
     def reset(self):
         self.stop()
         self.time_index = 0
@@ -414,6 +429,15 @@ class SimController(QObject):
                 agent.brain.setup()
                 for layer in agent.circuit.layers:
                     layer.reset()
+                for sensor in agent.circuit.sensors:
+                    sensor.reset()
+
+        # Snap mounted gradients to their (now-reset) robots immediately, rather
+        # than leaving them at their pre-reset position until the first tick —
+        # _setup_world()'s gradient render (called by the caller right after
+        # this) would otherwise draw a mounted patch at a stale, possibly
+        # far-away spot for a frame, looking like the gradient vanished.
+        self._sync_mounted_patches()
 
         if self.mujoco.engine is not None:
             self.mujoco.engine.reset([a.bot_pos for a in self.registry.agents])
@@ -566,17 +590,7 @@ class SimController(QObject):
             return
         # ─────────────────────────────────────────────────────────────────────
 
-        # Sync mounted gradient positions to their robots before sensor sampling.
-        # mounted_on stores a stable agent id (not a list position), so a mount
-        # can never silently drift onto the wrong robot after some other agent
-        # is added/removed.
-        for patch in self.world.patches:
-            agent_id = patch.get('mounted_on')
-            if agent_id is not None:
-                agent = self.registry._agent_by_id(agent_id)
-                if agent is not None:
-                    patch['x'] = agent.bot_pos[0]
-                    patch['y'] = agent.bot_pos[1]
+        self._sync_mounted_patches()
 
         override = self._motor_override()
         _engine  = self.mujoco.engine
@@ -613,11 +627,19 @@ class SimController(QObject):
                     if slot_idx is not None and a.brain is not None:
                         self.network.host_maybe_send(slot_idx, a.brain, a.circuit.sensors, self.sim_cfg.dt)
         else:
-            for agent in agents:
+            # Snapshot every agent's pre-tick position as a circle, so DistanceSensor/
+            # CollisionSensor can see other agents as obstacles — snapshotted once up
+            # front (not re-read per agent) so sensing doesn't depend on iteration
+            # order as agents move one after another below.
+            all_circles = [{'x': a.bot_pos[0], 'y': a.bot_pos[1], 'r': self.sim_cfg.body_radius}
+                           for a in agents]
+            for i, agent in enumerate(agents):
                 mo = _motor_for(agent)
+                other_agents = all_circles[:i] + all_circles[i + 1:]
                 raw = tick_physics(
                     agent.bot_pos, agent.brain, agent.circuit.sensors,
-                    self.world, self.sim_cfg, circuit=agent.circuit, motor_override=mo)
+                    self.world, self.sim_cfg, circuit=agent.circuit, motor_override=mo,
+                    other_agents=other_agents)
                 if self._trail_visible():
                     agent.trail_xy.append((agent.bot_pos[0], agent.bot_pos[1]))
                 if agent.id == selected_id:

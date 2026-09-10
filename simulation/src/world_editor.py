@@ -35,7 +35,7 @@ class WorldEditor:
         self._setup_world = setup_world_cb
         self._get_agents  = get_agents   # callable() → list[RobotAgent] | None
 
-        self.draw_mode              = 'gradient'
+        self.draw_mode              = 'move'
         self.gradient_color         = GRADIENT_COLORS[0][2]
         self.gradient_active_letter = GRADIENT_COLORS[0][0]
         self.gradient_continuous    = False

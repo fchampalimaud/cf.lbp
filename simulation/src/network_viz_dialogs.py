@@ -1004,12 +1004,26 @@ class _DialogsMixin:
         dlg._filters = []
         return dlg, form, status_lbl
 
-    def _receptor_table_widget(self, existing_mods):
+    def _receptor_table_widget(self, existing_mods, learning=False):
         """Build the modulator receptors table and its add/remove buttons.
+
+        Every row always carries a response `Mode` (absolute / derivative /
+        integral) alongside the modulator name/scale/site — absolute
+        reproduces today's only behavior (raw current value), derivative
+        reacts to a rise (onset-like), integral accumulates over time.
+
+        learning=True (LearningLayerBase-family layers only) adds two more
+        columns: `Drives Plasticity` (checkbox) and `Threshold` — the row's
+        mode-transformed value must cross Threshold for that row to
+        contribute to the layer's reward that tick. This supersedes the old
+        standalone `reward_modulator` field (still honored for back-compat,
+        additively, if a saved layer still has it set).
 
         Returns (table, btns_widget) ready to pass to form.addRow().
         """
         _SITES = ['pre', 'post', 'none']
+        _MODES = ['absolute', 'derivative', 'integral']
+        n_cols = 6 if learning else 4
 
         def _make_site_combo(current='post'):
             cb = QComboBox()
@@ -1017,19 +1031,45 @@ class _DialogsMixin:
             cb.setCurrentText(current if current in _SITES else 'post')
             return cb
 
-        table = QTableWidget(0, 3)
-        table.setHorizontalHeaderLabels(["Modulator", "Scale", "Site"])
+        def _make_mode_combo(current='absolute'):
+            cb = QComboBox()
+            cb.addItems(_MODES)
+            cb.setCurrentText(current if current in _MODES else 'absolute')
+            return cb
+
+        headers = ["Modulator", "Scale", "Site", "Mode"]
+        if learning:
+            headers += ["Drives Plasticity", "Threshold"]
+
+        table = QTableWidget(0, n_cols)
+        table.setHorizontalHeaderLabels(headers)
         table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        for col in range(1, n_cols):
+            table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
         table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         table.setFixedHeight(140)
-        for mod_name, scale, site in (existing_mods or []):
+
+        def _add_row(mod_name='', scale='1.0', site='post', mode='absolute',
+                     drives_plasticity=False, threshold='0.0'):
             row = table.rowCount()
             table.insertRow(row)
             table.setItem(row, 0, QTableWidgetItem(mod_name))
             table.setItem(row, 1, QTableWidgetItem(str(scale)))
             table.setCellWidget(row, 2, _make_site_combo(site))
+            table.setCellWidget(row, 3, _make_mode_combo(mode))
+            if learning:
+                chk = QCheckBox()
+                chk.setChecked(bool(drives_plasticity))
+                table.setCellWidget(row, 4, chk)
+                table.setItem(row, 5, QTableWidgetItem(str(threshold)))
+            return row
+
+        for row_data in (existing_mods or []):
+            name, scale, site = row_data[0], row_data[1], row_data[2]
+            mode              = row_data[3] if len(row_data) > 3 else 'absolute'
+            drives_plasticity = row_data[4] if len(row_data) > 4 else False
+            threshold         = row_data[5] if len(row_data) > 5 else 0.0
+            _add_row(name, scale, site, mode, drives_plasticity, threshold)
 
         btns = QWidget()
         lay  = QHBoxLayout(btns)
@@ -1038,11 +1078,7 @@ class _DialogsMixin:
         btn_rem = QPushButton("Remove Selected")
 
         def _add():
-            r = table.rowCount()
-            table.insertRow(r)
-            table.setItem(r, 0, QTableWidgetItem(''))
-            table.setItem(r, 1, QTableWidgetItem('1.0'))
-            table.setCellWidget(r, 2, _make_site_combo('post'))
+            r = _add_row()
             table.editItem(table.item(r, 0))
 
         def _remove():
@@ -1256,13 +1292,14 @@ class _DialogsMixin:
             name_item  = receptor_table.item(row, 0)
             scale_item = receptor_table.item(row, 1)
             site_combo = receptor_table.cellWidget(row, 2)
-            if not (name_item and scale_item and site_combo):
+            mode_combo = receptor_table.cellWidget(row, 3)
+            if not (name_item and scale_item and site_combo and mode_combo):
                 continue
             n = name_item.text().strip()
             if not n:
                 continue
             try:
-                new_mods.append((n, float(scale_item.text()), site_combo.currentText()))
+                new_mods.append((n, float(scale_item.text()), site_combo.currentText(), mode_combo.currentText()))
             except ValueError:
                 pass
 
@@ -1273,6 +1310,7 @@ class _DialogsMixin:
             if new_name and new_name != sensor.name:
                 old_name = sensor.name
                 sensor.name = new_name
+                self._rekey_container_metadata(old_name, new_name)
                 from dataclasses import replace as _dc_replace
                 self.gui.circuit.connections = [
                     _dc_replace(c, src=new_name) if c.src == old_name else
@@ -1422,6 +1460,7 @@ class _DialogsMixin:
         # Rename layer + connections + joint refs if name changed
         if new_name != lname:
             layer.name = new_name
+            self._rekey_container_metadata(lname, new_name)
             from dataclasses import replace as _dc_replace
             circuit.connections = [
                 _dc_replace(c,
@@ -1452,6 +1491,56 @@ class _DialogsMixin:
                 ref_body.name = new_name
 
         self._build_without_selection_filter()
+
+    def _rekey_container_metadata(self, old_name, new_name):
+        """Migrate any container_labels/container_notes entry referencing
+        *old_name* to use *new_name* instead, so an explicit label/note set on
+        a container survives renaming one of its occupants — container
+        identity is derived from occupant names (see _container_key), so
+        without this the entry would otherwise be silently orphaned under a
+        now-stale key."""
+        if old_name == new_name:
+            return
+        for store in (self._container_labels, self._container_notes):
+            for old_key in list(store.keys()):
+                parts = old_key.split('|')
+                if old_name not in parts:
+                    continue
+                new_key = '|'.join(sorted(new_name if p == old_name else p for p in parts))
+                if new_key != old_key:
+                    store[new_key] = store.pop(old_key)
+
+    def _container_note_dialog(self, container):
+        """Add/edit/clear a container's note. Returns True if the note text
+        changed (caller should call _refresh_container_note), else False."""
+        key     = self._container_key(container)
+        current = self._container_notes.get(key, '')
+        dlg = QDialog(self)
+        dlg.setWindowTitle('Container note')
+        vl = QVBoxLayout(dlg)
+        vl.addWidget(QLabel(
+            "<span style='font-size:9px'>Free text — not part of the circuit.</span>"))
+        editor = QTextEdit()
+        editor.setPlainText(current)
+        editor.setMinimumSize(220, 120)
+        vl.addWidget(editor)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok |
+                              QDialogButtonBox.StandardButton.Cancel)
+        bb.accepted.connect(dlg.accept)
+        bb.rejected.connect(dlg.reject)
+        vl.addWidget(bb)
+        editor.setFocus()
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return False
+        text = editor.toPlainText()
+        if text == current:
+            return False
+        self._push_undo()
+        if text.strip():
+            self._container_notes[key] = text
+        else:
+            self._container_notes.pop(key, None)
+        return True
 
     def _note_dialog(self, note=None, pos=None):
         """Add or edit a sticky note. Returns the Note, or None if cancelled."""
@@ -1489,8 +1578,9 @@ class _DialogsMixin:
         layer=None: creation mode (title "Add …", fields show defaults).
         layer=<obj>: edit mode (title "Edit …: name", fields show live values).
         """
-        from neurons import LAYER_REGISTRY, DynamicsBase
+        from neurons import LAYER_REGISTRY, DynamicsBase, LearningLayerBase
         cls    = LAYER_REGISTRY.get(ltype)
+        is_learning = cls is not None and issubclass(cls, LearningLayerBase)
         params = list(cls.param_defs() if cls is not None else [])
         if not params:
             return
@@ -1535,7 +1625,7 @@ class _DialogsMixin:
         form.addRow("transmitter color", mod_color_edit)
 
         existing_mods = (getattr(layer, 'modulators', []) or []) if is_edit else []
-        receptor_table, receptor_btns = self._receptor_table_widget(existing_mods)
+        receptor_table, receptor_btns = self._receptor_table_widget(existing_mods, learning=is_learning)
         form.addRow("Modulator receptors", receptor_table)
         form.addRow(receptor_btns)
 
@@ -1551,13 +1641,20 @@ class _DialogsMixin:
             name_item  = receptor_table.item(row, 0)
             scale_item = receptor_table.item(row, 1)
             site_combo = receptor_table.cellWidget(row, 2)
-            if not (name_item and scale_item and site_combo):
+            mode_combo = receptor_table.cellWidget(row, 3)
+            if not (name_item and scale_item and site_combo and mode_combo):
                 continue
             n = name_item.text().strip()
             if not n:
                 continue
             try:
-                new_mods.append((n, float(scale_item.text()), site_combo.currentText()))
+                mod_row = [n, float(scale_item.text()), site_combo.currentText(), mode_combo.currentText()]
+                if is_learning:
+                    chk = receptor_table.cellWidget(row, 4)
+                    th_item = receptor_table.item(row, 5)
+                    mod_row.append(bool(chk.isChecked()) if chk is not None else False)
+                    mod_row.append(float(th_item.text()) if th_item is not None else 0.0)
+                new_mods.append(tuple(mod_row))
             except ValueError:
                 pass
 
@@ -1608,6 +1705,7 @@ class _DialogsMixin:
             if new_name and new_name != layer.name:
                 old_name = layer.name
                 layer.name = new_name
+                self._rekey_container_metadata(old_name, new_name)
                 from dataclasses import replace as _dc_replace
                 self.gui.circuit.connections = [
                     _dc_replace(c,

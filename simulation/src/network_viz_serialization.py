@@ -36,6 +36,7 @@ class _SerializationMixin:
             joints=self.gui.circuit.joints,
             connection_params=self._weight_params,
             notes=self.gui.circuit.notes,
+            container_notes=self._container_notes,
         )
         self._undo_stack.append(snapshot)
         self._btn_undo.setEnabled(True)
@@ -45,7 +46,7 @@ class _SerializationMixin:
             return
         from brain_serializer import load_network_json
         snapshot = self._undo_stack.pop()
-        sensors, layers, connections, hidden, disabled, container_labels, _bodies, _joints, conn_params, notes = load_network_json(snapshot)
+        sensors, layers, connections, hidden, disabled, container_labels, _bodies, _joints, conn_params, notes, container_notes = load_network_json(snapshot)
         self._weight_params = conn_params
         c = self.gui.circuit
         c.sensors     = sensors
@@ -55,6 +56,7 @@ class _SerializationMixin:
         self._hidden_containers   = hidden
         self._disabled_containers = disabled
         self._container_labels    = container_labels
+        self._container_notes     = container_notes
         if hasattr(self.gui, 'brain') and self.gui.brain:
             brain = self.gui.brain
             for l in getattr(brain, 'layers', []):
@@ -85,7 +87,9 @@ class _SerializationMixin:
         # Save sensors whose output is consumed by the selected layers.
         src_names = {c.src for c in conns}
         sensors = [s for s in self.gui.circuit.sensors if s.name in src_names]
+        from app_version import get_app_version
         payload = {
+            'saved_with_app_version': get_app_version(),
             'sensors':     [_sensor_to_dict(s) for s in sensors],
             'layers':      [_layer_to_dict(l) for l in layers],
             'connections': [_connection_to_dict(c, self._weight_params.get((c.src, c.tgt)))
@@ -231,6 +235,7 @@ class _SerializationMixin:
                 joints=self.gui.circuit.joints,
                 connection_params=self._weight_params,
                 notes=self.gui.circuit.notes,
+                container_notes=self._container_notes,
             )
         except Exception:
             import traceback

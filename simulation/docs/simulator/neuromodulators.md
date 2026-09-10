@@ -95,6 +95,30 @@ Both sites can appear together on the same element: `modulators=[('insulin', -1.
 
 ---
 
+## Response mode — absolute vs derivative vs integral
+
+Each modulator row also carries a `mode`, describing *how* the subscriber reacts to the bus value — independent of `site`, which only controls *where* the resulting gain is applied:
+
+| Mode | Reads | Biological analogue |
+|------|-------|----------------------|
+| `'absolute'` (default) | the modulator's current value, unchanged | tonic level — sets an ongoing gain, e.g. `saciation`/insulin above |
+| `'derivative'` | the tick-to-tick *change* in the modulator's value | phasic/onset signal — reacts to a rise, near-silent otherwise (e.g. reward-prediction-error-style dopamine) |
+| `'integral'` | a running accumulation of the modulator's value over time | slow, sensitizing state — builds up under sustained or repeated exposure |
+
+`mode` is the 4th element of the row tuple: `modulators=[('insulin', -1.0, 'pre', 'absolute')]`. Omitting it defaults to `'absolute'` — every example on this page behaves identically whether or not `mode` is written out explicitly. Each `(name, mode)` pair tracks its own independent derivative/accumulator state, so a layer can subscribe to the same modulator twice under different modes without them interfering with each other.
+
+### Driving plasticity (learning layers only)
+
+`TDLayer`/`DeltaLayer`/`ThreeFactorLayer` read their reward signal `r` the same way: a `modulators` row flagged `drives_plasticity=True` (5th element), with an associated `threshold` (6th element) — the row's mode-transformed value must cross `threshold` that tick to contribute to `r`. Combined with `mode`, this replaces three previously-separate mechanisms with one configurable row:
+
+- `mode='absolute'` + threshold → **level-gated**: learns continuously for as long as the reward signal is above threshold (the classic `ThreeFactorLayer` use case).
+- `mode='derivative'` + threshold → **onset-gated**: fires only around the moment the reward signal starts rising, near-silent otherwise.
+- `mode='integral'` + threshold → **cumulative-gated**: only engages after sustained or repeated exposure crosses an accumulated total.
+
+`modulators=[('dopamine', 1.0, 'none', 'derivative', True, 0.1)]` on a learning layer reads `dopamine`'s derivative and drives plasticity whenever it exceeds `0.1`.
+
+---
+
 ## Running remotely
 
 The brain can run headlessly on any machine while the simulator runs on another. The simulator acts as a UDP sensor-motor host; this brain is the client.

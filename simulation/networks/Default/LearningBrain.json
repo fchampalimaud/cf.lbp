@@ -14,7 +14,7 @@
             "radius": 1.2,
             "scale": 100.0,
             "bias": 0.0,
-            "noise_std": 20.0,
+            "noise_std": 0.2,
             "tau_rise": null,
             "tau_decay": null,
             "activation": "linear",

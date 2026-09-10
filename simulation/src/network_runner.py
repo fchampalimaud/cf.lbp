@@ -9,9 +9,25 @@ import os
 import numpy as np
 import torch
 import torch.nn.functional as F
-from neurons import Conv2dLayer as _Conv2dLayer, LearningLayerBase as _LLB, _activate, Leaky2dLayer as _L2d, Reichardt2dLayer as _R2d, ProductLayer as _ProdL
+from neurons import Conv2dLayer as _Conv2dLayer, LearningLayerBase as _LLB, _activate, Leaky2dLayer as _L2d, Reichardt2dLayer as _R2d, ProductLayer as _ProdL, SnapshotLayer as _SnapL
 
 _DEBUG_LAYER = os.environ.get('LBP_DEBUG_LAYER')   # layer name to trace input/output each tick
+
+
+def _unpack_mod_row(row):
+    """Unpack a `.modulators` row, tolerating every historical row length.
+
+    Legacy rows are 3-tuples `(name, scale, site)`. Rows may now also carry a
+    4th `mode` element (`'absolute'` / `'derivative'` / `'integral'`), and —
+    on learning layers only — 5th/6th `drives_plasticity`/`threshold`
+    elements. Missing trailing elements default to today's exact old
+    behavior: absolute value, does not drive plasticity.
+    """
+    name, scale, site = row[0], row[1], row[2]
+    mode              = row[3] if len(row) > 3 else 'absolute'
+    drives_plasticity = row[4] if len(row) > 4 else False
+    threshold         = row[5] if len(row) > 5 else 0.0
+    return name, scale, site, mode, drives_plasticity, threshold
 
 
 def _image_layer_fan_in(layer):
@@ -295,22 +311,28 @@ def step_network(brain, dt):
             continue
         pre_gain  = 1.0
         post_gain = 1.0
-        for mod_name, scale, site in mods:
+        for row in mods:
+            mod_name, scale, site, mode, _dp, _th = _unpack_mod_row(row)
             if mod_name in mod_map:
+                v = sensor._transform_modulator_value((mod_name, mode), mode, mod_map[mod_name], dt)
                 if site == 'pre':
-                    pre_gain  += scale * mod_map[mod_name]
+                    pre_gain  += scale * v
                 else:
-                    post_gain += scale * mod_map[mod_name]
+                    post_gain += scale * v
         # Pre-site: re-apply activation on gain-scaled pre-activation value so the
         # activation function (e.g. relu) acts after the gain, not before.
         # output_mode runs upstream of _pre_activation_output (before the leaky
         # filter), so any derivative/integral transform is already baked into
         # it here — no special-casing needed regardless of output_mode.
+        # Must also reapply sensor.scale, since BaseSensor._process() now applies
+        # it after activation (matching LeakyLayer) — recomputing activation alone
+        # would silently drop the sensor's scale factor.
         pre_act = getattr(sensor, '_pre_activation_output', None)
         if pre_gain != 1.0 and pre_act is not None:
             from neurons import _activate as _act
             activation = getattr(sensor, 'activation', 'linear')
-            val = np.asarray(_act(pre_act * pre_gain, activation), dtype=np.float32)
+            sensor_scale = getattr(sensor, 'scale', 1.0)
+            val = np.asarray(_act(pre_act * pre_gain, activation) * sensor_scale, dtype=np.float32)
             setattr(brain, sensor.name, val)
         elif pre_gain != 1.0:
             post_gain *= pre_gain   # fallback: treat as post
@@ -327,19 +349,24 @@ def step_network(brain, dt):
         brain._conn_meta = {}
         brain._w_cache_conn_id = conn_id
         conn_by_tgt = {}
+        conn_by_src = {}
         for i, conn in enumerate(connections):
             conn_by_tgt.setdefault(conn.tgt, []).append((i, conn))
+            conn_by_src.setdefault(conn.src, []).append((i, conn))
         brain._conn_by_tgt = conn_by_tgt
+        brain._conn_by_src = conn_by_src
         # Per-layer classification — only depends on layer type, never per-tick data.
         brain._layer_meta = {
             l.name: {
                 'is_learning': isinstance(l, _LLB),
                 'is_product':  isinstance(l, _ProdL),
                 'is_2d':       isinstance(l, (_L2d, _R2d)),
+                'has_outgoing_plasticity': isinstance(l, _SnapL),
             }
             for l in active_layers
         }
     conn_by_tgt = brain._conn_by_tgt
+    conn_by_src = brain._conn_by_src
     layer_meta  = brain._layer_meta
 
     # Main forward pass: accumulate weighted inputs, step each layer.
@@ -378,14 +405,50 @@ def step_network(brain, dt):
                         conn.W = arr.copy()
                     brain._w_cache[i] = torch.from_numpy(arr.copy())
                 src_inputs.append((src_val, brain._w_cache[i], i, conn))
-            rm = getattr(layer, 'reward_modulator', None)
+            reward_total = 0.0
+            for row in getattr(layer, 'modulators', []):
+                mod_name, scale, site, mode, drives_plasticity, threshold = _unpack_mod_row(row)
+                if not drives_plasticity or mod_name not in mod_map:
+                    continue
+                v = layer._transform_modulator_value((mod_name, mode), mode, mod_map[mod_name], dt)
+                if v >= threshold:
+                    reward_total += scale * v
+            rm = getattr(layer, 'reward_modulator', None)   # legacy field, still honored additively
             if rm:
-                layer._reward = mod_map.get(rm, 0.0)
-            layer.step_td(src_inputs, dt)
+                reward_total += mod_map.get(rm, 0.0)
+            layer._reward = reward_total
+
+            # SnapshotLayer-only: gather the layer's OUTGOING connections (it's
+            # the src, not the tgt) so step_td can overwrite their weights
+            # directly — the one LearningLayerBase subclass whose plasticity
+            # lives on outgoing edges rather than incoming ones. Reuses the
+            # same brain._w_cache dict incoming connections already use
+            # (keyed by connection index, agnostic to which endpoint is
+            # treating it as incoming vs. outgoing).
+            outgoing = None
+            if lmeta.get('has_outgoing_plasticity'):
+                outgoing = []
+                for i, conn in conn_by_src.get(layer.name, []):
+                    tgt_obj = layer_map.get(conn.tgt)
+                    n_tgt = (tgt_obj.n or 1) if tgt_obj is not None else None
+                    if n_tgt is None:
+                        continue
+                    if i not in brain._w_cache:
+                        arr   = np.asarray(conn.W, dtype=np.float32)
+                        n_src = layer.n or 1
+                        if arr.ndim < 2 or arr.shape != (n_tgt, n_src) or np.any(~np.isfinite(arr)):
+                            arr = np.zeros((n_tgt, n_src), dtype=np.float32)
+                            conn.W = arr.copy()
+                        brain._w_cache[i] = torch.from_numpy(arr.copy())
+                    outgoing.append((brain._w_cache[i], i, conn))
+
+            layer.step_td(src_inputs, dt, outgoing=outgoing)
             post = 1.0
-            for mod_name, scale, site in getattr(layer, 'modulators', []):
+            for row in getattr(layer, 'modulators', []):
+                mod_name, scale, site, mode, _dp, _th = _unpack_mod_row(row)
                 if site == 'post' and mod_name in mod_map:
-                    post += scale * mod_map[mod_name]
+                    v = layer._transform_modulator_value((mod_name, mode), mode, mod_map[mod_name], dt)
+                    post += scale * v
             if post != 1.0 and layer.output is not None:
                 layer.output = layer.output * post
             continue
@@ -478,9 +541,11 @@ def step_network(brain, dt):
                 inp = inp * contrib if _is_product else inp + contrib
 
         pre = 1.0
-        for mod_name, scale, site in getattr(layer, 'modulators', []):
+        for row in getattr(layer, 'modulators', []):
+            mod_name, scale, site, mode, _dp, _th = _unpack_mod_row(row)
             if site == 'pre' and mod_name in mod_map:
-                pre += scale * mod_map[mod_name]
+                v = layer._transform_modulator_value((mod_name, mode), mode, mod_map[mod_name], dt)
+                pre += scale * v
         if pre != 1.0:
             inp = inp * pre
 
@@ -497,8 +562,10 @@ def step_network(brain, dt):
             print(f"[DEBUG-LAYER] {layer.name}: post-step output={layer.output}")
 
         post = 1.0
-        for mod_name, scale, site in getattr(layer, 'modulators', []):
+        for row in getattr(layer, 'modulators', []):
+            mod_name, scale, site, mode, _dp, _th = _unpack_mod_row(row)
             if site == 'post' and mod_name in mod_map:
-                post += scale * mod_map[mod_name]
+                v = layer._transform_modulator_value((mod_name, mode), mode, mod_map[mod_name], dt)
+                post += scale * v
         if post != 1.0 and layer.output is not None:
             layer.output = layer.output * post

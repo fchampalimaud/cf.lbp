@@ -1,0 +1,61 @@
+{
+    "saved_with_app_version": "0.7.0",
+    "module_name": "BrainGUI",
+    "class_name": "BrainGUI",
+    "sim_params": {
+        "dt": 0.01,
+        "arena_scale": 4.0,
+        "motor_gain": 1.0,
+        "sense_radius": 1.0,
+        "init_x": -1.0,
+        "init_y": 0.0,
+        "stim_radius": 0.5,
+        "body_radius": 0.1,
+        "sensor_angle": 0.14,
+        "toggle_stim": 1,
+        "fixate_robot": 0.0
+    },
+    "brain_params": {
+        "network_project": "Demos",
+        "network_file": "VectorBasedHomingBrain.json"
+    },
+    "plot_multipliers": {
+        "mL": 1.0,
+        "mR": 1.0
+    },
+    "patches": [
+        {
+            "x": -1.0032388663967615,
+            "y": 0.01700404858299631,
+            "r": 0.36030932964272,
+            "color": [
+                1.0,
+                0.0,
+                0.0
+            ],
+            "label": "A"
+        }
+    ],
+    "objects": [],
+    "walls": [],
+    "sky": {
+        "enabled": false,
+        "angle": 0.0
+    },
+    "floor_texture": null,
+    "speed_mult": 200,
+    "trail_length": 1000,
+    "arena_round": true,
+    "agents": [
+        {
+            "module_name": "BrainGUI",
+            "name": "Blah",
+            "color": "#4a7fcb",
+            "n": 1,
+            "brain_params": {
+                "network_project": "Demos",
+                "network_file": "VectorBasedHomingBrain.json"
+            }
+        }
+    ]
+}

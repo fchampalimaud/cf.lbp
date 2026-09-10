@@ -11,6 +11,7 @@ import re
 import numpy as np
 from neurons import RingAttractorLayer, Conv2dLayer, LAYER_REGISTRY, DynamicsBase
 from circuit_model import Connection, Note
+from app_version import get_app_version
 
 _ALL_NEURON_TYPES = sorted(LAYER_REGISTRY.keys())
 
@@ -266,7 +267,12 @@ def _layer_to_dict(layer) -> dict:
         if isinstance(val, np.ndarray):
             val = val.tolist()
         d[name] = val
-    for attr in ('modulators', 'neuromodulator_transmitter', 'neuromodulator_color'):
+    # reward_modulator is no longer in LearningLayerBase-family param_defs()
+    # (superseded by a 'drives_plasticity' row in 'modulators'), but the
+    # constructor/attribute still exists for back-compat — persist it
+    # explicitly so a layer with a custom (non-default) value doesn't
+    # silently lose it on re-save just because it's no longer GUI-editable.
+    for attr in ('modulators', 'neuromodulator_transmitter', 'neuromodulator_color', 'reward_modulator'):
         val = getattr(layer, attr, None)
         if val:
             d[attr] = val
@@ -480,11 +486,13 @@ def serialize_network_json(sensors, layers, connections,
                            hidden_containers: set, disabled_containers: set,
                            container_labels: dict,
                            bodies=None, joints=None,
-                           connection_params=None, notes=None) -> dict:
+                           connection_params=None, notes=None,
+                           container_notes: dict = None) -> dict:
     """Return a JSON-serialisable dict describing the complete circuit."""
     cp = connection_params or {}
     d = {
-        'version':          1,
+        'version':                 1,
+        'saved_with_app_version':  get_app_version(),
         'motor_layer':      'motor',
         'hidden_cols':      sorted(hidden_containers),
         'disabled_cols':    sorted(disabled_containers),
@@ -492,6 +500,7 @@ def serialize_network_json(sensors, layers, connections,
         # position — see load_network_json's migration for the old,
         # position-keyed format.
         'container_labels': dict(container_labels),
+        'container_notes':  dict(container_notes or {}),
         'sensors':        [_sensor_to_dict(s) for s in sensors],
         'layers':         [_layer_to_dict(l) for l in layers
                            if not getattr(l, '_is_joint_motor', False)],
@@ -511,12 +520,14 @@ def load_network_json(data: dict):
     """Reconstruct circuit components from a serialised dict.
 
     Returns (sensors, layers, connections, hidden_cols, disabled_cols,
-             container_labels, bodies, joints, connection_params, notes).
+             container_labels, bodies, joints, connection_params, notes,
+             container_notes).
     connection_params is a dict keyed by (src, tgt) containing the weight
     generation params saved by WeightMatrixDialog (pattern type + all options).
-    container_labels is keyed by container identity (the sorted, '|'-joined
-    set of occupant names), not position — see the migration below for files
-    saved before this change, which used position (depth_val) keys.
+    container_labels and container_notes are keyed by container identity
+    (the sorted, '|'-joined set of occupant names), not position — see the
+    migration below for files saved before this change, which used position
+    (depth_val) keys.
     """
     from rigid_body import RigidBody, Joint
     sensors     = [_sensor_from_dict(d) for d in data.get('sensors', [])]
@@ -556,6 +567,8 @@ def load_network_json(data: dict):
                             if getattr(o, 'layer', None) == old_pos)
             if names:
                 container_labels['|'.join(names)] = v
+
+    container_notes = dict(data.get('container_notes', {}))
 
     bodies      = [RigidBody.from_dict(b) for b in data.get('bodies', [])]
     joints      = [Joint.from_dict(j)     for j in data.get('joints', [])]
@@ -636,18 +649,21 @@ def load_network_json(data: dict):
                     init_W=_copy.deepcopy(conn.init_W),
                 ))
                 conn_set.add((mirror_src, partner_name))
-    return sensors, layers, connections, hidden, disabled, container_labels, bodies, joints, connection_params, notes
+    return (sensors, layers, connections, hidden, disabled, container_labels,
+            bodies, joints, connection_params, notes, container_notes)
 
 
 def save_network_file(path: str, sensors, layers, connections,
                       hidden_cols: set, disabled_cols: set,
                       container_labels: dict = None,
-                      bodies=None, joints=None, connection_params=None, notes=None):
+                      bodies=None, joints=None, connection_params=None, notes=None,
+                      container_notes: dict = None):
     """Write the circuit to a JSON file at *path*."""
     os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
     data = serialize_network_json(sensors, layers, connections,
                                   hidden_cols, disabled_cols, container_labels or {},
-                                  bodies, joints, connection_params, notes)
+                                  bodies, joints, connection_params, notes,
+                                  container_notes=container_notes or {})
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=2)
 
@@ -718,7 +734,7 @@ def check_network_freshness(data: dict, sensors, layers) -> list:
 
 def load_network_file(path: str):
     """Read a JSON file and return (sensors, layers, connections, hidden, disabled,
-    container_labels, bodies, joints, connection_params, notes)."""
+    container_labels, bodies, joints, connection_params, notes, container_notes)."""
     with open(path, 'r', encoding='utf-8') as f:
         data = json.load(f)
     return load_network_json(data)

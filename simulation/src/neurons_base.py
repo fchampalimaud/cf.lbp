@@ -113,6 +113,9 @@ class DynamicsBase:
             buf = getattr(self, attr, None)
             if buf is not None:
                 buf.copy_(self._x0_tensor(buf.numel()).reshape(buf.shape))
+        mod_state = getattr(self, '_mod_row_state', None)
+        if mod_state is not None:
+            mod_state.clear()
 
     def _apply_output_mode(self, out, dt):
         """Transform *out* per self.output_mode:
@@ -277,10 +280,39 @@ class LayerBase(nn.Module):
         self.lateral_pair               = lateral_pair  # str name of partner layer, or None
         self.z                          = 0
         self.span                       = 1
+        # Per-(name, mode) derivative/integral state for modulator subscriptions.
+        # Deliberately NOT stored on/inside `self.modulators` itself: lateralized
+        # L/R pair sync copies that list by reference (network_viz_dialogs.py),
+        # which would silently share this mutable state across partners.
+        self._mod_row_state             = {}
 
     def is_lateralized(self) -> bool:
         """True when this layer is one half of a lateralized L/R pair."""
         return self.lateral_pair is not None
+
+    def _transform_modulator_value(self, key, mode, value, dt):
+        """Apply a modulator response mode to a raw scalar reading from the mod bus.
+
+        'absolute'   — pass through unchanged (today's only behavior).
+        'derivative' — rate of change since the last call with this same key
+                       (zero on the first call — no previous value yet).
+        'integral'   — running accumulation over time (forward-Euler).
+
+        State is tracked per `key` (conventionally `(modulator_name, mode)`) in
+        `self._mod_row_state`, independent of this layer's own `output_mode`
+        state (`_prev_out`/`_integral`) and independent of every other
+        modulator row, so multiple subscriptions never collide.
+        """
+        if mode == 'derivative':
+            state = self._mod_row_state.setdefault(key, {'prev': value})
+            prev = state['prev']
+            state['prev'] = value
+            return (value - prev) / max(float(dt), 1e-9)
+        if mode == 'integral':
+            state = self._mod_row_state.setdefault(key, {'integral': 0.0})
+            state['integral'] += value * dt
+            return state['integral']
+        return value
 
     # ── Visualization protocol ─────────────────────────────────────────────────
 

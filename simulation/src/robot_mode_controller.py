@@ -80,7 +80,7 @@ class RobotModeController:
                     mL = mR = 0.0
             motor_addr = getattr(layer_obj, 'robot_address', '').strip()
             if motor_addr:
-                host, port, osc_path, _, _ = _RD._parse_address(motor_addr)
+                host, port, osc_path, *_ = _RD._parse_address(motor_addr)
                 if host and port and osc_path:
                     cmds.append((host, port, osc_path, mL, mR))
         return cmds
@@ -94,7 +94,7 @@ class RobotModeController:
                 continue
             motor_addr = getattr(layer, 'robot_address', '').strip()
             if motor_addr:
-                host, port, osc_path, _, _ = _RD._parse_address(motor_addr)
+                host, port, osc_path, *_ = _RD._parse_address(motor_addr)
                 if host and port and osc_path:
                     self.driver.send_motor(host, port, osc_path, 0.0, 0.0)
 

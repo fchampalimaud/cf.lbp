@@ -220,6 +220,233 @@ def test_sensor_output_mode_derivative_and_integral():
     assert out[0] == pytest.approx(2.0 * cfg.dt * 5)
 
 
+def test_modulator_row_transform_derivative():
+    """LayerBase._transform_modulator_value's 'derivative' mode computes the
+    rate of change of a raw modulator-bus reading, keyed by (name, mode) in
+    self._mod_row_state — independent of the layer's own output_mode state
+    (_prev_out/_integral). Zero on the first call for a given key, matching
+    _apply_output_mode's own first-tick convention."""
+    from neurons import LeakyLayer
+    layer = LeakyLayer(name='t', n=1)
+    key = ('dopamine', 'derivative')
+    v1 = layer._transform_modulator_value(key, 'derivative', 1.0, dt=0.1)
+    assert v1 == pytest.approx(0.0)
+    v2 = layer._transform_modulator_value(key, 'derivative', 3.0, dt=0.1)
+    assert v2 == pytest.approx(20.0)   # (3.0 - 1.0) / 0.1
+
+
+def test_modulator_row_transform_integral():
+    """'integral' mode accumulates the raw modulator reading over time
+    (forward-Euler), same math as _apply_output_mode's integral branch but
+    tracked per-(name, mode) key instead of a single per-layer buffer."""
+    from neurons import LeakyLayer
+    layer = LeakyLayer(name='t', n=1)
+    key = ('dopamine', 'integral')
+    total = None
+    for _ in range(5):
+        total = layer._transform_modulator_value(key, 'integral', 2.0, dt=0.1)
+    assert total == pytest.approx(1.0)   # 2.0 * 0.1 * 5
+
+
+def test_modulator_row_state_independent_per_key():
+    """Two different (name, mode) subscriptions on the same layer must not
+    share state, and modulator-row state must not collide with the layer's
+    own output_mode state — both are 'derivative' here, on purpose."""
+    from neurons import LeakyLayer
+    layer = LeakyLayer(name='t', n=1, tau_rise=0.0, activation='linear', output_mode='derivative')
+    layer._ensure_n(1)
+    layer.step(torch.tensor([100.0]), dt=0.1)   # drives the layer's OWN _prev_out to 100
+
+    key_a = ('dopamine', 'derivative')
+    key_b = ('serotonin', 'derivative')
+    v1 = layer._transform_modulator_value(key_a, 'derivative', 1.0, dt=0.1)
+    assert v1 == pytest.approx(0.0)          # first call for key_a: not influenced by _prev_out=100
+    v2 = layer._transform_modulator_value(key_b, 'derivative', 1.0, dt=0.1)
+    assert v2 == pytest.approx(0.0)          # first call for key_b too: independent of key_a's state
+    v3 = layer._transform_modulator_value(key_a, 'derivative', 5.0, dt=0.1)
+    assert v3 == pytest.approx(40.0)         # (5.0 - 1.0) / 0.1 — key_a's own history, untouched by key_b
+
+
+def test_learning_layer_drives_plasticity_row_gates_on_threshold():
+    """A `modulators` row flagged drives_plasticity=True only contributes to
+    reward on ticks where its mode-transformed value crosses `threshold` —
+    the generalized replacement for the old always-on reward_modulator field.
+    DeltaLayer's rule (delta = r - V) moves weight from V=0 whenever r != 0,
+    isolating the threshold gate from any confound with V needing to be
+    nonzero first (as ThreeFactorLayer's r*V rule would require)."""
+    from network_runner import step_network
+    from neurons import ConstantLayer, DeltaLayer
+    from circuit_model import Connection
+    from brain_base import BaseBrain
+
+    dan = ConstantLayer(name='dan', value=0.0, n=1, neuromodulator_transmitter='dopamine')
+    src = ConstantLayer(name='src', value=1.0, n=1)
+    learn = DeltaLayer(name='learn', n=1, alpha_pos=1.0,
+                       modulators=[('dopamine', 1.0, 'none', 'absolute', True, 0.5)])
+    conn = Connection(src='src', tgt='learn', W=np.zeros((1, 1), dtype=np.float32))
+
+    brain = BaseBrain()
+    brain.sensors     = []
+    brain.layers      = [dan, src, learn]
+    brain.connections = [conn]
+    brain.src         = src   # network_runner reads connection sources via getattr(brain, conn.src)
+
+    dan.output = torch.tensor([0.2])   # below threshold 0.5
+    step_network(brain, dt=0.1)
+    assert conn.W[0, 0] == pytest.approx(0.0)
+
+    dan.output = torch.tensor([0.9])   # above threshold 0.5
+    step_network(brain, dt=0.1)
+    assert conn.W[0, 0] == pytest.approx(0.9)   # alpha_pos=1.0 * (0.9 - 0) * s_prev(1.0)
+
+
+def test_learning_layer_reward_modulator_backcompat_default_is_none():
+    """reward_modulator now defaults to None (not 'dopamine') so a freshly
+    constructed learning layer never silently picks up a stray 'dopamine'
+    channel via the legacy field — only an explicit drives_plasticity row,
+    or an explicitly-set reward_modulator (e.g. from old saved JSON, which
+    always wrote this field explicitly before it left param_defs()), should
+    drive plasticity."""
+    from neurons import DeltaLayer
+    layer = DeltaLayer(name='learn', n=1)
+    assert layer.reward_modulator is None
+
+
+def test_learning_layer_reward_modulator_explicit_value_still_works():
+    """Back-compat: a layer constructed with an explicit reward_modulator
+    (as happens when loading old saved JSON, which always serialized this
+    field) still drives plasticity via that legacy channel, additively with
+    any drives_plasticity rows — network_runner.py sums both."""
+    from network_runner import step_network
+    from neurons import ConstantLayer, DeltaLayer
+    from circuit_model import Connection
+    from brain_base import BaseBrain
+
+    dan = ConstantLayer(name='dan', value=0.7, n=1, neuromodulator_transmitter='dopamine')
+    src = ConstantLayer(name='src', value=1.0, n=1)
+    learn = DeltaLayer(name='learn', n=1, alpha_pos=1.0, reward_modulator='dopamine')
+    conn = Connection(src='src', tgt='learn', W=np.zeros((1, 1), dtype=np.float32))
+
+    brain = BaseBrain()
+    brain.sensors     = []
+    brain.layers      = [dan, src, learn]
+    brain.connections = [conn]
+    brain.src         = src   # network_runner reads connection sources via getattr(brain, conn.src)
+
+    dan.output = torch.tensor([0.7])
+    step_network(brain, dt=0.1)   # first tick: warms up _src_prev (LearningLayerBase.step_td
+                                   # uses the PREVIOUS tick's presynaptic value, empty on tick 1 —
+                                   # ΔW is always 0 on a layer's very first step_td call regardless
+                                   # of reward, see LearningLayerBase.step_td's src_prev lookup)
+    assert conn.W[0, 0] == pytest.approx(0.0)
+    step_network(brain, dt=0.1)   # second tick: now sees src_prev=1.0 from tick 1
+    assert conn.W[0, 0] == pytest.approx(0.7)   # no threshold on the legacy path — always applied
+
+
+def _make_snapshot_circuit(threshold=0.5):
+    """cpu4 (teach source) + gate → mem (SnapshotLayer) → cpu1 (readout).
+
+    cpu4 → mem is a real, ordinary connection (not a name-lookup) — mem's
+    step_td identifies it by conn.src == teach_source and reads its raw
+    value, excluding it from mem's own output.
+    """
+    from neurons import ConstantLayer, SnapshotLayer, LeakyLayer
+    from circuit_model import Connection
+    from brain_base import BaseBrain
+
+    cpu4 = ConstantLayer(name='cpu4', value=[0.0, 0.0, 0.0], n=3)
+    gate = ConstantLayer(name='gate', value=0.0, n=1)
+    dan  = ConstantLayer(name='dan', value=0.0, n=1, neuromodulator_transmitter='dopamine')
+    mem  = SnapshotLayer(name='mem', n=1, teach_source='cpu4', tau_rise=0.0, activation='linear',
+                         modulators=[('dopamine', 1.0, 'none', 'absolute', True, threshold)])
+    cpu1 = LeakyLayer(name='cpu1', n=3, tau_rise=0.0, activation='linear')
+
+    teach_conn = Connection(src='cpu4', tgt='mem', W=np.ones((1, 3), dtype=np.float32))
+    gate_conn  = Connection(src='gate', tgt='mem', W=np.array([[1.0]], dtype=np.float32))
+    out_conn   = Connection(src='mem',  tgt='cpu1', W=np.zeros((3, 1), dtype=np.float32))
+
+    brain = BaseBrain()
+    brain.sensors     = []
+    brain.layers      = [cpu4, gate, dan, mem, cpu1]
+    brain.connections = [teach_conn, gate_conn, out_conn]
+    brain.cpu4        = cpu4
+    brain.gate        = gate
+    brain.mem         = mem
+    return brain, cpu4, gate, dan, mem, out_conn
+
+
+def test_snapshot_layer_teach_connection_excluded_from_output():
+    """The teach connection's value never reaches mem's own output — only
+    gate connections do, regardless of how large cpu4's value is."""
+    from network_runner import step_network
+
+    brain, cpu4, gate, dan, mem, out_conn = _make_snapshot_circuit()
+
+    cpu4.output = torch.tensor([5.0, 5.0, 5.0])
+    gate.output = torch.tensor([0.0])
+    step_network(brain, dt=0.1)
+    assert mem.output.item() == pytest.approx(0.0)   # gate is 0 — cpu4's huge value has no effect
+
+    gate.output = torch.tensor([1.0])
+    step_network(brain, dt=0.1)
+    assert mem.output.item() == pytest.approx(1.0)   # driven only by gate, not by cpu4
+
+
+def test_snapshot_layer_write_overwrites_outgoing_weights_exactly():
+    """On a drives_plasticity trigger, every outgoing connection's weights
+    are hard-set to -teach_val (Le Moël Eq. 14) — not nudged."""
+    from network_runner import step_network
+
+    brain, cpu4, gate, dan, mem, out_conn = _make_snapshot_circuit(threshold=0.5)
+
+    cpu4.output = torch.tensor([2.0, -3.0, 1.0])
+    dan.output  = torch.tensor([0.9])   # above threshold
+    step_network(brain, dt=0.1)
+
+    assert out_conn.W[:, 0] == pytest.approx([-2.0, 3.0, -1.0])
+
+
+def test_snapshot_layer_outgoing_weights_frozen_between_triggers():
+    """Once written, outgoing weights stay exactly as they were — they do
+    not track cpu4's value on ticks where the reward doesn't cross threshold,
+    no matter how much cpu4 changes in the meantime."""
+    from network_runner import step_network
+
+    brain, cpu4, gate, dan, mem, out_conn = _make_snapshot_circuit(threshold=0.5)
+
+    cpu4.output = torch.tensor([2.0, -3.0, 1.0])
+    dan.output  = torch.tensor([0.9])
+    step_network(brain, dt=0.1)
+    written = out_conn.W.copy()
+
+    dan.output  = torch.tensor([0.0])            # below threshold now
+    cpu4.output = torch.tensor([100.0, 100.0, 100.0])   # cpu4 changes drastically
+    step_network(brain, dt=0.1)
+
+    assert out_conn.W == pytest.approx(written)   # unchanged despite cpu4's drift
+
+
+def test_connection_kind_classifies_teach_before_td():
+    """_connection_kind must return TEACH for the src==teach_source connection
+    into a SnapshotLayer, and TD for that same layer's other (gate) incoming
+    connection — TEACH is checked with higher priority than TD since a
+    SnapshotLayer is itself a LearningLayerBase. _connection_kind only reads
+    class-level _CK_*/_DENSE_THRESHOLD constants, so a real Qt widget (and
+    pytest-qt) isn't needed — __new__ skips __init__ entirely."""
+    from network_viz import NetworkVisualizerWindow
+    from neurons import ConstantLayer, SnapshotLayer
+
+    cpu4 = ConstantLayer(name='cpu4', value=[0.0, 0.0, 0.0], n=3)
+    gate = ConstantLayer(name='gate', value=0.0, n=1)
+    mem  = SnapshotLayer(name='mem', n=1, teach_source='cpu4')
+
+    win = NetworkVisualizerWindow.__new__(NetworkVisualizerWindow)
+    teach_kind = win._connection_kind(cpu4, mem, np.ones((1, 3)), 3, 1)
+    gate_kind  = win._connection_kind(gate, mem, np.ones((1, 1)), 1, 1)
+    assert teach_kind == win._CK_TEACH
+    assert gate_kind == win._CK_TD
+
+
 def test_reichardt_integer_shift_matches_bilinear():
     """Reichardt2dLayer's fast integer-pixel _shift (used for axis-aligned
     direction sets, e.g. n_directions=1/2/4 with a multiple-of-90° init_direction)
@@ -463,6 +690,54 @@ def test_collision_sensor_vectorized_matches_reference_loop():
             new_out = sensor._detect_hits(x, y, theta, world, cfg)
             old_out = reference_detect_hits(sensor, x, y, theta, world, cfg)
             assert np.array_equal(new_out, old_out), (x, y, theta, new_out, old_out)
+
+
+def test_distance_sensor_detects_other_agent():
+    """other_agents (circles for other agents' bodies, built per-tick by
+    sim_controller._tick / MuJoCoEngine.tick_physics_batch) must be treated as
+    obstacles exactly like world.objects — inter-agent distance sensing."""
+    from sensors import DistanceSensor
+    from world import World
+
+    class _Cfg:
+        arena_scale = 10.0
+        body_radius = 0.15
+        dt = 0.02
+
+    cfg = _Cfg()
+    world = World(cfg)
+    sensor = DistanceSensor(n=1, max_range=1.0, name='dist')
+
+    out = sensor.sample(0.0, 0.0, 0.0, world, cfg)
+    assert out[0] == pytest.approx(0.0)   # nothing ahead
+
+    other_agents = [{'x': 0.5, 'y': 0.0, 'r': cfg.body_radius}]
+    out = sensor.sample(0.0, 0.0, 0.0, world, cfg, other_agents=other_agents)
+    expected_d = 0.5 - cfg.body_radius
+    assert out[0] == pytest.approx(1.0 - expected_d / sensor.max_range)
+
+
+def test_collision_sensor_detects_other_agent():
+    """other_agents must be checked the same way as world.objects — a sector
+    fires on contact with another agent's body, not just walls/objects."""
+    from sensors import CollisionSensor
+    from world import World
+
+    class _Cfg:
+        arena_scale = 10.0
+        body_radius = 0.15
+        dt = 0.02
+
+    cfg = _Cfg()
+    world = World(cfg)
+    sensor = CollisionSensor(n=1, angle_spread=0.0, arc_angle=10.0, radius=1.0, name='touch')
+
+    hit = sensor._detect_hits(0.0, 0.0, 0.0, world, cfg)
+    assert hit[0] == 0.0
+
+    other_agents = [{'x': 0.25, 'y': 0.0, 'r': cfg.body_radius}]
+    hit = sensor._detect_hits(0.0, 0.0, 0.0, world, cfg, other_agents=other_agents)
+    assert hit[0] == 1.0
 
 
 def test_step_network_size_reconciliation_is_gated():
@@ -901,6 +1176,161 @@ def test_world_serializer_round_trip():
             os.remove(path)
 
 
+def test_session_mount_survives_agent_id_remint_on_reload():
+    """A gradient patch's mounted_on must keep following the same agent across
+    a session save/reload, even when that agent isn't the very first one.
+
+    Regression test: RobotAgent.id comes from an ever-incrementing counter
+    (AgentRegistry._next_agent_id) that's never reused, but
+    _load_session_agents only reuses the very first agent's original id —
+    every other agent (any later group, or any extra member within a group)
+    gets a brand-new id on every reload. A saved raw agent id would silently
+    go stale, leaving the patch static (the reported bug). _patches_for_save/
+    _resolve_mounted_patches translate mounted_on to/from a stable positional
+    index across that boundary instead."""
+    from sim_app_session import _SessionMixin
+
+    class _FakeAgent:
+        def __init__(self, id):
+            self.id = id
+
+    class _FakeWorld:
+        def __init__(self, patches):
+            self.patches = patches
+
+    class _FakeSimCtrl:
+        def __init__(self, agents):
+            self._agents = agents
+
+    class Host(_SessionMixin):
+        pass
+
+    host = Host()
+    host._sim_ctrl = _FakeSimCtrl([_FakeAgent(10), _FakeAgent(11), _FakeAgent(12)])
+    host.world = _FakeWorld([
+        {'x': 0.0, 'y': 0.0, 'r': 0.3, 'mounted_on': 11},   # mounted on the SECOND agent
+        {'x': 1.0, 'y': 1.0, 'r': 0.2},                     # unmounted patch — must pass through
+    ])
+
+    saved = host._patches_for_save()
+    assert saved[0]['mounted_on'] == 1        # positional index, not the raw id
+    assert 'mounted_on' not in saved[1]
+
+    # Simulate a reload: every agent but the first gets a brand-new id
+    # (mirrors _load_session_agents rebuilding groups/members from scratch).
+    host._sim_ctrl = _FakeSimCtrl([_FakeAgent(10), _FakeAgent(50), _FakeAgent(51)])
+    host.world = _FakeWorld([dict(p) for p in saved])   # as if freshly loaded from JSON
+    host._resolve_mounted_patches()
+
+    assert host.world.patches[0]['mounted_on'] == 50   # new id of the agent now at position 1
+    assert 'mounted_on' not in host.world.patches[1]
+
+
+def test_session_mount_dropped_when_agent_no_longer_exists():
+    """If the mounted-on agent was removed before saving, or the saved index
+    is out of range after a reload with fewer agents, mounted_on must be
+    dropped cleanly rather than resolving to the wrong agent or crashing."""
+    from sim_app_session import _SessionMixin
+
+    class _FakeAgent:
+        def __init__(self, id):
+            self.id = id
+
+    class _FakeWorld:
+        def __init__(self, patches):
+            self.patches = patches
+
+    class _FakeSimCtrl:
+        def __init__(self, agents):
+            self._agents = agents
+
+    class Host(_SessionMixin):
+        pass
+
+    host = Host()
+    host._sim_ctrl = _FakeSimCtrl([_FakeAgent(10)])
+    host.world = _FakeWorld([{'x': 0.0, 'y': 0.0, 'r': 0.3, 'mounted_on': 999}])  # unknown id
+    saved = host._patches_for_save()
+    assert 'mounted_on' not in saved[0]
+
+    host._sim_ctrl = _FakeSimCtrl([_FakeAgent(10)])   # only one agent after reload
+    host.world = _FakeWorld([{'x': 0.0, 'y': 0.0, 'r': 0.3, 'mounted_on': 2}])   # index out of range
+    host._resolve_mounted_patches()
+    assert 'mounted_on' not in host.world.patches[0]
+
+
+def test_mounted_gradient_snaps_to_agent_immediately_on_reset():
+    """A gradient patch mounted on an agent must already reflect that agent's
+    reset position the instant reset() returns, not just after the first tick.
+
+    Regression test for a user report: clicking Run after driving the agent
+    away from spawn showed the mounted gradient rendered at its stale
+    pre-reset position. The per-tick mount->robot sync used to live inline in
+    SimController._tick only, so ArenaWidget._rebuild_gradient() -- called by
+    _setup_world() right after reset() repositions agents -- drew the patch
+    wherever it was before Stop was clicked, not where the agent was just
+    reset to. _sync_mounted_patches() is now also called at the end of
+    reset(), closing that one-tick gap."""
+    from sim_controller import SimController
+    from circuit_model import CircuitModel
+    from rigid_body import RigidBody
+    from world import World
+    from brain_base import BaseBrain
+    from sim_config import SimConfig
+
+    class _FakeArena:
+        def setup_sensors(self, *a, **k): pass
+        def sync_agents(self, *a, **k): pass
+
+    class _FakeOscCtrl:
+        channels = []
+        _osc_items = set()
+        channel_colors = {}
+        def reset_trace(self): pass
+        def update_osc(self): pass
+
+    class _FakeLogger:
+        def log(self, *a, **k): pass
+
+    class _TestBrain(BaseBrain):
+        def setup(self):
+            pass
+        def loop(self, *sensors):
+            return 20.0, 20.0
+        def plots(self):
+            return []
+
+    sim_cfg = SimConfig()
+    circuit = CircuitModel()
+    circuit.bodies = [RigidBody('root', 'root', sim_cfg.body_radius)]
+    world = World(sim_cfg)
+
+    ctrl = SimController(circuit, sim_cfg, world, _FakeArena(), _FakeOscCtrl(), _FakeLogger(),
+                          get_trail_visible=lambda: False, get_motor_override=lambda: None)
+
+    agent = ctrl.registry.agents[0]
+    agent.brain = _TestBrain()
+    agent.brain.sensors, agent.brain.layers, agent.brain.connections = [], [], []
+    agent.circuit = circuit
+    ctrl.brain = agent.brain
+
+    world.patches.append({'x': 0.0, 'y': 0.0, 'r': 0.3, 'mounted_on': agent.id})
+
+    for _ in range(5):   # drive the agent away from spawn
+        ctrl._tick()
+    assert agent.bot_pos[0] != 0.0
+
+    ctrl.stop()
+    ctrl.reset()
+
+    # No tick has run since reset() -- the patch must already match the RESET
+    # position, not the position it tracked to just before Stop was clicked.
+    assert world.patches[0]['x'] == pytest.approx(sim_cfg.init_x)
+    assert world.patches[0]['y'] == pytest.approx(sim_cfg.init_y)
+    assert world.patches[0]['x'] == pytest.approx(agent.bot_pos[0])
+    assert world.patches[0]['y'] == pytest.approx(agent.bot_pos[1])
+
+
 @pytest.mark.skipif(
     __import__('importlib').util.find_spec('mujoco') is None,
     reason='mujoco not installed')
@@ -1066,6 +1496,54 @@ def test_mujoco_collision_sensor_fires_on_contact_not_before():
 @pytest.mark.skipif(
     __import__('importlib').util.find_spec('mujoco') is None,
     reason='mujoco not installed')
+def test_mujoco_tick_physics_batch_distance_sensor_sees_other_agent():
+    """tick_physics_batch's other_agents wiring (built once per tick as a
+    pre-tick position snapshot, sliced to exclude self) must reach each
+    agent's DistanceSensor — the exact call site sim_controller._tick uses
+    for the MuJoCo multi-agent path."""
+    from sim_engine_mujoco import MuJoCoEngine
+    from sensors import DistanceSensor
+    from world import World
+    from brain_base import BaseBrain
+
+    class _Cfg:
+        arena_scale  = 5.0
+        body_radius  = 0.15
+        dt           = 0.02
+        motor_gain   = 1.0
+        fixate_robot = 0.0
+        toggle_stim  = False
+
+    class _TestBrain(BaseBrain):
+        def loop(self, *sensors):
+            return 0.0, 0.0
+
+        def plots(self):
+            return []
+
+    cfg = _Cfg()
+    world = World(cfg)
+    world.arena_round = True
+
+    dist0, dist1 = DistanceSensor(n=1, max_range=1.0, name='dist'), DistanceSensor(n=1, max_range=1.0, name='dist')
+    brain0, brain1 = _TestBrain(), _TestBrain()
+    for b, s in ((brain0, dist0), (brain1, dist1)):
+        b.sensors, b.layers, b.connections = [s], [], []
+        b.dist = np.zeros(1)
+
+    engine = MuJoCoEngine(world, cfg, n_agents=2, agent_sensors=[[], []])
+    engine.reset([[0.0, 0.0, 0.0], [0.5, 0.0, np.pi]])   # facing each other, 0.5 apart
+
+    agent_list = [
+        ([0.0, 0.0, 0.0], brain0, [dist0], None),
+        ([0.5, 0.0, np.pi], brain1, [dist1], None),
+    ]
+    engine.tick_physics_batch(agent_list, world, cfg)
+
+    expected_d = 0.5 - cfg.body_radius   # gap between the two body circles
+    expected_out = 1.0 - expected_d / dist0.max_range
+    assert brain0.dist[0] == pytest.approx(expected_out, abs=1e-3)
+    assert brain1.dist[0] == pytest.approx(expected_out, abs=1e-3)
 def test_mujoco_collision_matches_analytic_randomized():
     """The MuJoCo per-sector-geometry path must agree with the analytic
     reference (CollisionSensor._detect_hits) across randomized scenes —

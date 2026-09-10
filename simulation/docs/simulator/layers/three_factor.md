@@ -25,7 +25,6 @@ Applied every tick regardless of r. Equilibrium weight reflects the balance betw
 | `n` | Number of output neurons; default 1 |
 | `alpha_pos` | Learning rate when r·V ≥ 0; default 0.01 |
 | `alpha_neg` | Learning rate when r·V < 0 (punishment); default = alpha_pos |
-| `reward_modulator` | Neuromodulator name carrying r; default `"dopamine"` |
 | `weight_decay` | Passive decay rate (s⁻¹); default 0.0 |
 | `w_min` / `w_max` | Synaptic bounds (blank = unbounded) |
 | `competition` | Lateral competition: `none` / `softmax` / `wta`; default `none` |
@@ -35,7 +34,7 @@ Applied every tick regardless of r. Equilibrium weight reflects the balance betw
 
 1. Connect any sensory/feature layer → ThreeFactorLayer (initialise W to zeros).
 2. Declare the reward-carrying layer as a neuromodulator transmitter (e.g. `"dopamine"`).
-3. Set `reward_modulator` to that name.
+3. In this layer's modulator receptor table, add a row for that name and check **Drives Plasticity** (with an optional threshold — the row's transformed value must cross it for that tick to count).
 4. Optionally wire output → motor layers for direct approach drive.
 
 !!! note "Reset behaviour"

@@ -214,23 +214,24 @@ class BrainManager:
         Load a network JSON, wire sensors/layers/connections into the circuit,
         and sync all references onto the brain instance.
 
-        Returns (hidden, disabled, container_labels, conn_params, freshness_issues) for the
-        caller to update its UI, or (None, None, {}, {}, []) when the file does not exist.
+        Returns (hidden, disabled, container_labels, container_notes, conn_params,
+        freshness_issues) for the caller to update its UI, or
+        (None, None, {}, {}, {}, []) when the file does not exist.
         freshness_issues is a list of dicts (see brain_serializer.check_network_freshness).
         """
         import json as _json
         from brain_serializer import load_network_json, check_network_freshness
         path = os.path.join('networks', net_name)
         if not os.path.exists(path):
-            return None, None, {}, {}, []
+            return None, None, {}, {}, {}, []
         try:
             with open(path, 'r', encoding='utf-8') as _f:
                 _data = _json.load(_f)
-            sensors, layers, connections, hidden, disabled, container_labels, net_bodies, net_joints, conn_params, notes = \
+            sensors, layers, connections, hidden, disabled, container_labels, net_bodies, net_joints, conn_params, notes, container_notes = \
                 load_network_json(_data)
         except Exception as e:
             print(f'[BrainManager] Failed to load {path}: {e}')
-            return None, None, {}, {}, []
+            return None, None, {}, {}, {}, []
 
         freshness_issues = check_network_freshness(_data, sensors, layers)
 
@@ -265,7 +266,7 @@ class BrainManager:
             setattr(brain, layer.name, layer)
         self.resolve_joint_sensor_refs()
 
-        return hidden, disabled, container_labels, conn_params, freshness_issues
+        return hidden, disabled, container_labels, container_notes, conn_params, freshness_issues
 
     def _upgrade_motor_layers(self):
         """Upgrade any SumLayer that acts as a motor output to MotorLayer.

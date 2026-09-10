@@ -11,7 +11,6 @@ The slow negative update (`alpha_neg`) gives the animal time to reach the reward
 | `n` | Number of output neurons (parallel critics); default 1 |
 | `alpha_pos` | Learning rate for δ ≥ 0 (acquisition); default 0.05 |
 | `alpha_neg` | Learning rate for δ < 0 (extinction); default 0.005 |
-| `reward_modulator` | Neuromodulator name carrying reward r; default `"dopamine"` |
 
 ## Learning rule
 

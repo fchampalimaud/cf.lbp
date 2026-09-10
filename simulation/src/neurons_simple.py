@@ -46,7 +46,7 @@ exactly `value`, not `value × n`.
 
 - `neuromodulator_transmitter` — name of the signal this layer emits; its mean output is published each tick.
 - `neuromodulator_color` — display color for this neuromodulator in the visualizer.
-- `modulators` — list of `(name, scale, site)` triples. Only `site="post"` has effect (multiplies output by `1 + scale × signal`); `site="pre"` does nothing because this layer ignores incoming connections.
+- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral). Only `site="post"` has effect (multiplies output by `1 + scale × signal`); `site="pre"` does nothing because this layer ignores incoming connections.
 """
 
     def __init__(self, value=1.0, n=None, noise_std=0.0, noise=None,
@@ -166,7 +166,7 @@ Use **MotorLayer** (a SumLayer subclass) when you need robot actuation.
 
 - `neuromodulator_transmitter` — name of the signal this layer emits; its mean output is published to the bus each tick and can modulate any layer that lists it in `modulators`.
 - `neuromodulator_color` — display color for this neuromodulator in the visualizer.
-- `modulators` — list of `(name, scale, site)` triples:
+- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral):
   - `site="pre"`: multiplies the input sum by `1 + scale × signal` before integration.
   - `site="post"`: multiplies the output by `1 + scale × signal` after integration.
   - `site="none"`: declares the neuromodulator for learning/visualization only — no signal amplification.

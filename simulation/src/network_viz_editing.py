@@ -43,7 +43,11 @@ class NetworkViewBox(pg.ViewBox):
 
     def mouseDragEvent(self, ev, axis=None):
         nw = self._nw
-        if nw._edit_mode:
+        # Only the left button drags notes/nodes/connections — a right-button
+        # drag (e.g. an incidental mouse move during what's meant to be a
+        # right-click for a context menu) must not create a connection or
+        # reposition anything.
+        if nw._edit_mode and ev.button() == Qt.LeftButton:
             ev.accept()
             if ev.isStart():
                 self._dragging = True
@@ -68,12 +72,11 @@ class NetworkViewBox(pg.ViewBox):
                     return
                 nw._dragging_note = None
                 hit = nw._node_at(start_pt)
-                # Dragging an already-selected node → reposition; dragging any other node → connect
-                if hit is not None and nw._selected is not None and \
-                        hit.rsplit('_', 1)[0] == nw._selected.rsplit('_', 1)[0]:
-                    nw._conn_from = None   # reposition mode (node already selected)
-                elif hit is not None and nw._selected is None:
-                    # Nothing selected: auto-select the hit node and reposition it
+                # Alt+drag repositions the node (between columns); a plain
+                # drag always starts a connection, independent of whatever
+                # is currently selected — the two are disambiguated by the
+                # Alt key alone, not by selection state.
+                if hit is not None and bool(ev.modifiers() & Qt.AltModifier):
                     nw._selected      = hit
                     nw._selected_note = None
                     nw._spot_pen_override.clear()
@@ -81,7 +84,7 @@ class NetworkViewBox(pg.ViewBox):
                     nw._redraw_nodes()
                     nw._conn_from = None
                 else:
-                    nw._conn_from = hit   # connect from this unselected node to another
+                    nw._conn_from = hit   # connect from this node to another (None if drag started on empty canvas)
             if nw._dragging_note is not None:
                 if self._dragging:
                     mouse_pt = self.mapSceneToView(ev.scenePos())
@@ -366,10 +369,15 @@ class _EditingMixin:
         from PySide6.QtWidgets import QInputDialog
         key = self._container_key(container)
         current = self._container_labels.get(key, '')
+        current_note = self._container_notes.get(key, '')
         menu = QMenu(self)
         act_set   = menu.addAction("Set label…")
         act_clear = menu.addAction("Clear label")
         act_clear.setEnabled(bool(current))
+        menu.addSeparator()
+        act_note      = menu.addAction("Edit note…" if current_note else "Set note…")
+        act_clear_note = menu.addAction("Clear note")
+        act_clear_note.setEnabled(bool(current_note))
         chosen = menu.exec(screen_pos)
         if chosen == act_set:
             text, ok = QInputDialog.getText(
@@ -383,6 +391,13 @@ class _EditingMixin:
         elif chosen == act_clear:
             self._container_labels.pop(key, None)
             self._refresh_container_label(container)
+        elif chosen == act_note:
+            if self._container_note_dialog(container):
+                self._refresh_container_note(container)
+        elif chosen == act_clear_note:
+            self._push_undo()
+            self._container_notes.pop(key, None)
+            self._refresh_container_note(container)
 
     def _apply_edge_highlight(self):
         if self._selected_edge:
@@ -903,28 +918,39 @@ class _EditingMixin:
             if self._node_just_clicked:
                 self._node_just_clicked = False
                 return   # click was on a node — don't clear the highlight it just set
-            if self._edit_mode:
-                view_pt = self._vb.mapSceneToView(event.scenePos())
-                # Notes draw on top of everything and aren't part of _positions —
-                # check them first. This is the path that actually fires for a
-                # plain click (no movement); NetworkViewBox.mouseDragEvent only
-                # runs for genuine drags, so it can't be relied on for selection.
-                note_hit = self._note_at(view_pt)
-                if note_hit is not None:
-                    note, zone = note_hit
-                    if event.double():
-                        if self._note_dialog(note=note) is not None:
-                            self._redraw_note(note)
-                    elif zone == 'toggle':
-                        self._push_undo()
-                        note.collapsed = not note.collapsed
+            # Notes and container notes are annotation, not circuit structure,
+            # so opening/toggling them works regardless of edit mode — unlike
+            # everything else in this handler, which is edit-mode-only circuit
+            # editing/selection. Checked first since notes draw on top of
+            # everything and aren't part of _positions. This is the path that
+            # actually fires for a plain click (no movement); NetworkViewBox.
+            # mouseDragEvent only runs for genuine drags, so it can't be
+            # relied on for selection.
+            view_pt = self._vb.mapSceneToView(event.scenePos())
+            note_hit = self._note_at(view_pt)
+            if note_hit is not None:
+                note, zone = note_hit
+                if zone == 'toggle':
+                    self._push_undo()
+                    note.collapsed = not note.collapsed
+                    self._redraw_note(note)
+                elif self._edit_mode and not event.double():
+                    # Edit mode: a plain click selects (for the context menu /
+                    # Delete key); only a double click opens the editor. Outside
+                    # edit mode there's no selection concept, so any click opens.
+                    self._clear_edge_selection()
+                    self._selected      = None
+                    self._selected_note = note
+                else:
+                    if self._note_dialog(note=note) is not None:
                         self._redraw_note(note)
-                    else:
-                        # 'icon' (collapsed) and 'body' (expanded) both just select.
-                        self._clear_edge_selection()
-                        self._selected      = None
-                        self._selected_note = note
-                    return
+                return
+            note_container = self._container_note_at(view_pt)
+            if note_container is not None:
+                if self._container_note_dialog(note_container):
+                    self._refresh_container_note(note_container)
+                return
+            if self._edit_mode:
                 edge = self._edge_at(view_pt)
                 if edge is not None:
                     self._clear_edge_selection()
@@ -1047,11 +1073,19 @@ class _EditingMixin:
                     if menu.exec(event.screenPos().toPoint()) == act:
                         self._toggle_weight_entry(src, tgt)
                     return
-            # Edit mode: edit/delete for a selected note
-            if self._edit_mode and self._selected_note is not None \
-                    and self._selected_note in self.gui.circuit.notes:
+            # Edit mode: edit/delete for a note — hit-tested at the click
+            # position directly (like every edit-mode menu below), not gated
+            # on whatever happened to be selected by an earlier click.
+            note_hit = None
+            if self._edit_mode:
+                view_pt = self._vb.mapSceneToView(event.scenePos())
+                note_hit = self._note_at(view_pt)
+            if note_hit is not None:
+                note, _zone = note_hit
+                self._selected_note = note
+                self._selected      = None
+                self._clear_edge_selection()
                 event.accept()
-                note = self._selected_note
                 menu = QMenu(self)
                 edit_act = menu.addAction("Edit note…")
                 collapse_act = menu.addAction("Expand" if note.collapsed else "Collapse")
@@ -1068,8 +1102,20 @@ class _EditingMixin:
                 elif chosen == rm_act:
                     self._remove_selected_note()
                 return
-            # Edit mode: remove for selected connection
-            if self._edit_mode and self._selected_edge:
+            # Edit mode: edit/remove for a connection — hit-tested at the
+            # click position directly, same reasoning as the note block above.
+            edge_hit = None
+            if self._edit_mode:
+                view_pt = self._vb.mapSceneToView(event.scenePos())
+                edge_hit = self._edge_at(view_pt)
+            if edge_hit is not None:
+                self._clear_edge_selection()
+                self._selected_edge = edge_hit
+                self._selected       = None
+                self._selected_note  = None
+                self._spot_pen_override.clear()
+                self._redraw_nodes()
+                self._highlight_selected_edge(*edge_hit)
                 event.accept()
                 src, tgt = self._selected_edge
                 menu = QMenu(self)
@@ -1080,8 +1126,19 @@ class _EditingMixin:
                 rm_act.triggered.connect(self._remove_selected_connection)
                 menu.exec(event.screenPos().toPoint())
                 return
-            # Edit mode: properties + remove for selected node
-            if self._edit_mode and self._selected:
+            # Edit mode: properties + remove for a node — hit-tested at the
+            # click position directly, same reasoning as note/edge above.
+            node_hit = None
+            if self._edit_mode:
+                view_pt = self._vb.mapSceneToView(event.scenePos())
+                node_hit = self._node_at(view_pt)
+            if node_hit is not None:
+                self._selected      = node_hit
+                self._selected_note = None
+                self._clear_edge_selection()
+                self._spot_pen_override.clear()
+                self._spot_pen_override[node_hit] = 'selected'
+                self._redraw_nodes()
                 event.accept()
                 # Resolve node key → actual name.  Try exact match first so that
                 # layer names like 'layer1_L' are not wrongly stripped to 'layer1'.
@@ -1151,13 +1208,11 @@ class _EditingMixin:
                             lambda _checked, n=lname: self._toggle_activation_entry(n))
                     menu.exec(event.screenPos().toPoint())
                     return
-            # Edit mode: right-click on a column panel rect (nothing else
-            # selected) → label annotation.  Restricted to Edit mode only —
-            # unlike every other menu above, this one isn't reached via a
-            # geometric hit-test on the click position, only via "nothing else
-            # claimed this right-click", so it must come last.
-            if (self._edit_mode and not self._multi_selected and not self._selected
-                    and not self._selected_edge and not self._selected_note):
+            # Edit mode: right-click on empty container-panel space — no
+            # note/edge/node was hit at this position above — → label/note
+            # annotation menu. Purely position-based like everything above,
+            # so it no longer depends on there being nothing selected.
+            if self._edit_mode:
                 view_pt = self._vb.mapSceneToView(event.scenePos())
                 hit_container = self._panel_at(view_pt)
                 if hit_container is not None:
@@ -1494,6 +1549,7 @@ class _EditingMixin:
         self._hidden_containers   = set()
         self._disabled_containers = set()
         self._container_labels    = {}
+        self._container_notes     = {}
         self._selected = None
         self.build()
 

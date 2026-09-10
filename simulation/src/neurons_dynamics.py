@@ -111,11 +111,20 @@ $$\\text{output} = f(x) \\times s$$
 
 ---
 
+**Order of operations** (per tick):
+1. `u = Σ(inputs) + bias`
+2. add noise to `u` (if `noise_std > 0`)
+3. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
+4. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration
+5. `output = activation(x) × scale`
+
+---
+
 **Neuromodulation:**
 
 - `neuromodulator_transmitter` — name of the signal this layer emits; its mean output is published to the bus each tick and can modulate any layer that lists it in `modulators`.
 - `neuromodulator_color` — display color for this neuromodulator in the visualizer.
-- `modulators` — list of `(name, scale, site)` triples:
+- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral):
   - `site="pre"`: multiplies the input sum by `1 + scale × signal` before integration.
   - `site="post"`: multiplies the output by `1 + scale × signal` after integration.
   - `site="none"`: declares the neuromodulator for learning/visualization only — no signal amplification.
@@ -264,11 +273,20 @@ if a ProductLayer is present in the circuit.
 
 ---
 
+**Order of operations** (per tick):
+1. `u = ∏ₖ(Wₖ·inputₖ) + bias` — multiplicative fan-in across connections
+2. add noise to `u` (if `noise_std > 0`)
+3. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
+4. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration
+5. `output = activation(x) × scale`
+
+---
+
 **Neuromodulation:**
 
 - `neuromodulator_transmitter` — name of the signal this layer emits; its mean output is published to the bus each tick and can modulate any layer that lists it in `modulators`.
 - `neuromodulator_color` — display color for this neuromodulator in the visualizer.
-- `modulators` — list of `(name, scale, site)` triples:
+- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral):
   - `site="pre"`: multiplies the input product by `1 + scale × signal` before integration.
   - `site="post"`: multiplies the output by `1 + scale × signal` after integration.
   - `site="none"`: declares the neuromodulator for learning/visualization only — no signal amplification.
@@ -332,6 +350,17 @@ $$x \\leftarrow x - \\frac{x}{\\tau_{decay}} \\cdot dt$$
 - Path integration (hDelta / hDc in the insect central complex)
 - Satiation / energy with digestion (`zero_center=False`, set `tau_decay`)
 - Slow evidence accumulation
+
+---
+
+**Order of operations** (per tick):
+1. `u = Σ(inputs)` (no bias — this layer doesn't expose one)
+2. add noise to `u` (if `noise_std > 0`)
+3. zero-center: `u -= mean(u)` (if `zero_center=True`)
+4. `x += rate × u × dt`
+5. decay toward zero: `x -= x / tau_decay × dt` (if `tau_decay` set)
+6. clamp: `x = clip(x, −clip, clip)` (if `clip` set)
+7. `output = x` (no activation/scale — this layer doesn't expose either)
 """
 
     @classmethod
@@ -495,11 +524,23 @@ both at construction and on every reset. Default 0.0. Not the same as `bias`
 
 ---
 
+**Order of operations** (per tick):
+1. `u = Σ(inputs) + bias`
+2. add noise to `u` (if `noise_std > 0`)
+3. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
+4. mutual inhibition (`n=2`, `w ≠ 0` only): `u -= w × output_other_prev` — subtracts the *other* neuron's previous-tick output
+5. subtract adaptation: `u -= β × a` (if `tau_a > 0` and `beta > 0`)
+6. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration
+7. `output = activation(x) × scale`
+8. update adaptation from the final output: `a += (output − a) / τ_a × dt` (if `tau_a > 0` and `beta > 0`)
+
+---
+
 **Neuromodulation:**
 
 - `neuromodulator_transmitter` — name of the signal this layer emits; its mean output is published to the bus each tick and can modulate any layer that lists it in `modulators`.
 - `neuromodulator_color` — display color for this neuromodulator in the visualizer.
-- `modulators` — list of `(name, scale, site)` triples:
+- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral):
   - `site="pre"`: multiplies the input sum by `1 + scale × signal` before integration.
   - `site="post"`: multiplies the output by `1 + scale × signal` after integration.
   - `site="none"`: declares the neuromodulator for learning/visualization only — no signal amplification.
@@ -612,11 +653,25 @@ If neurons lock (both fire / both silent): increase `w` or `bias`.
 
 ---
 
+**Order of operations** (per tick) — this is a thin wrapper: it runs exactly
+`AdaptiveLayer`'s `step()` under the hood, with `n=2` fixed and `tau_M`/`tau_A`
+as aliases for `tau_rise`/`tau_a`:
+1. `u = Σ(inputs) + bias`
+2. add noise to `u` (if `noise_std > 0`)
+3. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
+4. mutual inhibition: `u -= w × output_other_prev` — subtracts the *other* neuron's previous-tick output
+5. subtract adaptation: `u -= β × a`
+6. `x = leaky(u)` using `τ_M` (rise) / `tau_decay` (decay)
+7. `output = activation(x) × scale`
+8. update adaptation from the final output: `a += (output − a) / τ_A × dt`
+
+---
+
 **Neuromodulation:**
 
 - `neuromodulator_transmitter` — name of the signal this layer emits; its mean output is published to the bus each tick and can modulate any layer that lists it in `modulators`.
 - `neuromodulator_color` — display color for this neuromodulator in the visualizer.
-- `modulators` — list of `(name, scale, site)` triples:
+- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral):
   - `site="pre"`: multiplies the input sum by `1 + scale × signal` before integration.
   - `site="post"`: multiplies the output by `1 + scale × signal` after integration.
   - `site="none"`: declares the neuromodulator for learning/visualization only — no signal amplification.
@@ -765,11 +820,22 @@ the plateau for ≈ `tau_hold` seconds.
 
 ---
 
+**Order of operations** (per tick) — note: unlike most `DynamicsBase` layers,
+this one does **not** apply noise:
+1. `u = Σ(inputs) + bias`
+2. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
+3. `x = leaky(u)` — fast membrane, τ_rise/τ_decay
+4. `s += (relu(x − θ) − s) / τ_hold × dt` — plateau charges while `x > θ`
+5. if `drain > 0`: `s -= drain × relu(−u) × dt`, then clamp `s ≥ 0` — sustained negative input erodes the plateau
+6. `output = activation(x + w_s × s) × scale`
+
+---
+
 **Neuromodulation:**
 
 - `neuromodulator_transmitter` — name of the signal this layer emits; its mean output is published to the bus each tick and can modulate any layer that lists it in `modulators`.
 - `neuromodulator_color` — display color for this neuromodulator in the visualizer.
-- `modulators` — list of `(name, scale, site)` triples:
+- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral):
   - `site="pre"`: multiplies the input sum by `1 + scale × signal` before integration.
   - `site="post"`: multiplies the output by `1 + scale × signal` after integration.
   - `site="none"`: declares the neuromodulator for learning/visualization only — no signal amplification.
@@ -899,7 +965,7 @@ layer for open-loop sinusoidal motion.
 
 - `neuromodulator_transmitter` — name of the signal this layer emits; its mean output is published each tick.
 - `neuromodulator_color` — display color for this neuromodulator in the visualizer.
-- `modulators` — list of `(name, scale, site)` triples. Only `site="post"` has effect (multiplies output by `1 + scale × signal`); `site="pre"` does nothing because this layer ignores incoming connections.
+- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral). Only `site="post"` has effect (multiplies output by `1 + scale × signal`); `site="pre"` does nothing because this layer ignores incoming connections.
 """
 
     def __init__(self, amplitude=1.0, frequency=1.0, phase=0.0,
@@ -1019,11 +1085,21 @@ both at construction and on every reset. Default 0.0. Not the same as `bias`
 
 ---
 
+**Order of operations** (per tick) — note: unlike most `DynamicsBase` layers,
+`scale` is **not** applied here (there's no `× scale` after activation):
+1. `u = Σ(inputs, including the self-connection) + bias`
+2. add noise to `u` (if `noise_std > 0`)
+3. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
+4. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration
+5. `output = activation(x)`
+
+---
+
 **Neuromodulation:**
 
 - `neuromodulator_transmitter` — name of the signal this layer emits; its mean output is published to the bus each tick and can modulate any layer that lists it in `modulators`.
 - `neuromodulator_color` — display color for this neuromodulator in the visualizer.
-- `modulators` — list of `(name, scale, site)` triples:
+- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral):
   - `site="pre"`: multiplies the input sum by `1 + scale × signal` before integration.
   - `site="post"`: multiplies the output by `1 + scale × signal` after integration.
   - `site="none"`: declares the neuromodulator for learning/visualization only — no signal amplification.
