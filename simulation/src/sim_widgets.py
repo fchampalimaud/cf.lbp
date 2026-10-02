@@ -121,6 +121,7 @@ class OscilloscopeWidget(pg.PlotWidget):
         self.getPlotItem().getAxis('left').setStyle(tickTextOffset=4)
         self._curves  = {}
         self._buf_len = 1000
+        self._last_y_max = 0.1
 
     def setup_channels(self, channels, channel_colors, buf_len=1000):
         self._buf_len = buf_len

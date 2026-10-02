@@ -252,6 +252,8 @@ class SimulatorApp(_UiBuilderMixin, _BrainMixin, _SessionMixin, QMainWindow):
         if self._session_combo.count() > 0:
             self._load_session()
         else:
+            if 'BrainGUI' in self.brain_files:
+                self.load_brain('BrainGUI')
             self._reset()
 
         if _MUJOCO_AVAILABLE:

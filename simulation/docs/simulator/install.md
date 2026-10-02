@@ -94,6 +94,10 @@ If you already have Python 3.10+ and pip, skip to [step 1](#1-get-the-code).
 
 ## 1. Get the code
 
+Clone into a regular user folder (e.g. `Documents`) — **not** `C:\Windows\System32` or another
+system-protected directory. Windows restricts writes there without admin rights, which will cause
+confusing permission errors once the simulator tries to save `configs/`, `logs/`, or recordings.
+
 ```bash
 git clone https://github.com/fchampalimaud/cf.lbp.git
 cd cf.lbp/simulation
