@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "saved_with_app_version": "0.6.2",
+  "saved_with_app_version": "0.8.1",
   "motor_layer": "motor",
   "hidden_cols": [],
   "disabled_cols": [],
@@ -54,12 +54,12 @@
     {
       "type": "SineLayer",
       "name": "WhiskerCPG",
-      "layer": 1,
+      "layer": 4,
       "amplitude": 5.0,
       "frequency": 2.0,
       "phase": 0.0,
       "n": 1,
-      "viz_row": 0
+      "viz_row": 1
     }
   ],
   "connections": [
@@ -175,7 +175,7 @@
       "child_id": "ea9892f5",
       "attach_dist": 0.1,
       "attach_angle": 0.7853981633974483,
-      "angle": -0.6981317007977318,
+      "angle": 0.0,
       "angle_min": -0.6981317007977318,
       "angle_max": 0.6981317007977318,
       "motor_layer_name": "body3",
@@ -186,7 +186,7 @@
       "child_id": "3e041191",
       "attach_dist": 0.1,
       "attach_angle": -0.7853981633974483,
-      "angle": 0.6981317007977318,
+      "angle": 0.0,
       "angle_min": -0.6981317007977318,
       "angle_max": 0.6981317007977318,
       "motor_layer_name": "body3",

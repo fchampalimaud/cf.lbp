@@ -5,8 +5,8 @@ A self-contained Python application for building and running neural-circuit beha
 ## Getting started
 
 ```bash
-git clone <repo-url>
-cd simulation/2d
+git clone https://github.com/fchampalimaud/cf.lbp.git
+cd cf.lbp/simulation
 pip install -r requirements.txt
 python LBPSimulator.py
 ```
