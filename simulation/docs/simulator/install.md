@@ -2,6 +2,8 @@
 
 ## 1. Get the code
 
+Open a terminal in the folder where you want to install the simulator, then:
+
 ```bash
 git clone https://github.com/fchampalimaud/cf.lbp.git
 cd cf.lbp/simulation

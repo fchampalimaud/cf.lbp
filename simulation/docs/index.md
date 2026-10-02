@@ -4,6 +4,8 @@ A self-contained Python application for building and running neural-circuit beha
 
 ## Getting started
 
+Open a terminal in the folder where you want to install the simulator, then:
+
 ```bash
 git clone https://github.com/fchampalimaud/cf.lbp.git
 cd cf.lbp/simulation
