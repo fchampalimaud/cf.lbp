@@ -94,9 +94,27 @@ If you already have Python 3.10+ and pip, skip to [step 1](#1-get-the-code).
 
 ## 1. Get the code
 
-Clone into a regular user folder (e.g. `Documents`) — **not** `C:\Windows\System32` or another
-system-protected directory. Windows restricts writes there without admin rights, which will cause
-confusing permission errors once the simulator tries to save `configs/`, `logs/`, or recordings.
+First open a terminal **in the folder where you want to install the simulator** — e.g. your
+`Documents` folder, not `C:\Windows\System32` or another system-protected directory. (A plain
+Command Prompt / PowerShell window opened from the Start menu usually starts in `System32`;
+cloning there quietly breaks saving `configs/`, `logs/`, and recordings later, since Windows
+restricts writes to that folder without admin rights.)
+
+=== "Windows"
+
+    Open **File Explorer**, navigate into the folder you want (e.g. `Documents`), then either:
+
+    - Type `cmd` into the address bar and press Enter, or
+    - Shift + right-click empty space in the folder → **Open PowerShell window here**
+      (**Open in Terminal** on Windows 11)
+
+=== "macOS / Linux"
+
+    ```bash
+    cd ~/Documents
+    ```
+
+Then clone the repo:
 
 ```bash
 git clone https://github.com/fchampalimaud/cf.lbp.git
