@@ -1,0 +1,3441 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Build and run neural-circuit behaviours on a simulated robot">
+      
+      
+      
+      
+        <link rel="prev" href="../architecture/">
+      
+      
+        <link rel="next" href="../tests/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/logo.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Class Reference - Little Brain Project Simulator</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#class-reference" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Little Brain Project Simulator" class="md-header__button md-logo" aria-label="Little Brain Project Simulator" data-md-component="logo">
+      
+  <img src="../../assets/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Little Brain Project Simulator
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Class Reference
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../.." class="md-tabs__link">
+          
+  
+  
+  Home
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../creating-worlds/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Creating Worlds
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../coding-brains/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Coding Brains
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../wiring-brains/" class="md-tabs__link">
+          
+  
+  
+  Wiring Brains
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../architecture/" class="md-tabs__link">
+          
+  
+  
+  Developer
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Little Brain Project Simulator" class="md-nav__button md-logo" aria-label="Little Brain Project Simulator" data-md-component="logo">
+      
+  <img src="../../assets/logo.svg" alt="logo">
+
+    </a>
+    Little Brain Project Simulator
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_1" id="__nav_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Home
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tour/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Simulator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../creating-worlds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Creating Worlds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../coding-brains/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Coding Brains
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Wiring Brains
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Wiring Brains
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../wiring-brains/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Introduction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_2" id="__nav_4_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sensor types
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Sensor types
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/gradient/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GradientSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/color/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ColorSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/collision/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CollisionSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/distance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DistanceSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/interoceptive/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    InteroceptiveSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/proprioceptive/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ProprioceptiveSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/whisker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WhiskerSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/skycompass/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SkyCompassSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/graycamera/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GrayCameraSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/rgbcamera/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RGBCameraSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_3" id="__nav_4_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neuron types
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Neuron types
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/sum/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SumLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/motor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MotorLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/constant/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ConstantLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/leaky/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LeakyLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/product/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ProductLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/adaptive/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AdaptiveLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/pulse/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PulseLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/sine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SineLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/ring_attractor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RingAttractorLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/conv2d/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Conv2dLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/leaky2d/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Leaky2dLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/reichardt2d/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reichardt2dLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/td/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TDLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/delta/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DeltaLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/three_factor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ThreeFactorLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/snapshot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SnapshotLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/matsuoka/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MatsuokaLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../neuromodulators/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neuromodulators
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Class Reference
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Class Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#timing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Timing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Timing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#simulation-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Simulation mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#real-robot-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Real-robot mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#app-shell" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        App shell
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="App shell">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#lbpsimulatorpy-simulatorapp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LBPSimulator.py — SimulatorApp
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sim_app_brainpy-_brainmixin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sim_app_brain.py — _BrainMixin
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sim_app_sessionpy-_sessionmixin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sim_app_session.py — _SessionMixin
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#simulation-core" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Simulation core
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Simulation core">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#simcontroller-the-simulation-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SimController — the simulation loop
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#network_runner-neural-forward-pass" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        network_runner — neural forward pass
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sim_engine-pure-physics-step" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sim_engine — pure physics step
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sim_engine_mujocopy-mujocoengine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sim_engine_mujoco.py — MuJoCoEngine
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#worldeditor-arena-editing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WorldEditor — arena editing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#oscchannelmanager-oscilloscope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OscChannelManager — oscilloscope
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#brainmanager-plugin-loading-and-circuit-wiring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BrainManager — plugin loading and circuit wiring
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#simlogger-data-recording" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SimLogger — data recording
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#distributed-simulation-networking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Distributed simulation networking
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Distributed simulation networking">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#simnethost" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SimNetHost
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#simnetclient" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SimNetClient
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-a-remote-agent-is-born" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How a remote agent is born
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rendering-views" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rendering &amp; views
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Rendering &amp; views">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#arenawidget-the-main-2-d-scene" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ArenaWidget — the main 2-D scene
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#networkvisualizerwindow-and-friends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NetworkVisualizerWindow and friends
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#side_viewpy-network-layout-editor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        side_view.py — network layout editor
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#net_view_3dpy-netview3dwindow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        net_view_3d.py — NetView3DWindow
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#world-circuit-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        World &amp; circuit data
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="World &amp; circuit data">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#world-the-physical-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        World — the physical environment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#circuitmodel-shared-circuit-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CircuitModel — shared circuit state
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rigidbody-joint-articulated-robot-body" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RigidBody / Joint — articulated robot body
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#simconfig-shared-simulation-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SimConfig — shared simulation parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#brains" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Brains
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Brains">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#basebrain-databrain-the-control-law" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BaseBrain / DataBrain — the control law
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sensors-transduction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sensors — transduction
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#neuron-layers-neural-dynamics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Neuron layers — neural dynamics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#persistence-export" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Persistence &amp; export
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Persistence &amp; export">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#session_io-save-load" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        session_io — save / load
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#brain_serializer-code-generation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        brain_serializer — code generation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bonsai_exporter-bonsai-xml-export" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        bonsai_exporter — Bonsai XML export
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#real-robot-io" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Real-robot I/O
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Real-robot I/O">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#robotdriver" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RobotDriver
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#file-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File map
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Unit Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#timing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Timing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Timing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#simulation-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Simulation mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#real-robot-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Real-robot mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#app-shell" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        App shell
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="App shell">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#lbpsimulatorpy-simulatorapp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LBPSimulator.py — SimulatorApp
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sim_app_brainpy-_brainmixin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sim_app_brain.py — _BrainMixin
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sim_app_sessionpy-_sessionmixin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sim_app_session.py — _SessionMixin
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#simulation-core" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Simulation core
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Simulation core">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#simcontroller-the-simulation-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SimController — the simulation loop
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#network_runner-neural-forward-pass" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        network_runner — neural forward pass
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sim_engine-pure-physics-step" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sim_engine — pure physics step
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sim_engine_mujocopy-mujocoengine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sim_engine_mujoco.py — MuJoCoEngine
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#worldeditor-arena-editing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WorldEditor — arena editing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#oscchannelmanager-oscilloscope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OscChannelManager — oscilloscope
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#brainmanager-plugin-loading-and-circuit-wiring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BrainManager — plugin loading and circuit wiring
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#simlogger-data-recording" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SimLogger — data recording
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#distributed-simulation-networking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Distributed simulation networking
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Distributed simulation networking">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#simnethost" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SimNetHost
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#simnetclient" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SimNetClient
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-a-remote-agent-is-born" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How a remote agent is born
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rendering-views" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rendering &amp; views
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Rendering &amp; views">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#arenawidget-the-main-2-d-scene" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ArenaWidget — the main 2-D scene
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#networkvisualizerwindow-and-friends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NetworkVisualizerWindow and friends
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#side_viewpy-network-layout-editor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        side_view.py — network layout editor
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#net_view_3dpy-netview3dwindow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        net_view_3d.py — NetView3DWindow
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#world-circuit-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        World &amp; circuit data
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="World &amp; circuit data">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#world-the-physical-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        World — the physical environment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#circuitmodel-shared-circuit-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CircuitModel — shared circuit state
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rigidbody-joint-articulated-robot-body" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RigidBody / Joint — articulated robot body
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#simconfig-shared-simulation-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SimConfig — shared simulation parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#brains" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Brains
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Brains">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#basebrain-databrain-the-control-law" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BaseBrain / DataBrain — the control law
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sensors-transduction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sensors — transduction
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#neuron-layers-neural-dynamics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Neuron layers — neural dynamics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#persistence-export" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Persistence &amp; export
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Persistence &amp; export">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#session_io-save-load" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        session_io — save / load
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#brain_serializer-code-generation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        brain_serializer — code generation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bonsai_exporter-bonsai-xml-export" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        bonsai_exporter — Bonsai XML export
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#real-robot-io" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Real-robot I/O
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Real-robot I/O">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#robotdriver" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RobotDriver
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#file-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File map
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="class-reference">Class Reference</h1>
+<p>A file-by-file, class-by-class listing of the simulator's Python source. If you haven't yet, read <a href="../architecture/">Architecture</a> first for the mental model this reference assumes.</p>
+<hr />
+<h2 id="timing">Timing</h2>
+<p>The simulator separates <strong>physics/network stepping</strong> from <strong>display rendering</strong> — and in real-robot mode, also from <strong>sensor I/O</strong> and <strong>motor output</strong>. This holds whether one agent or many are running: the inner loop just does more work per iteration when there are more agents.</p>
+<h3 id="simulation-mode">Simulation mode</h3>
+<pre class="mermaid"><code>flowchart TD
+    T(["Qt Timer\n~every 20 ms"]) --&gt; L
+
+    subgraph L ["Inner loop — up to 50 ms"]
+        P["tick_physics (or _batch)\ndt = 0.01 s, all agents"] --&gt; N[append oscilloscope\ntraces for selected agent]
+        N --&gt;|deadline not reached| P
+    end
+
+    L --&gt;|deadline reached| R[render arena]
+    R --&gt; O[update oscilloscope\ndisplay]
+    O --&gt; T</code></pre>
+<p>Because the inner loop runs many steps before handing control back to the GUI, the <strong>network executes at ~200+ steps/s</strong> while the <strong>display updates at ~14 Hz</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Typical rate</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Qt timer fires</td>
+<td>~14 Hz</td>
+</tr>
+<tr>
+<td>Physics + network step (all agents)</td>
+<td>~230 Hz</td>
+</tr>
+<tr>
+<td>Arena repaint</td>
+<td>~14 Hz</td>
+</tr>
+<tr>
+<td>Oscilloscope update</td>
+<td>~14 Hz</td>
+</tr>
+</tbody>
+</table>
+<h3 id="real-robot-mode">Real-robot mode</h3>
+<p>Three concurrent activities share the process, each at its own rate.</p>
+<pre class="mermaid"><code>flowchart LR
+    subgraph OSC ["OscThread (one per host:port)"]
+        direction TB
+        O1(["wait for\nUDP packet"]) --&gt; O2[parse OSC\nmessage]
+        O2 --&gt; O3["sensor._robot_value\n← new value"]
+        O3 --&gt; O1
+    end
+
+    subgraph QT ["Qt Timer (~every 20 ms)"]
+        direction TB
+        Q1(["timer fires"]) --&gt; QL
+        subgraph QL ["Inner loop — up to 50 ms"]
+            QR["read _robot_value\napply scale · τ · f"] --&gt; QN["step_network\ndt = real elapsed"]
+            QN --&gt; QA[append traces]
+            QA --&gt;|deadline not reached| QR
+        end
+        QL --&gt;|deadline| QD["render arena\n+ oscilloscope"]
+        QD --&gt; Q1
+    end
+
+    subgraph MT ["MotorThread (~60 Hz)"]
+        direction TB
+        M1(["sleep 16 ms"]) --&gt; M2["read\nbrain.motor.output"]
+        M2 --&gt; M3["send /wheels\nOSC to robot"]
+        M3 --&gt; M1
+    end
+
+    Robot((Robot)) -- "bumpers · analogs\nencoders" --&gt; OSC
+    OSC -- _robot_value --&gt; QT
+    QT -- motor.output --&gt; MT
+    MT -- "/wheels UDP" --&gt; Robot</code></pre>
+<table>
+<thead>
+<tr>
+<th>Thread</th>
+<th>Rate</th>
+<th>Driven by</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>OscThread</td>
+<td>robot send rate (~60 Hz)</td>
+<td>incoming UDP packets</td>
+</tr>
+<tr>
+<td>Qt loop — network</td>
+<td>~230 Hz</td>
+<td>50 ms deadline</td>
+</tr>
+<tr>
+<td>MotorThread</td>
+<td>~60 Hz</td>
+<td>fixed 16 ms sleep</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Thread safety</p>
+<p>The simulator relies on Python's GIL rather than explicit locks. <code>OscThread</code> writes <code>sensor._robot_value</code>; the Qt thread reads it — a stale read is at most one robot transmission cycle old, which is harmless. <code>MotorThread</code> reads <code>brain.motor.output</code> every 16 ms; the worst case is one network step stale, well within motor latency tolerance.</p>
+</div>
+<hr />
+<h2 id="app-shell">App shell</h2>
+<h3 id="lbpsimulatorpy-simulatorapp"><code>LBPSimulator.py</code> — <code>SimulatorApp</code></h3>
+<p>The Qt main window. Its job is layout and wiring: it creates the panels, instantiates the controller objects, and routes Qt signals to them. Since 2026 it's been split across three files by concern — <code>SimulatorApp</code> is declared as <code>class SimulatorApp(_BrainMixin, _SessionMixin, QMainWindow)</code> — but <code>LBPSimulator.py</code> itself still keeps: window/dock construction (<code>_build_ui</code>), the generic slider/spinbox row factory (<code>_make_param_row</code>), the <strong>Physics</strong> tab, the <strong>Network</strong> tab (Host/Client mode, port + frame-rate controls, connected-client list), the <strong>Robot</strong> tab (real-robot Hz readouts), the <strong>World</strong> tab, and the network callbacks that turn an incoming client registration into a <code>RobotAgent</code> (<code>_on_client_registered</code>, <code>_on_remote_agent_removed</code>, <code>_update_net_status</code>).</p>
+<h3 id="sim_app_brainpy-_brainmixin"><code>sim_app_brain.py</code> — <code>_BrainMixin</code></h3>
+<p>Owns the agent table (add/remove agent rows), the brain-file combo and reload/new buttons, the brain-parameter panel (<code>_rebuild_brain_params</code>), network-file load/save for the selected agent (<code>_load_data_brain_network</code>, <code>_new_network_from_sidebar</code>), and <code>_sync_group_network</code>, which propagates a saved network file to every other member of the same <code>AgentGroup</code>.</p>
+<h3 id="sim_app_sessionpy-_sessionmixin"><code>sim_app_session.py</code> — <code>_SessionMixin</code></h3>
+<p>Owns the Session/Task/Logger tab builders, <code>_save_session</code> / <code>_load_session</code>, and <code>_load_session_agents</code>, which reconstructs the full multi-agent/group layout from a session JSON's <code>agents</code> array.</p>
+<hr />
+<h2 id="simulation-core">Simulation core</h2>
+<h3 id="simcontroller-the-simulation-loop"><code>SimController</code> — the simulation loop</h3>
+<p><code>sim_controller.py</code></p>
+<p><code>SimController</code> owns everything that changes every tick: the <code>QTimer</code>, the list of <code>RobotAgent</code>s, the running/paused flag, speed multiplier, real-time mode, manual-control override, the active task, and the <code>SimLogger</code>. Each tick it resolves a motor command for every agent, steps physics (batched across agents in MuJoCo mode, one at a time otherwise), and emits a single <code>sig_frame_ready(agents, selected_agent_id, sim_cfg, world, trail_visible, overhead_rgb)</code> signal that <code>ArenaWidget</code> and <code>OscChannelManager</code> both listen to.</p>
+<p><strong><code>RobotAgent</code></strong> (dataclass) — one robot's state bundle:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>Stable identity, assigned once, never reused or shifted when other agents are removed</td>
+</tr>
+<tr>
+<td><code>circuit</code></td>
+<td>This agent's <code>CircuitModel</code></td>
+</tr>
+<tr>
+<td><code>brain</code></td>
+<td>Its <code>BaseBrain</code>/<code>DataBrain</code> instance (or a placeholder, for remote agents)</td>
+</tr>
+<tr>
+<td><code>bot_pos</code></td>
+<td><code>[x, y, theta]</code></td>
+</tr>
+<tr>
+<td><code>trail_xy</code></td>
+<td>Ring buffer of recent positions</td>
+</tr>
+<tr>
+<td><code>brain_mgr</code></td>
+<td>Its <code>BrainManager</code></td>
+</tr>
+<tr>
+<td><code>name</code>, <code>color</code></td>
+<td>Display identity</td>
+</tr>
+<tr>
+<td><code>remote</code></td>
+<td><code>True</code> if motors come from a connected <code>SimNetClient</code> rather than a local brain</td>
+</tr>
+</tbody>
+</table>
+<p><strong><code>AgentGroup</code></strong> (dataclass) — a row in the agent table: <code>id</code>, <code>module</code> (brain filename, or <code>None</code> for a remote group), <code>color</code>, <code>name</code>, and <code>member_ids</code> (agent ids sharing this brain; <code>member_ids[0]</code> is the template used when growing the group or saving).</p>
+<p>Every cross-reference to a robot — the selection, a gradient's <code>mounted_on</code>, a network slot — stores the agent's <strong>id</strong>, resolved through <code>_agent_by_id</code> / <code>index_of_agent</code>, never a raw list index. Using list position as identity was a real source of bugs (a mounted gradient reattaching to the wrong robot, or the wrong agent getting reselected after a removal); see <code>TODO.md</code>'s "stable-agent-id refactor" entry for the history.</p>
+<h3 id="network_runner-neural-forward-pass"><code>network_runner</code> — neural forward pass</h3>
+<p><code>network_runner.py</code></p>
+<p><code>step_network</code> is the neural forward pass extracted from <code>BaseBrain</code>. It reads <code>layers</code>, <code>connections</code>, and <code>sensors</code> from the brain instance, propagates signals through the weight matrices, applies neuromodulation, and mutates <code>layer.output</code> in place. Incoming connections are summed by default; a <code>ProductLayer</code> target is special-cased to combine them by elementwise product instead.</p>
+<h3 id="sim_engine-pure-physics-step"><code>sim_engine</code> — pure physics step</h3>
+<p><code>sim_engine.py</code></p>
+<p>A module of pure functions, no Qt imports. <code>tick_physics(bot_pos, brain, sensors, world, sim_cfg, ...)</code> samples sensors, calls the brain's <code>loop()</code>, and integrates the differential-drive kinematics one timestep forward for a single agent.</p>
+<h3 id="sim_engine_mujocopy-mujocoengine"><code>sim_engine_mujoco.py</code> — <code>MuJoCoEngine</code></h3>
+<p>The MuJoCo physics bridge actually wired into <code>SimController</code>. Builds a per-tick-rebuildable XML model covering every agent, arena walls, and objects. Key methods: <code>tick_physics_batch()</code> (steps <strong>all</strong> agents together in one physics step, so they can collide with each other), <code>render_overhead()</code> (top-down image composited into <code>ArenaWidget</code>), <code>render_cameras()</code> (per-agent camera-sensor rendering), <code>launch_viewer()</code> (interactive 3-D window).</p>
+<div class="admonition warning">
+<p class="admonition-title">Legacy file</p>
+<p><code>mujoco_bridge.py</code>'s <code>MuJocoBridge</code> class is an earlier, single-robot, passive-viewer experiment. It predates <code>sim_engine_mujoco.MuJoCoEngine</code> and is no longer imported anywhere — treat it as dead code, not as the current MuJoCo integration.</p>
+</div>
+<h3 id="worldeditor-arena-editing"><code>WorldEditor</code> — arena editing</h3>
+<p><code>world_editor.py</code></p>
+<p>Owns the draw-mode state machine: <code>'gradient' | 'object' | 'wall' | 'wall_paint' | 'sky' | 'move'</code>. Implements the arena mouse handlers that mutate <code>World</code> and request a display refresh. Also handles mounting a gradient patch onto a specific robot (it then tracks that robot's pose every tick) and is multi-agent aware for mount-snapping and per-agent cleanup.</p>
+<h3 id="oscchannelmanager-oscilloscope"><code>OscChannelManager</code> — oscilloscope</h3>
+<p><code>osc_controller.py</code></p>
+<p>Owns the set of tracked oscilloscope channels, their colours, per-channel multiplier spinboxes, and trace ring-buffers, all for the <strong>currently selected agent only</strong>. Discovers which channels the active brain and circuit expose and rebuilds the plot layout when the brain or the selected agent changes. <code>on_frame_ready()</code> is its slot on <code>SimController.sig_frame_ready</code>.</p>
+<h3 id="brainmanager-plugin-loading-and-circuit-wiring"><code>BrainManager</code> — plugin loading and circuit wiring</h3>
+<p><code>brain_manager.py</code></p>
+<p>Discovers Python files in <code>brains/</code>, imports them, finds the class that inherits <code>BaseBrain</code>, instantiates it, and populates a <code>CircuitModel</code>. Also synthesises the motor <code>SumLayer</code> for each joint and wires <code>ProprioceptiveSensor</code> instances onto articulated bodies automatically.</p>
+<h3 id="simlogger-data-recording"><code>SimLogger</code> — data recording</h3>
+<p><code>logger.py</code></p>
+<p><code>start(path)</code> / <code>stop()</code> / <code>log(time_index, bot_pos, raw_signals, world)</code> — records a run's state to CSV for later analysis, independent of the oscilloscope.</p>
+<hr />
+<h2 id="distributed-simulation-networking">Distributed simulation networking</h2>
+<p>This is unrelated to the real-robot OSC protocol (see below) — it's a JSON-over-UDP link between two <strong>simulator instances</strong>.</p>
+<h3 id="simnethost"><code>SimNetHost</code></h3>
+<p><code>sim_net_host.py</code></p>
+<p>One UDP socket plus one receiver thread. Tracks a <code>_RemoteSlot</code> per connected client (motor cache, <code>ready</code> flag, Hz stats). All messages are JSON, zlib-compressed on the wire (falls back to reading them as uncompressed for backward compatibility):</p>
+<table>
+<thead>
+<tr>
+<th>Direction</th>
+<th>Message</th>
+<th>Payload</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>client → host</td>
+<td><code>register</code></td>
+<td><code>slot</code> request, client <code>name</code>, full circuit JSON</td>
+</tr>
+<tr>
+<td>client → host</td>
+<td><code>heartbeat</code> / <code>ready</code> / <code>disconnect</code></td>
+<td>keep-alive and lifecycle</td>
+</tr>
+<tr>
+<td>client → host</td>
+<td><code>motors</code></td>
+<td><code>{mL, mR}</code></td>
+</tr>
+<tr>
+<td>host → client</td>
+<td><code>ack</code></td>
+<td>assigned <code>slot</code></td>
+</tr>
+<tr>
+<td>host → client</td>
+<td><code>sensors</code></td>
+<td><code>{slot, dt, data}</code></td>
+</tr>
+<tr>
+<td>host → client</td>
+<td><code>go</code></td>
+<td>tick-synchronised start signal</td>
+</tr>
+</tbody>
+</table>
+<p><code>prune_stale()</code> drops clients that go quiet without a clean disconnect.</p>
+<h3 id="simnetclient"><code>SimNetClient</code></h3>
+<p><code>sim_net_client.py</code></p>
+<p>Mirrors the host: <code>pop_sensors()</code> / <code>send_motors()</code> for use inside the GUI, plus <code>run_blocking()</code> for a <strong>headless CLI client</strong> (<code>python sim_net_client.py host:port network.json</code>) with no Qt dependency at all.</p>
+<h3 id="how-a-remote-agent-is-born">How a remote agent is born</h3>
+<p>When a client registers, <code>SimController</code> parses its circuit JSON (<code>load_network_json</code>), builds a <code>CircuitModel</code> containing just that client's sensors/bodies/joints (no layers or connections needed host-side), attaches a no-op placeholder brain, and calls <code>add_agent(..., remote=True)</code>. The host samples and sends exactly the sensors that client declared — earlier versions used one fixed circuit for every client, which could overrun the UDP packet size for camera-equipped robots.</p>
+<hr />
+<h2 id="rendering-views">Rendering &amp; views</h2>
+<h3 id="arenawidget-the-main-2-d-scene"><code>ArenaWidget</code> — the main 2-D scene</h3>
+<p><code>arena_widget.py</code></p>
+<p>Keeps a <code>RobotItem</code> and a trail <code>PlotDataItem</code> per agent. <code>add_robot_item</code> / <code>remove_robot_item</code> / <code>select_robot</code> / <code>update_robot_pos</code> provide cheap updates for non-selected agents; the <strong>selected</strong> agent gets a full update each frame (wheels, sensor rays, child bodies). <code>sync_agents()</code> / <code>on_frame_ready()</code> is the slot wired to <code>SimController.sig_frame_ready</code>. Also owns <code>set_3d_mode</code> / <code>set_overhead_frame</code> (compositing the MuJoCo top-down image) and the <code>PolyWallItem</code> / <code>CircleItem</code> world-object graphics.</p>
+<h3 id="networkvisualizerwindow-and-friends"><code>NetworkVisualizerWindow</code> and friends</h3>
+<p><code>network_viz.py</code> composes five mixins, organized by responsibility rather than by code-kind:</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Mixin</th>
+<th>Covers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>network_viz_layout.py</code></td>
+<td><code>_LayoutMixin</code></td>
+<td>pure column/depth/position layout math and hit-testing — zero Qt/pyqtgraph mutation</td>
+</tr>
+<tr>
+<td><code>network_viz_render.py</code></td>
+<td><code>_RenderMixin</code></td>
+<td>all pyqtgraph/Qt graphics item creation and mutation (drawing nodes, edges, panels)</td>
+</tr>
+<tr>
+<td><code>network_viz_dialogs.py</code></td>
+<td><code>_DialogsMixin</code></td>
+<td>sensor/layer/body creation and edit dialogs; also <code>WeightMatrixDialog</code>, <code>FilterStackDialog</code>, <code>PaletteChip</code></td>
+</tr>
+<tr>
+<td><code>network_viz_editing.py</code></td>
+<td><code>_EditingMixin</code></td>
+<td>mouse events, edit-mode toggles, every circuit-mutating user action; also <code>NetworkViewBox</code></td>
+</tr>
+<tr>
+<td><code>network_viz_serialization.py</code></td>
+<td><code>_SerializationMixin</code></td>
+<td>undo snapshots, save/load JSON, Bonsai/SVG export, motif save</td>
+</tr>
+</tbody>
+</table>
+<p><code>network_viz_context.py</code> holds <code>NetworkVizContext</code>, the narrow DI facade bridging the visualizer to <code>SimulatorApp</code> — it doesn't fit any of the five responsibility categories above, so it gets its own small file.</p>
+<h3 id="side_viewpy-network-layout-editor"><code>side_view.py</code> — network layout editor</h3>
+<p>Despite the name, this is <strong>not</strong> a physical/sagittal view of the robot. It's a drag-and-drop grid editor — columns are processing depth, rows are subsumption "z-level" — used to arrange the network diagram's layers and sensors. The coordinates it produces feed <code>net_view_3d.py</code>.</p>
+<h3 id="net_view_3dpy-netview3dwindow"><code>net_view_3d.py</code> — <code>NetView3DWindow</code></h3>
+<p>A read-only, rotatable OpenGL (<code>pyqtgraph.opengl</code>) 3-D rendering of <strong>the circuit graph</strong> (nodes = sensors/layers, Bezier arcs = connections, colour-coded excitatory/inhibitory) — not a 3-D view of the robot or arena. Its layout comes from <code>side_view.py</code>.</p>
+<hr />
+<h2 id="world-circuit-data">World &amp; circuit data</h2>
+<h3 id="world-the-physical-environment"><code>World</code> — the physical environment</h3>
+<p><code>world.py</code></p>
+<p>Owns everything that is not the robot: gradient patches, solid obstacles, polygon walls, the arena boundary, and the sky (for the compass sensor). Plain data container — no rendering or physics logic.</p>
+<h3 id="circuitmodel-shared-circuit-state"><code>CircuitModel</code> — shared circuit state</h3>
+<p><code>circuit_model.py</code></p>
+<p>A plain container holding the four lists that define one agent's circuit: <code>sensors</code>, <code>layers</code>, <code>connections</code>, and <code>bodies</code>/<code>joints</code>. <code>connections</code> is a list of <code>Connection</code> dataclass objects (<code>src</code>, <code>tgt</code>, <code>W</code>, <code>learning</code>, <code>lr</code>).</p>
+<h3 id="rigidbody-joint-articulated-robot-body"><code>RigidBody</code> / <code>Joint</code> — articulated robot body</h3>
+<p><code>rigid_body.py</code></p>
+<p><code>RigidBody</code> is a named disk with a radius. Every robot has a root body (the drive disk); extra bodies attach via <code>Joint</code>s — for example a passive or motor-driven segment carrying its own sensors.</p>
+<h3 id="simconfig-shared-simulation-parameters"><code>SimConfig</code> — shared simulation parameters</h3>
+<p><code>sim_config.py</code></p>
+<p>Holds knobs global to a session: timestep <code>dt</code>, arena size, robot body radius, maximum speed, and similar constants. A <code>BaseConfig</code> subclass, so any <code>Param</code> declared on it automatically generates a GUI slider.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>dt</code></td>
+<td>0.01 s</td>
+<td>Simulation timestep</td>
+</tr>
+<tr>
+<td><code>arena_scale</code></td>
+<td>5.0 m</td>
+<td>Arena half-width</td>
+</tr>
+<tr>
+<td><code>motor_gain</code></td>
+<td>1.0</td>
+<td>Motor speed multiplier</td>
+</tr>
+<tr>
+<td><code>body_radius</code></td>
+<td>0.2 m</td>
+<td>Robot body radius</td>
+</tr>
+<tr>
+<td><code>sense_radius</code></td>
+<td>1.0 m</td>
+<td>Sensor ray length</td>
+</tr>
+<tr>
+<td><code>init_x</code>, <code>init_y</code></td>
+<td>0, 0</td>
+<td>Robot start position</td>
+</tr>
+<tr>
+<td><code>stim_radius</code></td>
+<td>0.5 m</td>
+<td>Radius of new gradient patches</td>
+</tr>
+<tr>
+<td><code>toggle_stim</code></td>
+<td>on</td>
+<td>Show / hide stimulus patches</td>
+</tr>
+<tr>
+<td><code>fixate_robot</code></td>
+<td>off</td>
+<td>Freeze robot position</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="brains">Brains</h2>
+<h3 id="basebrain-databrain-the-control-law"><code>BaseBrain</code> / <code>DataBrain</code> — the control law</h3>
+<p><code>brain_base.py</code></p>
+<p><code>BaseBrain</code> is the base class every brain plugin inherits. Class-level <code>Param</code> and <code>ChoiceParam</code> descriptors declare tunable knobs that <code>BaseConfig.__init__</code> copies to instance attributes; the GUI reads the metadata to build sliders automatically.</p>
+<p><code>DataBrain</code> extends <code>BaseBrain</code> for brains loaded from a JSON network file — it rebuilds <code>layers</code>, <code>connections</code>, and <code>sensors</code> from the serialised description, so the brain file contains only data, no Python logic.</p>
+<hr />
+<h2 id="sensors-transduction">Sensors — transduction</h2>
+<p><code>sensors.py</code></p>
+<p><code>BaseSensor</code> defines the contract every sensor satisfies: <code>sample(x, y, theta, world, sim_cfg)</code> maps the robot's pose and world state to a numpy array, stored on the brain as <code>brain.&lt;sensor.name&gt;</code>. All sensors share an optional output pipeline: Gaussian noise → asymmetric leaky dynamics (<code>tau_rise</code> / <code>tau_decay</code>) → activation function → <code>output_mode</code> (none / derivative / integral).</p>
+<pre class="mermaid"><code>%%{init: {'themeVariables': {'fontSize': '13px'}}}%%
+graph LR
+    BS[BaseSensor]
+    BS --&gt; GS[GradientSensor]
+    BS --&gt; CS[ColorSensor]
+    BS --&gt; DS[DistanceSensor]
+    BS --&gt; CL[CollisionSensor]
+    BS --&gt; WH[WhiskerSensor]
+    BS --&gt; GC[GrayCameraSensor]
+    BS --&gt; RC[RGBCameraSensor]
+    BS --&gt; IN[InteroceptiveSensor]
+    BS --&gt; PR[ProprioceptiveSensor]
+    BS --&gt; SK[SkyCompassSensor]</code></pre>
+<table>
+<thead>
+<tr>
+<th>Class</th>
+<th>What it detects</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GradientSensor</code></td>
+<td>Soft circular gradient patches; casts n rays in a fan, returns field intensity per ray</td>
+</tr>
+<tr>
+<td><code>ColorSensor</code></td>
+<td>Solid coloured circular objects via ray-circle intersection</td>
+</tr>
+<tr>
+<td><code>DistanceSensor</code></td>
+<td>Normalised proximity to the nearest wall, obstacle, or other agent (1 = touching, 0 = at max range)</td>
+</tr>
+<tr>
+<td><code>CollisionSensor</code></td>
+<td>Contact within n arc sectors around the robot perimeter, including other agents (1 = contact, 0 = clear)</td>
+</tr>
+<tr>
+<td><code>WhiskerSensor</code></td>
+<td>Tactile whisker: bending proportion from 0 (no contact) to 1 (contact at base)</td>
+</tr>
+<tr>
+<td><code>GrayCameraSensor</code></td>
+<td>Wide-angle raycasted image (luminance); output shape <code>(H × W,)</code></td>
+</tr>
+<tr>
+<td><code>RGBCameraSensor</code></td>
+<td>Wide-angle raycasted image (colour, CHW); output shape <code>(3 × H × W,)</code></td>
+</tr>
+<tr>
+<td><code>InteroceptiveSensor</code></td>
+<td>Internal gut state: integrates gradient exposure at the mouth over time (scalar)</td>
+</tr>
+<tr>
+<td><code>ProprioceptiveSensor</code></td>
+<td>Joint angle or angular velocity of articulated body segments</td>
+</tr>
+<tr>
+<td><code>SkyCompassSensor</code></td>
+<td>Polarised-light sky compass (DRA); encodes heading relative to sun direction</td>
+</tr>
+</tbody>
+</table>
+<p>Both camera sensors support <code>lateralized=True</code>, splitting the image at the horizontal midline into <code>sensor_L</code> / <code>sensor_R</code> halves, each feeding its own <code>Conv2dLayer</code>.</p>
+<hr />
+<h2 id="neuron-layers-neural-dynamics">Neuron layers — neural dynamics</h2>
+<p><code>neurons.py</code> re-exports everything below and maintains <code>LAYER_REGISTRY</code> for JSON deserialisation. <code>LayerBase</code> is a thin <code>nn.Module</code> mixin adding display and neuromodulation attributes shared by every layer type (<code>name</code>, <code>color</code>, <code>group</code>, <code>modulators</code>, …).</p>
+<pre class="mermaid"><code>%%{init: {'themeVariables': {'fontSize': '13px'}}}%%
+graph LR
+    LB[LayerBase]
+    LB --&gt; LL[LeakyLayer]
+    LL --&gt; PRL[ProductLayer]
+    LB --&gt; AL[AdaptiveLayer]
+    AL --&gt; ML[MatsuokaLayer *deprecated*]
+    LB --&gt; CL[ConstantLayer]
+    LB --&gt; SL[SumLayer]
+    SL --&gt; MOT[MotorLayer]
+    LB --&gt; PL[PulseLayer]
+    LB --&gt; SNL[SineLayer]
+    LB --&gt; RL[RingAttractorLayer]
+    LB --&gt; CV[Conv2dLayer]
+    LB --&gt; L2[Leaky2dLayer]</code></pre>
+<table>
+<thead>
+<tr>
+<th>Class</th>
+<th>Dynamics</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>LeakyLayer</code></td>
+<td>First-order low-pass filter (<code>dx/dt = (u−x)/τ</code>); asymmetric rise/decay, derivative mode, OU noise</td>
+</tr>
+<tr>
+<td><code>ProductLayer</code></td>
+<td><code>LeakyLayer</code> dynamics, but incoming connections combine by elementwise product instead of sum</td>
+</tr>
+<tr>
+<td><code>AdaptiveLayer</code></td>
+<td>Leaky integrator with spike-frequency adaptation; <code>w &gt; 0</code> + <code>n=2</code> gives half-centre oscillation</td>
+</tr>
+<tr>
+<td><code>MatsuokaLayer</code></td>
+<td><em>(deprecated — use <code>AdaptiveLayer</code>)</em> Thin wrapper kept for loading old JSON networks</td>
+</tr>
+<tr>
+<td><code>ConstantLayer</code></td>
+<td>Fixed output; tonic drive source, ignores incoming connections</td>
+</tr>
+<tr>
+<td><code>SumLayer</code></td>
+<td>Instantaneous weighted sum; no dynamics, no memory</td>
+</tr>
+<tr>
+<td><code>MotorLayer</code></td>
+<td><code>SumLayer</code> + robot actuation; sends output via OSC to <code>robot_address</code> in real-robot mode</td>
+</tr>
+<tr>
+<td><code>PulseLayer</code></td>
+<td>Plateau-potential neurons with sustained activation and inhibitory reset</td>
+</tr>
+<tr>
+<td><code>SineLayer</code></td>
+<td>Autonomous sine-wave generator; ignores incoming connections</td>
+</tr>
+<tr>
+<td><code>RingAttractorLayer</code></td>
+<td>N leaky neurons on a ring; recurrent connectivity via a self-connection (Mexican-hat kernel)</td>
+</tr>
+<tr>
+<td><code>Conv2dLayer</code></td>
+<td>2-D convolution over camera input; per-filter global pooling; optional leaky dynamics and adaptation</td>
+</tr>
+<tr>
+<td><code>Leaky2dLayer</code></td>
+<td>Pixel-wise leaky integrator that preserves full spatial image structure; feeds into <code>Conv2dLayer</code></td>
+</tr>
+<tr>
+<td><code>AccumulatorLayer</code></td>
+<td>Integrates input over time without decay</td>
+</tr>
+<tr>
+<td><code>DeltaLayer</code></td>
+<td>Reports the change in its input since the previous step</td>
+</tr>
+<tr>
+<td><code>Reichardt2dLayer</code></td>
+<td>Elementary motion detector over 2-D input (Reichardt correlator)</td>
+</tr>
+<tr>
+<td><code>TDLayer</code></td>
+<td>Temporal-difference learning layer</td>
+</tr>
+<tr>
+<td><code>ThreeFactorLayer</code></td>
+<td>Three-factor (Hebbian + neuromodulator) learning layer</td>
+</tr>
+<tr>
+<td><code>SnapshotLayer</code></td>
+<td>One-shot vector-memory neuron — overwrites its <em>outgoing</em> connection weights from a named source layer on a reward trigger</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="persistence-export">Persistence &amp; export</h2>
+<h3 id="session_io-save-load"><code>session_io</code> — save / load</h3>
+<p><code>session_io.py</code></p>
+<p>Two pure functions, <code>save_session</code> and <code>load_session</code>, serialise and deserialise the full simulator state (agents, brain params, world patches, sim config, oscilloscope multipliers) as JSON.</p>
+<h3 id="brain_serializer-code-generation"><code>brain_serializer</code> — code generation</h3>
+<p><code>brain_serializer.py</code></p>
+<p>Pure functions for writing brain <code>.py</code> files from a live circuit, and for JSON ↔ circuit serialisation (<code>serialize_network_json</code>, <code>load_network_json</code>) used both by session saving and by the distributed-networking handshake. Kept separate from the visualiser so the same logic is available from tests or command-line tools.</p>
+<h3 id="bonsai_exporter-bonsai-xml-export"><code>bonsai_exporter</code> — Bonsai XML export</h3>
+<p><code>bonsai_exporter.py</code></p>
+<p>Converts a <code>CircuitModel</code> into LBP.Torch Bonsai XML that can be pasted directly into a Bonsai workflow. Traces only the layers reachable from the motor output, maps sensor dynamics and activations to their Bonsai equivalents, and generates the input-preparation, graph-construction, and forward-pass branches.</p>
+<hr />
+<h2 id="real-robot-io">Real-robot I/O</h2>
+<h3 id="robotdriver"><code>RobotDriver</code></h3>
+<p><code>robot_driver.py</code></p>
+<p>Isolates all real-robot communication. Manages one background thread per unique <code>robot_address</code> string found among the active sensors — <code>CameraThread</code> (UDP JPEG client) for camera sensors, <code>OscThread</code> (UDP OSC server) for everything else. Each thread writes decoded data into <code>sensor._robot_value</code> so the simulation loop reads it without touching any sockets. <code>_parse_address()</code> is a shared helper also used by the Robot tab's Hz display and by <code>SimController</code>'s motor dispatch. See <a href="../real-robot/">Running on the real robot</a> for the full usage guide.</p>
+<hr />
+<h2 id="file-map">File map</h2>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>LBPSimulator.py           main window (SimulatorApp) — Physics/Network/Robot/World tabs
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>sim_app_brain.py          _BrainMixin — agent table, brain loading, network sync
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>sim_app_session.py        _SessionMixin — Session/Task/Logger tabs, save/load
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>sim_controller.py         simulation loop, RobotAgent, AgentGroup, multi-agent tick
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>sim_engine.py             pure physics step for one agent (tick_physics)
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>sim_engine_mujoco.py      MuJoCoEngine — batched multi-agent MuJoCo physics + rendering
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>mujoco_bridge.py          legacy single-robot viewer — unused, not wired in
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>network_runner.py         neural forward pass
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>neurons.py                all layer classes + DynamicsBase
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>sensors.py                all sensor classes + SENSOR_REGISTRY
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>circuit_model.py          CircuitModel, Connection
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>brain_base.py             BaseBrain, DataBrain, Param, ChoiceParam
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>brain_manager.py          brain discovery, loading, circuit wiring
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>brain_serializer.py       JSON ↔ circuit serialisation
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>bonsai_exporter.py        CircuitModel → LBP.Torch Bonsai XML
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>world.py                  World — patches, objects, walls, sky
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>world_editor.py           arena draw-mode state machine (multi-agent aware)
+</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>rigid_body.py             RigidBody, Joint
+</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>osc_controller.py         OscChannelManager (oscilloscope, selected agent only)
+</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>session_io.py             save/load session JSON (multi-agent)
+</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>robot_driver.py           real-robot OSC + camera threads
+</span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>sim_net_host.py           SimNetHost — distributed-sim host side
+</span><span id="__span-0-23"><a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>sim_net_client.py         SimNetClient — distributed-sim client side (+ headless CLI)
+</span><span id="__span-0-24"><a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>sim_config.py             SimConfig (global simulation parameters)
+</span><span id="__span-0-25"><a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>sim_widgets.py            reusable Qt widgets
+</span><span id="__span-0-26"><a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>sim_constants.py          shared numeric constants
+</span><span id="__span-0-27"><a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>logger.py                 SimLogger — CSV data recording
+</span><span id="__span-0-28"><a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>arena_widget.py           ArenaWidget, RobotItem — multi-robot 2-D scene
+</span><span id="__span-0-29"><a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>network_viz.py            NetworkVisualizerWindow (composes the mixins below)
+</span><span id="__span-0-30"><a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>network_viz_context.py    NetworkVizContext — DI facade bridging to SimulatorApp
+</span><span id="__span-0-31"><a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>network_viz_layout.py     _LayoutMixin — pure column/depth/position layout math
+</span><span id="__span-0-32"><a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>network_viz_render.py     _RenderMixin — pyqtgraph/Qt graphics item drawing
+</span><span id="__span-0-33"><a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>network_viz_dialogs.py    _DialogsMixin — creation/edit dialogs
+</span><span id="__span-0-34"><a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>network_viz_editing.py    _EditingMixin — mouse events, toolbar, circuit edits
+</span><span id="__span-0-35"><a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>network_viz_serialization.py  _SerializationMixin — undo, save/load, export
+</span><span id="__span-0-36"><a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>side_view.py              network layout editor (NOT a robot body view)
+</span><span id="__span-0-37"><a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>net_view_3d.py            NetView3DWindow — 3-D view of the circuit graph
+</span><span id="__span-0-38"><a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>trajectory_viz.py         post-run trajectory visualiser
+</span><span id="__span-0-39"><a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a>export_network_svg.py     export network graph as SVG
+</span><span id="__span-0-40"><a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a>brains/                   hot-pluggable brain plugins
+</span><span id="__span-0-41"><a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a>networks/                 saved network JSON files
+</span><span id="__span-0-42"><a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a>tasks/                    pluggable world dynamics (BaseTask subclasses)
+</span><span id="__span-0-43"><a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a>configs/                  saved session configs
+</span></code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.top", "content.code.copy", "content.code.annotate", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    var markup =
+      '<span class="lbp-title-project">little brain project</span>' +
+      '<span class="lbp-title-sim">SIMULATOR</span>';
+    document.querySelectorAll(
+      ".md-header__title .md-header__topic .md-ellipsis"
+    ).forEach(function (el) {
+      el.innerHTML = markup;
+    });
+  });
+</script>
+
+  </body>
+</html>

@@ -1,0 +1,2133 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Build and run neural-circuit behaviours on a simulated robot">
+      
+      
+      
+      
+        <link rel="prev" href="../reference/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/logo.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Unit Tests - Little Brain Project Simulator</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#unit-tests" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Little Brain Project Simulator" class="md-header__button md-logo" aria-label="Little Brain Project Simulator" data-md-component="logo">
+      
+  <img src="../../assets/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Little Brain Project Simulator
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Unit Tests
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../.." class="md-tabs__link">
+          
+  
+  
+  Home
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../creating-worlds/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Creating Worlds
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../coding-brains/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Coding Brains
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../wiring-brains/" class="md-tabs__link">
+          
+  
+  
+  Wiring Brains
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../architecture/" class="md-tabs__link">
+          
+  
+  
+  Developer
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Little Brain Project Simulator" class="md-nav__button md-logo" aria-label="Little Brain Project Simulator" data-md-component="logo">
+      
+  <img src="../../assets/logo.svg" alt="logo">
+
+    </a>
+    Little Brain Project Simulator
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_1" id="__nav_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Home
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tour/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Simulator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../creating-worlds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Creating Worlds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../coding-brains/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Coding Brains
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Wiring Brains
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Wiring Brains
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../wiring-brains/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Introduction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_2" id="__nav_4_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sensor types
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Sensor types
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/gradient/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GradientSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/color/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ColorSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/collision/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CollisionSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/distance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DistanceSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/interoceptive/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    InteroceptiveSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/proprioceptive/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ProprioceptiveSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/whisker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WhiskerSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/skycompass/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SkyCompassSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/graycamera/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GrayCameraSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sensors/rgbcamera/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RGBCameraSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_3" id="__nav_4_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neuron types
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Neuron types
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/sum/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SumLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/motor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MotorLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/constant/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ConstantLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/leaky/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LeakyLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/product/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ProductLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/adaptive/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AdaptiveLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/pulse/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PulseLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/sine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SineLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/ring_attractor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RingAttractorLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/conv2d/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Conv2dLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/leaky2d/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Leaky2dLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/reichardt2d/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reichardt2dLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/td/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TDLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/delta/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DeltaLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/three_factor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ThreeFactorLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/snapshot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SnapshotLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/matsuoka/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MatsuokaLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../neuromodulators/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neuromodulators
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Class Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Unit Tests
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Unit Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#teststest_smokepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tests/test_smoke.py
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#teststest_viz_freezepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tests/test_viz_freeze.py
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#teststest_smokepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tests/test_smoke.py
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#teststest_viz_freezepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        tests/test_viz_freeze.py
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="unit-tests">Unit Tests</h1>
+<p>A file-by-file, test-by-test listing of the simulator's automated test suite under <code>simulation/2d/tests/</code>. Pair this with <a href="../reference/">Class Reference</a> when you need to know exactly what behaviour a class is expected to guarantee.</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nb">cd</span><span class="w"> </span>simulation/2d
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>pip<span class="w"> </span>install<span class="w"> </span>pytest<span class="w"> </span>pytest-qt
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-v
+</span></code></pre></div>
+<p>Tests that need a Qt event loop (visualiser build, drag/drop, freeze regressions) require <code>pytest-qt</code> and are skipped automatically if it isn't installed. <code>test_mujoco_build_xml_textures</code> is skipped automatically if <code>mujoco</code> isn't installed.</p>
+<hr />
+<h2 id="teststest_smokepy"><code>tests/test_smoke.py</code></h2>
+<p>Core layer math, serialisation, and visualiser smoke tests.</p>
+<table>
+<thead>
+<tr>
+<th>Test</th>
+<th>Verifies</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>test_leaky_decays_to_zero</code></td>
+<td><code>LeakyLayer</code> output decays toward zero with no input</td>
+</tr>
+<tr>
+<td><code>test_leaky_converges_to_input</code></td>
+<td><code>LeakyLayer</code> output converges to a constant target under linear activation</td>
+</tr>
+<tr>
+<td><code>test_leaky_relu_clamps_negative</code></td>
+<td>Default relu activation clamps negative output to zero</td>
+</tr>
+<tr>
+<td><code>test_hard_sigmoid_matches_torch_and_numpy_paths</code></td>
+<td><code>hard_sigmoid</code> matches PyTorch's own <code>F.hardsigmoid</code> on the torch path and agrees exactly with the numpy path used by sensors — <code>_activate</code>'s two branches never silently diverge</td>
+</tr>
+<tr>
+<td><code>test_leaky_tau_decay_none_holds_value</code></td>
+<td><code>tau_decay=None</code> disables decay entirely — value holds when input drops</td>
+</tr>
+<tr>
+<td><code>test_layer_output_mode_derivative_is_rate_of_change</code></td>
+<td><code>output_mode='derivative'</code> (the generic <code>DynamicsBase</code> mechanism shared by every layer/sensor) replaces the raw summed input u with the finite-difference rate of change between consecutive ticks' raw input, before the leaky filter/activation run; layers don't special-case the first tick (<code>_prev_out</code> starts at a zero buffer), unlike sensors</td>
+</tr>
+<tr>
+<td><code>test_layer_output_mode_integral_accumulates</code></td>
+<td><code>output_mode='integral'</code> replaces the raw summed input u with the running ∫u dt (forward-Euler), before the leaky filter/activation run</td>
+</tr>
+<tr>
+<td><code>test_output_mode_transforms_raw_input_not_leaky_filtered_output</code></td>
+<td>Regression: <code>output_mode</code> must transform the raw input u before the leaky filter, not the layer's final output — with a real leaky lag (<code>tau_rise=tau_decay=0.1</code>), the internal <code>_integral</code> buffer must stop growing the instant the raw input hits zero, even though the leaky filter's own state is still decaying</td>
+</tr>
+<tr>
+<td><code>test_output_mode_invalid_raises</code></td>
+<td><code>DynamicsBase._init_dynamics</code> raises <code>ValueError</code> for an <code>output_mode</code> outside <code>{none, derivative, integral}</code>, mirroring <code>_activate</code>'s unknown-activation error</td>
+</tr>
+<tr>
+<td><code>test_sensor_output_mode_derivative_and_integral</code></td>
+<td><code>BaseSensor._apply_output_mode</code> (via <code>_process()</code>) supports the same none/derivative/integral contract as layers, applied to the raw reading before the leaky filter/activation, but with sensor-specific zero-on-first-tick semantics for <code>derivative</code></td>
+</tr>
+<tr>
+<td><code>test_modulator_row_transform_derivative</code></td>
+<td><code>LayerBase._transform_modulator_value</code>'s <code>'derivative'</code> mode computes the rate of change of a raw modulator-bus reading, keyed by <code>(name, mode)</code> in <code>self._mod_row_state</code> — independent of the layer's own <code>output_mode</code> state, zero on the first call for a given key</td>
+</tr>
+<tr>
+<td><code>test_modulator_row_transform_integral</code></td>
+<td><code>'integral'</code> mode accumulates a raw modulator reading over time (forward-Euler), same math as <code>_apply_output_mode</code>'s integral branch but tracked per <code>(name, mode)</code> key instead of a single per-layer buffer</td>
+</tr>
+<tr>
+<td><code>test_modulator_row_state_independent_per_key</code></td>
+<td>Two different <code>(name, mode)</code> modulator subscriptions on the same layer don't share state, and modulator-row state doesn't collide with the layer's own <code>output_mode</code> state, even when both happen to be <code>'derivative'</code></td>
+</tr>
+<tr>
+<td><code>test_learning_layer_drives_plasticity_row_gates_on_threshold</code></td>
+<td>A <code>modulators</code> row flagged <code>drives_plasticity=True</code> only contributes to reward — and therefore only triggers a weight update — on ticks where its mode-transformed value crosses <code>threshold</code>, the generalized replacement for the old always-on <code>reward_modulator</code> field</td>
+</tr>
+<tr>
+<td><code>test_learning_layer_reward_modulator_backcompat_default_is_none</code></td>
+<td><code>reward_modulator</code> now defaults to <code>None</code> (not <code>'dopamine'</code>) so a freshly constructed learning layer never silently picks up a stray reward channel via the legacy field</td>
+</tr>
+<tr>
+<td><code>test_learning_layer_reward_modulator_explicit_value_still_works</code></td>
+<td>Back-compat: a layer constructed with an explicit <code>reward_modulator</code> (as happens loading old saved JSON, which always serialized this field before it left <code>param_defs()</code>) still drives plasticity via that legacy channel, additively with any <code>drives_plasticity</code> rows</td>
+</tr>
+<tr>
+<td><code>test_snapshot_layer_teach_connection_excluded_from_output</code></td>
+<td><code>SnapshotLayer</code>'s teach connection (identified by <code>conn.src == teach_source</code>) never contributes to its own output — only gate connections do, regardless of the teach source's value</td>
+</tr>
+<tr>
+<td><code>test_snapshot_layer_write_overwrites_outgoing_weights_exactly</code></td>
+<td>On a <code>drives_plasticity</code> trigger, every outgoing connection's weights are hard-set to <code>-teach_val</code> (Le Moël Eq. 14) — not nudged by a Hebbian rule</td>
+</tr>
+<tr>
+<td><code>test_snapshot_layer_outgoing_weights_frozen_between_triggers</code></td>
+<td>Outgoing weights stay exactly as last written on ticks where the reward doesn't cross threshold, regardless of how much the teach source's value drifts in the meantime</td>
+</tr>
+<tr>
+<td><code>test_connection_kind_classifies_teach_before_td</code></td>
+<td><code>_connection_kind</code> returns <code>TEACH</code> for the <code>src==teach_source</code> connection into a <code>SnapshotLayer</code>, and <code>TD</code> for that same layer's other (gate) incoming connection — <code>TEACH</code> is checked with higher priority since a <code>SnapshotLayer</code> is itself a <code>LearningLayerBase</code></td>
+</tr>
+<tr>
+<td><code>test_reichardt_integer_shift_matches_bilinear</code></td>
+<td><code>Reichardt2dLayer</code>'s fast integer-pixel shift path matches the general bilinear <code>grid_sample</code> path bit-for-bit, for both axis-aligned and fractional direction sets</td>
+</tr>
+<tr>
+<td><code>test_reset_zeroes_state</code></td>
+<td><code>reset()</code> zeroes layer output regardless of prior activity</td>
+</tr>
+<tr>
+<td><code>test_ensure_n_raises_on_mismatch</code></td>
+<td><code>_ensure_n</code> raises <code>ValueError</code> when called with a different <code>n</code> than already declared</td>
+</tr>
+<tr>
+<td><code>test_ensure_n_initialises_when_none</code></td>
+<td><code>_ensure_n</code> initialises buffers on first call when <code>n</code> was unset at construction</td>
+</tr>
+<tr>
+<td><code>test_x0_seeds_initial_state</code></td>
+<td><code>x0</code> seeds <code>_x</code> and the <code>output_mode='integral'</code> accumulator at construction, both when <code>n</code> is given immediately and via the deferred <code>_ensure_n</code> path</td>
+</tr>
+<tr>
+<td><code>test_x0_per_neuron_list</code></td>
+<td><code>x0</code> accepts a per-neuron list, not just a scalar broadcast</td>
+</tr>
+<tr>
+<td><code>test_x0_wrong_length_raises</code></td>
+<td>A per-neuron <code>x0</code> list whose length doesn't match <code>n</code> raises <code>ValueError</code></td>
+</tr>
+<tr>
+<td><code>test_x0_restored_on_reset_not_zeroed</code></td>
+<td><code>reset()</code> returns <code>_x</code> to <code>x0</code>, not to a hardcoded zero — otherwise a bounded integrator (e.g. <code>x0=0.5</code>) would come back from reset at the wrong end of its range</td>
+</tr>
+<tr>
+<td><code>test_x0_seeds_integral_accumulator_not_bias</code></td>
+<td><code>x0</code> sets the one-time starting point of an <code>output_mode='integral'</code> accumulator; a zero raw input leaves it exactly at <code>x0</code> rather than drifting the way a nonzero <code>bias</code> would</td>
+</tr>
+<tr>
+<td><code>test_collision_sensor_silent_when_never_hit</code></td>
+<td><code>CollisionSensor</code> produces zero output while never registering a hit, even with <code>noise_std &gt; 0</code> (regression: a second, ungated noise pass in <code>_process()</code> used to leak through)</td>
+</tr>
+<tr>
+<td><code>test_step_network_size_reconciliation_is_gated</code></td>
+<td><code>step_network</code>'s size-reconciliation pass only re-runs when the connections list identity changes, not every tick (regression for the O(connections) caching fix)</td>
+</tr>
+<tr>
+<td><code>test_product_layer_multiplies_connections</code></td>
+<td><code>ProductLayer</code> combines incoming connections by elementwise product, not sum (with <code>tau_rise=0.0</code> to isolate the fan-in contract from leaky filtering); a <code>ProductLayer</code> with zero connections outputs all-ones (not all-zeros) before bias/dynamics/activation/scale</td>
+</tr>
+<tr>
+<td><code>test_product_layer_has_leaky_dynamics</code></td>
+<td><code>ProductLayer</code> is a <code>DynamicsBase</code>/<code>LeakyLayer</code> subclass with real leaky dynamics (tau_rise/tau_decay/noise/bias/activation/scale), not an instantaneous SumLayer-style combinator — a tiny-dt step lands strictly between the starting output and the fully-converged product</td>
+</tr>
+<tr>
+<td><code>test_bonsai_export_rejects_product_layer</code></td>
+<td><code>generate_bonsai_xml</code> raises <code>ValueError</code> naming the offending layer(s) when the circuit contains a <code>ProductLayer</code>, since LBP.Torch's <code>JoinAdditive</code> has no multiplicative equivalent</td>
+</tr>
+<tr>
+<td><code>test_layer_from_dict_backward_compat_derivative</code></td>
+<td><code>_layer_from_dict</code> maps an old JSON boolean <code>derivative</code> field (the retired <code>LeakyLayer</code>/<code>ProductLayer</code>/<code>Leaky2dLayer</code>-only x-vs-u mode) onto the new <code>output_mode</code></td>
+</tr>
+<tr>
+<td><code>test_sensor_from_dict_backward_compat_differential</code></td>
+<td><code>_sensor_from_dict</code> maps an old JSON boolean <code>differential</code> field (any sensor type) onto the new <code>output_mode</code></td>
+</tr>
+<tr>
+<td><code>test_layer_to_dict_persists_auto_injected_output_mode</code></td>
+<td><code>_layer_to_dict</code> persists <code>output_mode</code> even for layers (e.g. <code>AdaptiveLayer</code>) that don't list it in their own <code>param_defs()</code> — it's only reachable via the dialog's <code>DynamicsBase</code> auto-injection, so serialization must merge the same fallback or silently lose the value on reload</td>
+</tr>
+<tr>
+<td><code>test_serialisation_round_trip</code></td>
+<td>Save → load preserves layer params and connection weight shape</td>
+</tr>
+<tr>
+<td><code>test_build_no_crash</code></td>
+<td><code>NetworkVisualizerWindow.build()</code> doesn't raise on a minimal circuit</td>
+</tr>
+<tr>
+<td><code>test_weight_matrix_cosine_pattern_is_circulant</code></td>
+<td><code>WeightMatrixDialog</code>'s Cosine pattern produces a circulant (rotation-invariant) matrix, constant along i-j diagonals like its Gaussian/Mexican-hat siblings — regression for a sign bug that banded along i+j anti-diagonals instead (visually "rotated perpendicular")</td>
+</tr>
+<tr>
+<td><code>test_activation_panel_pin_and_update</code></td>
+<td>Pinning a layer via <code>_toggle_activation_entry</code> shows the Activations panel and adds an <code>ActivationEntryWidget</code>; <code>_update_activation_panel</code> populates its bar chart with the layer's current per-neuron <code>output</code>, indexed 0..n-1; unpinning removes it</td>
+</tr>
+<tr>
+<td><code>test_side_view_drag_preserves_sensor_z</code></td>
+<td>Dragging a sensor container in the side view updates its <code>z</code>, not just its column (regression: cross-column and same-column drag handlers used to leave <code>sensor.z</code> frozen)</td>
+</tr>
+<tr>
+<td><code>test_paste_selection_bumps_connections_identity</code></td>
+<td><code>_paste_selection</code> gives <code>circuit.connections</code> a fresh list identity after appending, so the <code>conn_id</code>-gated caches in <code>step_network</code> don't silently miss pasted connections (regression: <code>.append()</code> alone doesn't change <code>id()</code>)</td>
+</tr>
+<tr>
+<td><code>test_world_serializer_round_trip</code></td>
+<td><code>save_world_file</code> → <code>load_world_file</code> preserves world state, including per-object/per-wall/floor texture assignments</td>
+</tr>
+<tr>
+<td><code>test_mujoco_build_xml_textures</code></td>
+<td>MuJoCo XML builder dedupes repeated texture files into one <code>&lt;texture&gt;</code>/<code>&lt;material&gt;</code> pair, uses <code>material=</code> for textured geometry and <code>rgba=</code> for untextured, and produces byte-identical output when no textures are used</td>
+</tr>
+<tr>
+<td><code>test_collision_sensor_vectorized_matches_reference_loop</code></td>
+<td><code>CollisionSensor._detect_hits</code>'s numpy-vectorized geometry matches the original nested-loop implementation exactly, across round/square arenas and 2-point/triangle/square-polygon walls</td>
+</tr>
+<tr>
+<td><code>test_mujoco_collision_eligible_gating</code></td>
+<td><code>_mujoco_collision_eligible</code> accepts any root-mounted <code>CollisionSensor</code> regardless of radius (dedicated geometry is built at exactly that sensor's own probe radius) — only a sensor mounted off the root body correctly falls back to the analytic path</td>
+</tr>
+<tr>
+<td><code>test_log_collision_sensor_routing_reports_correct_path</code></td>
+<td><code>log_collision_sensor_routing</code> prints, per <code>CollisionSensor</code>, which path it actually uses and why (MuJoCo contact path, or analytic — not root-mounted) — the only way to confirm the routing decision from the running app's console instead of reading the code</td>
+</tr>
+<tr>
+<td><code>test_mujoco_collision_sensor_fires_on_contact_not_before</code></td>
+<td>A literal-touch <code>CollisionSensor</code> (<code>radius=1.0</code>) and a lookahead one (<code>radius=1.2</code>, the default), sampled side by side via <code>MuJoCoEngine.tick_physics</code> against their own dedicated per-sector geometry, each fire exactly at their own correct threshold — lookahead fires strictly earlier than touch, never later, and neither fires from open space</td>
+</tr>
+<tr>
+<td><code>test_mujoco_collision_matches_analytic_randomized</code></td>
+<td>The MuJoCo per-sector-geometry collision path disagrees with the analytic reference (<code>CollisionSensor._detect_hits</code>) on fewer than 10% of randomized scenes (objects, walls, round/square arenas, varying <code>n</code>/<code>angle_spread</code>/<code>arc_angle</code>/<code>radius</code>) — the two approximate the same geometry differently (real MuJoCo collision shapes vs. discrete point-probes), so this is a tolerance check, not bit-for-bit equality</td>
+</tr>
+</tbody>
+</table>
+<h2 id="teststest_viz_freezepy"><code>tests/test_viz_freeze.py</code></h2>
+<p>Regression tests guarding against a real UI freeze bug: the network visualiser's scatter-plot rendering silently stalling the Qt event loop. See the module docstring for what these tests can and cannot verify — a real OS-level focus switch cannot be reproduced in headless Qt, so <code>freeze_repro.py</code> must be run manually to check that case.</p>
+<table>
+<thead>
+<tr>
+<th>Test</th>
+<th>Verifies</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>test_autorange_off_after_disable</code></td>
+<td><code>disableAutoRange()</code> disables both axes on the <code>ViewBox</code></td>
+</tr>
+<tr>
+<td><code>test_setdata_does_not_reenable_autorange</code></td>
+<td><code>ScatterPlotItem.setData()</code> doesn't silently re-enable auto-range</td>
+</tr>
+<tr>
+<td><code>test_setdata_speed</code></td>
+<td><code>setData()</code> with 30 nodes completes in under 20 ms (p95)</td>
+</tr>
+<tr>
+<td><code>test_no_stall_10hz_updates</code></td>
+<td>10 Hz scatter updates don't stall the Qt event loop</td>
+</tr>
+<tr>
+<td><code>test_reentrancy_guard</code></td>
+<td>Reentrant <code>setData()</code> calls (as triggered from <code>_redraw_nodes()</code>) don't deadlock or crash</td>
+</tr>
+<tr>
+<td><code>test_no_stall_simulated_focus_switches</code></td>
+<td>Qt-side window activate/raise handling during scatter updates doesn't stall the event loop</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.top", "content.code.copy", "content.code.annotate", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    var markup =
+      '<span class="lbp-title-project">little brain project</span>' +
+      '<span class="lbp-title-sim">SIMULATOR</span>';
+    document.querySelectorAll(
+      ".md-header__title .md-header__topic .md-ellipsis"
+    ).forEach(function (el) {
+      el.innerHTML = markup;
+    });
+  });
+</script>
+
+  </body>
+</html>
