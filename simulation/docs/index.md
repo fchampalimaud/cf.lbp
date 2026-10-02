@@ -7,7 +7,7 @@ A self-contained Python application for building and running neural-circuit beha
 ```bash
 git clone https://github.com/fchampalimaud/cf.lbp.git
 cd cf.lbp/simulation
-./start.sh      # Windows: start.bat
+start.bat       # macOS/Linux: ./start.sh
 ```
 
 First run installs everything it needs (including Python itself) into an isolated environment —
