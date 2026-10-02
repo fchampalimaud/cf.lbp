@@ -7,9 +7,11 @@ A self-contained Python application for building and running neural-circuit beha
 ```bash
 git clone https://github.com/fchampalimaud/cf.lbp.git
 cd cf.lbp/simulation
-pip install -r requirements.txt
-python LBPSimulator.py
+./start.sh      # Windows: start.bat
 ```
+
+First run installs everything it needs (including Python itself) into an isolated environment —
+no manual setup required. See [Installing](simulator/install.md) for a manual install instead.
 
 ## Where to start
 

@@ -55,14 +55,6 @@ if errorlevel 1 (
 )
 echo  [OK] Core dependencies installed
 
-:: ----- Optional: MuJoCo -----
-echo.
-set /p OPT_MJ= Install MuJoCo physics backend? [y/N]:
-if /i "!OPT_MJ!"=="y" (
-    !PYTHON! -m pip install mujoco
-    echo  [OK] MuJoCo installed
-)
-
 :: ----- Optional: WebEngine -----
 set /p OPT_WE= Install PySide6-WebEngine (inline help viewer)? [y/N]:
 if /i "!OPT_WE!"=="y" (

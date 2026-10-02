@@ -48,14 +48,6 @@ echo " Installing core dependencies..."
 $PYTHON -m pip install -r requirements.txt
 echo " [OK] Core dependencies installed"
 
-# ----- Optional: MuJoCo -----
-echo ""
-read -rp " Install MuJoCo physics backend? [y/N]: " OPT_MJ
-if [[ "${OPT_MJ,,}" == "y" ]]; then
-    $PYTHON -m pip install mujoco
-    echo " [OK] MuJoCo installed"
-fi
-
 # ----- Optional: WebEngine -----
 read -rp " Install PySide6-WebEngine (inline help viewer)? [y/N]: " OPT_WE
 if [[ "${OPT_WE,,}" == "y" ]]; then

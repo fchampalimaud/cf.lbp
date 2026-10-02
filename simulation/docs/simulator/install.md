@@ -1,156 +1,68 @@
 # Installing the Simulator
 
-## Requirements
-
-- **Python 3.10 or later**
-- **pip**
-- A terminal (macOS / Linux) or Command Prompt / PowerShell (Windows)
-
-No GPU is needed. Everything runs on CPU.
-
----
-
-## Quick setup
-
-After cloning the repo, run the setup script — it checks Python, installs all dependencies, and offers the optional extras.
-
-=== "Windows"
-
-    Double-click `setup.bat`, or run in Command Prompt / PowerShell:
-
-    ```
-    setup.bat
-    ```
-
-=== "macOS / Linux"
-
-    ```bash
-    chmod +x setup.sh
-    ./setup.sh
-    ```
-
-The script handles the steps below automatically. Read on only if something goes wrong or you prefer a manual install.
-
----
-
-## Step-by-step
-
----
-
-## 0. Get Python and pip
-
-If you already have Python 3.10+ and pip, skip to [step 1](#1-get-the-code).
-
-=== "Windows"
-
-    Download the installer from [python.org/downloads](https://www.python.org/downloads/).  
-    During setup, tick **"Add Python to PATH"** before clicking Install.
-
-    Verify in a new Command Prompt or PowerShell window:
-
-    ```
-    python --version
-    pip --version
-    ```
-
-    If `pip` is missing, run:
-
-    ```
-    python -m ensurepip --upgrade
-    ```
-
-=== "macOS"
-
-    macOS ships an old Python 2. Install Python 3 with [Homebrew](https://brew.sh):
-
-    ```bash
-    brew install python
-    ```
-
-    This also installs `pip3`. Verify:
-
-    ```bash
-    python3 --version
-    pip3 --version
-    ```
-
-    Use `python3` and `pip3` in place of `python` and `pip` throughout these instructions.
-
-=== "Linux"
-
-    Most distros ship Python 3 — check with `python3 --version`. Install pip if absent:
-
-    ```bash
-    # Debian / Ubuntu
-    sudo apt install python3-pip
-
-    # Fedora
-    sudo dnf install python3-pip
-    ```
-
-    Use `python3` and `pip3` in place of `python` and `pip` throughout these instructions.
-
----
-
 ## 1. Get the code
-
-First open a terminal **in the folder where you want to install the simulator** — e.g. your
-`Documents` folder, not `C:\Windows\System32` or another system-protected directory. (A plain
-Command Prompt / PowerShell window opened from the Start menu usually starts in `System32`;
-cloning there quietly breaks saving `configs/`, `logs/`, and recordings later, since Windows
-restricts writes to that folder without admin rights.)
-
-=== "Windows"
-
-    Open **File Explorer**, navigate into the folder you want (e.g. `Documents`), then either:
-
-    - Type `cmd` into the address bar and press Enter, or
-    - Shift + right-click empty space in the folder → **Open PowerShell window here**
-      (**Open in Terminal** on Windows 11)
-
-=== "macOS / Linux"
-
-    ```bash
-    cd ~/Documents
-    ```
-
-Then clone the repo:
 
 ```bash
 git clone https://github.com/fchampalimaud/cf.lbp.git
 cd cf.lbp/simulation
 ```
 
+## 2. Run
+
+=== "Windows"
+
+    ```
+    start.bat
+    ```
+
+=== "macOS / Linux"
+
+    ```bash
+    ./start.sh
+    ```
+
+First run installs [uv](https://docs.astral.sh/uv/) if needed, then uses it to install the right
+Python version and all dependencies into an isolated environment, and launches the simulator.
+No manual Python install required. Later runs reuse the same environment and start instantly.
+
 ---
 
-## 2. Install dependencies
+## Manual install
+
+Prefer to manage Python yourself instead of using `start.bat`/`start.sh`? You'll need **Python
+3.10+** and **pip**.
+
+=== "Windows"
+
+    Download the installer from [python.org/downloads](https://www.python.org/downloads/).
+    During setup, tick **"Add Python to PATH"** before clicking Install.
+
+=== "macOS"
+
+    ```bash
+    brew install python
+    ```
+
+    Use `python3` and `pip3` in place of `python` and `pip` below.
+
+=== "Linux"
+
+    ```bash
+    sudo apt install python3-pip   # Debian / Ubuntu — use dnf/pacman/etc. on other distros
+    ```
+
+    Use `python3` and `pip3` in place of `python` and `pip` below.
+
+Then install dependencies and run:
 
 ```bash
 pip install -r requirements.txt
-```
-
-Core dependencies installed:
-
-| Package | Purpose |
-|---|---|
-| `PySide6` | Qt GUI framework |
-| `pyqtgraph` | Real-time oscilloscope plots |
-| `numpy` | Sensor and weight matrix math |
-| `torch` | Neural layer dynamics (CPU) |
-
----
-
-## 3. Run
-
-```bash
 python LBPSimulator.py
 ```
 
-The window opens with the robot centred in an empty arena.
-
 ---
 
-## Optional dependencies
+## Optional extras
 
 ### In-app documentation viewer
 
@@ -160,31 +72,13 @@ The **?** help button in layer and weight dialogs opens documentation in a brows
 pip install PySide6-WebEngine
 ```
 
-### MuJoCo physics
+### Session video recording
 
-To use MuJoCo as the physics backend (multi-body robots, contact dynamics):
+The Session tab's video capture needs `imageio`:
 
 ```bash
-pip install mujoco
+pip install imageio imageio-ffmpeg
 ```
-
----
-
-## Platform notes
-
-=== "Windows"
-
-    Use Command Prompt or PowerShell. The `.bat` launcher in the folder can also be used:
-    ```
-    start.bat
-    ```
-
-=== "macOS / Linux"
-
-    A shell launcher is provided:
-    ```bash
-    ./start.sh
-    ```
 
 ---
 
@@ -192,7 +86,6 @@ pip install mujoco
 
 ```bash
 git pull
-pip install -r requirements.txt
 ```
 
-No database migrations or build steps needed — the simulator is pure Python.
+Re-run `start.bat`/`start.sh` (or `pip install -r requirements.txt` for a manual install) to pick up any new dependencies. No database migrations or build steps needed — the simulator is pure Python.
