@@ -2,7 +2,7 @@
 
 **RingAttractorBrain** is a heading-direction vehicle. It maintains an internal compass — a stable activity bump in a ring attractor layer (`EPG`) — and keeps it anchored in world coordinates by integrating wheel velocity. The motor output is decoded from the bump position, producing a turn tendency proportional to the robot's current heading.
 
-Load it from `simulation/2d/networks/RingAttractorBrain.json` via the network editor.
+Load it from the Brain tab: **Network** mode → Project **🔒 Simulator** / **Default** → Network **RingAttractorBrain.json** (built-in, read-only — save your own copy to change it).
 
 ---
 

@@ -59,8 +59,11 @@ class CircuitModel:
     bodies      : list of RigidBody — root body always at index 0
     joints      : list of Joint connecting bodies
     notes       : list of Note annotations (free-positioned, no circuit role)
+    history     : EditHistory (circuit_editor.py) — this circuit's undo stack;
+                  lives here so undo survives closing the editor window and
+                  can never cross agents
     """
-    __slots__ = ('sensors', 'layers', 'connections', 'bodies', 'joints', 'notes')
+    __slots__ = ('sensors', 'layers', 'connections', 'bodies', 'joints', 'notes', 'history')
 
     def __init__(self, sensors=None, layers=None, connections=None,
                  bodies=None, joints=None, notes=None):
@@ -70,6 +73,7 @@ class CircuitModel:
         self.bodies      = bodies      if bodies      is not None else []
         self.joints      = joints      if joints      is not None else []
         self.notes       = notes       if notes       is not None else []
+        self.history     = None
 
     def clear(self):
         self.sensors.clear()

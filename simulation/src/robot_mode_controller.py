@@ -1,9 +1,10 @@
 """
 robot_mode_controller.py — real-robot mode for the 2D simulator.
 
-When enabled, simulated physics is bypassed entirely: sensor values come from
-RobotDriver threads reading the real robot over OSC, and motor commands are
-sent back to it. Takes circuit/brain/osc_ctrl as method arguments rather than
+When enabled, the real robot takes the place of the simulated world: sensor
+values come from RobotDriver threads reading the real robot over OSC, and
+motor commands are sent back to it. The brain runs through the same
+think / motors code as the simulator. Takes circuit/brain/osc_ctrl as method arguments rather than
 storing cross-references, since it only needs them transiently per call — this
 keeps it from needing a back-reference into the agent registry.
 """
@@ -13,6 +14,7 @@ import time
 import numpy as np
 
 from robot_driver import RobotDriver, MotorThread
+from sim_engine import run_brain, choose_motor_command, raw_sensor_values
 
 
 class RobotModeController:
@@ -23,12 +25,14 @@ class RobotModeController:
         self.driver = RobotDriver()
         self._last_tick_t = None
         self.motor_thread = None   # type: MotorThread | None
+        self.wheel_cmd = (0.0, 0.0)   # latest (mL, mR) chosen by tick(); read by MotorThread
 
     def enable(self, state: bool, circuit):
         """Toggle real-robot mode. Each sensor's robot_address field
         ('host:port') determines its connection; motor /wheels commands are
-        sent to the host:port of every non-camera sensor."""
+        sent to every motor layer's robot_address."""
         self.enabled = state
+        self.wheel_cmd = (0.0, 0.0)
         if state:
             self._last_tick_t = None
             self.driver.start(circuit.sensors)
@@ -37,6 +41,7 @@ class RobotModeController:
             self.driver.clear_robot_values(circuit.sensors)
 
     def start_motor_thread(self, get_motor_commands):
+        self.wheel_cmd = (0.0, 0.0)   # never resend a stale command from a previous run
         self.motor_thread = MotorThread(get_motor_commands, self.driver)
         self.motor_thread.start()
 
@@ -47,38 +52,22 @@ class RobotModeController:
             self.motor_thread = None
 
     def get_motor_commands(self, circuit, brain):
-        """Return (host, port, osc_path, vL, vR) for every active MotorLayer.
+        """Return (host, port, osc_path, vL, vR) for every user motor layer with
+        a robot_address.
 
-        Called by MotorThread at ~60 Hz; reads the latest network output.
-        Manual override takes priority and is written back into layer.output
-        so the oscilloscope reflects what the robot is actually doing.
+        Called by MotorThread at ~60 Hz. Every brain follows the same rule:
+        the latest wheel command chosen by tick() — the keyboard, or what the
+        brain's loop() returned — is sent to every motor layer's robot_address.
+        A code-only brain therefore just needs a motor layer with an address.
         """
-        from neurons import MotorLayer as _MotorLayer
         from robot_driver import RobotDriver as _RD
-        import torch as _torch
 
+        mL, mR = self.wheel_cmd
         cmds = []
-        override = self._motor_override()
         for layer in circuit.layers:
-            if not isinstance(layer, _MotorLayer):
+            if not getattr(layer, 'drives_wheels', False):
                 continue
-            layer_obj = getattr(brain, layer.name, layer)
-            if override is not None:
-                mL = float(override[0])
-                mR = float(override[1]) if len(override) > 1 else mL
-                if hasattr(layer_obj, 'output') and layer_obj.output is not None:
-                    n    = layer_obj.n or 2
-                    vals = [float(override[i]) if i < len(override) else 0.0
-                            for i in range(n)]
-                    layer_obj.output = _torch.tensor(vals, dtype=_torch.float32)
-            else:
-                if hasattr(layer_obj, 'output') and layer_obj.output is not None:
-                    out = np.atleast_1d(layer_obj.output)
-                    mL  = float(out[0]) if len(out) > 0 else 0.0
-                    mR  = float(out[1]) if len(out) > 1 else mL
-                else:
-                    mL = mR = 0.0
-            motor_addr = getattr(layer_obj, 'robot_address', '').strip()
+            motor_addr = getattr(layer, 'robot_address', '').strip()
             if motor_addr:
                 host, port, osc_path, *_ = _RD._parse_address(motor_addr)
                 if host and port and osc_path:
@@ -86,11 +75,11 @@ class RobotModeController:
         return cmds
 
     def send_motor_stop(self, circuit):
-        """Send zero motor commands to every MotorLayer's robot address."""
-        from neurons import MotorLayer as _MotorLayer
+        """Send zero motor commands to every wheel motor layer's robot address
+        (the same layers get_motor_commands drives)."""
         from robot_driver import RobotDriver as _RD
         for layer in circuit.layers:
-            if not isinstance(layer, _MotorLayer):
+            if not getattr(layer, 'drives_wheels', False):
                 continue
             motor_addr = getattr(layer, 'robot_address', '').strip()
             if motor_addr:
@@ -99,12 +88,13 @@ class RobotModeController:
                     self.driver.send_motor(host, port, osc_path, 0.0, 0.0)
 
     def tick(self, circuit, brain, osc_ctrl) -> dict:
-        """One physics-substep driven by real robot sensor data. Returns the
+        """One step driven by real robot sensor data — the same think / motors
+        code as the simulator (sim_engine.run_brain / choose_motor_command);
+        only sensing (latest UDP reading per sensor) and acting (MotorThread
+        sends self.wheel_cmd) differ. dt is the real elapsed time. Returns the
         resolved oscilloscope channel values — the caller (SimController)
         emits sig_tick_values and advances time_index, since both are core
         loop state this class doesn't own."""
-        from network_runner import step_network
-
         now = time.perf_counter()
         if self._last_tick_t is None:
             dt = self.sim_cfg.dt   # first tick: fall back to configured dt
@@ -130,46 +120,20 @@ class RobotModeController:
             else:
                 val = sensor.process_robot_value(raw, _cfg)
             setattr(brain, sensor.name, val)
-            # Lateralized camera halves (raw passthrough — cameras handle own processing)
-            if getattr(sensor, 'lateralized', False):
-                lv = getattr(sensor, '_left_output',  None)
-                rv = getattr(sensor, '_right_output', None)
-                if lv is not None:
-                    setattr(brain, sensor.name + '_L', lv)
-                if rv is not None:
-                    setattr(brain, sensor.name + '_R', rv)
+            # Lateralized camera halves (raw passthrough — cameras handle own
+            # processing). Joint-pair halves only exist in simulation.
+            if sensor.is_camera:
+                sensor.publish_halves(brain)
 
-        step_network(brain, dt)
+        # THINK + MOTORS — keyboard commands are also written into the motor
+        # layer, so the visualizer and oscilloscope show what drives the robot.
+        brain_cmd = run_brain(brain, dt)
+        mL, mR = choose_motor_command(circuit, brain_cmd, self._motor_override())
+        # ACT — MotorThread picks this up at its own rate.
+        self.wheel_cmd = (mL, mR)
 
-        # Write manual override into motor layer outputs so the network visualizer
-        # and oscilloscope motor-neuron channels reflect what actually drives the robot.
-        _override = self._motor_override()
-        if _override is not None:
-            import torch as _torch
-            from neurons import MotorLayer as _MotorLayerR
-            for _layer in circuit.layers:
-                if isinstance(_layer, _MotorLayerR):
-                    _lobj = getattr(brain, _layer.name, _layer)
-                    if hasattr(_lobj, 'output') and _lobj.output is not None:
-                        _n = int(_lobj.output.numel()) if hasattr(_lobj.output, 'numel') \
-                             else len(np.atleast_1d(_lobj.output))
-                        _vals = [float(_override[_j]) if _j < len(_override) else 0.0
-                                 for _j in range(_n)]
-                        _lobj.output = _torch.tensor(_vals, dtype=_torch.float32)
-
-        # Build raw dict for the oscilloscope — mirrors what tick_physics returns
+        # Build raw dict for the oscilloscope — mirrors what step_agents returns
         # in sim mode: motor values, indexed sensor values, and indexed layer outputs.
-        from neurons import MotorLayer as _MotorLayer
-        mL = mR = 0.0
-        for layer in circuit.layers:
-            if isinstance(layer, _MotorLayer):
-                layer_obj = getattr(brain, layer.name, layer)
-                if hasattr(layer_obj, 'output') and layer_obj.output is not None:
-                    out = np.atleast_1d(layer_obj.output)
-                    mL  = float(out[0]) if len(out) > 0 else 0.0
-                    mR  = float(out[1]) if len(out) > 1 else mL
-                break
-
         raw = {'mL': mL, 'mR': mR}
 
         # Actual integer values sent to robot (staircase at ~60 Hz)
@@ -177,12 +141,9 @@ class RobotModeController:
             raw['mL_sent'] = self.motor_thread.last_vL
             raw['mR_sent'] = self.motor_thread.last_vR
 
-        # Indexed sensor values: brain.collision → collision_0, collision_1, …
-        for sensor in circuit.sensors:
-            val = getattr(brain, sensor.name, None)
-            if val is not None:
-                for i, v in enumerate(np.atleast_1d(val)):
-                    raw[f'{sensor.name}_{i}'] = float(v)
+        # Indexed sensor values (brain.collision → collision_0, …), cameras
+        # excluded — the same values the simulator's step returns.
+        raw.update(raw_sensor_values(brain, circuit.sensors))
 
         # Indexed layer outputs (non-motor layers tracked by the oscilloscope)
         layer_names = {l.name for l in circuit.layers}

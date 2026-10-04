@@ -1,35 +1,152 @@
 """
 network_viz_render.py — rendering for the network visualizer.
 
-_RenderMixin holds every method that creates or mutates pyqtgraph/Qt graphics
-items. It reads its layout inputs (self._positions, self._active_names,
-self._container_x_map, ...) from network_viz_layout.py's _LayoutMixin, computed on
-the same shared `self` via mixin composition — this file never computes
-column/container/position layout itself, only draws what _LayoutMixin already
-decided.
+NetworkRenderer (the window's `renderer`) holds every method that creates or
+mutates pyqtgraph/Qt graphics items, and owns them (SceneItems). It draws the LayoutResult (self._lay) that LayoutEngine.compute()
+returns — this file never computes column/container/position layout itself.
 """
 
 import numpy as np
 from collections import defaultdict
+from dataclasses import dataclass, field
 
 import pyqtgraph as pg
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QToolTip
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QPainter
 
 from sim_constants import C, _CHAN_PALETTE
-from brain_base import DataBrain
 
-from network_viz_layout import _sensor_is_lateralized, _mirror_name
+from network_viz_layout import (_sensor_is_lateralized, _mirror_name, _tile_conv_filters,
+                                _reversed_idx, _ctrl_pt, _bezier_pts, _hemisphere, _signed_bow)
+from lateral import SIDES, side_of, base_name, half_names, parent_sensor
 from network_viz_dialogs import _small_bold_font
 
-class _RenderMixin:
-    def _on_refresh_timer(self):
-        if not self._building and self._all_scatter is not None:
-            brain = getattr(self.gui, 'brain', None)
+# Image nodes (cameras, image layers): thumbnail size in data coordinates,
+# independent of the frame size, and the thumbnail height in pixels.
+_IMAGE_W, _IMAGE_H, _IMAGE_DISP_H = 0.15, 0.1125, 32
+
+def _self_loop_pts(p0, r):
+    """Self-loop: small arc from 12 o'clock to 2 o'clock on the neuron rim,
+    bowing outward via a quadratic bezier with control point at 1 o'clock."""
+    p_start = (p0[0] + r * np.cos(np.radians(90)),
+               p0[1] + r * np.sin(np.radians(90)))
+    p_end   = (p0[0] + r * np.cos(np.radians(30)),
+               p0[1] + r * np.sin(np.radians(30)))
+    ctrl    = (p0[0] + (r + r * 1.5) * np.cos(np.radians(60)),
+               p0[1] + (r + r * 1.5) * np.sin(np.radians(60)))
+    t  = np.linspace(0, 1, 30)
+    xs = ((1-t)**2*p_start[0] + 2*(1-t)*t*ctrl[0] + t**2*p_end[0]).tolist()
+    ys = ((1-t)**2*p_start[1] + 2*(1-t)*t*ctrl[1] + t**2*p_end[1]).tolist()
+    return xs, ys
+
+
+def _rim_point(p, ctrl, other, r):
+    """Point on the circle of radius r around p, aimed at ctrl (or at the
+    other endpoint when ctrl coincides with p)."""
+    d = np.hypot(ctrl[0] - p[0], ctrl[1] - p[1])
+    if d > 1e-6:
+        return (p[0] + r * (ctrl[0] - p[0]) / d,
+                p[1] + r * (ctrl[1] - p[1]) / d)
+    nx, ny = other[0] - p[0], other[1] - p[1]
+    nd = np.hypot(nx, ny) + 1e-9
+    return (p[0] + r * nx / nd, p[1] + r * ny / nd)
+
+
+@dataclass
+class SceneItems:
+    """Everything one build() draws, plus the per-node caches the refresh
+    timer reads. Owned by NetworkRenderer, kept as renderer.drawn; a rebuild
+    removes the old items from the plot and starts a fresh SceneItems."""
+    all_scatter: object = None                                # single ScatterPlotItem for all nodes
+    ring_scatter: object = None                               # hollow rings: receiver rings + source waves
+    deriv_scatter: object = None                              # small dot overlay for derivative=True nodes
+    spot_names: list = field(default_factory=list)            # ordered node keys
+    spot_base_rgb: dict = field(default_factory=dict)         # name → (r,g,b) floats [0,1]
+    spot_alpha: dict = field(default_factory=dict)            # name → float [0,1]  (edge highlight fade)
+    spot_visible: dict = field(default_factory=dict)          # name → bool  (group hide)
+    text_items: list = field(default_factory=list)
+    text_map: dict = field(default_factory=dict)              # node_key → TextItem
+    sensor_pens: dict = field(default_factory=dict)           # node_key → QPen (palette border)
+    sensor_active_rgb: dict = field(default_factory=dict)     # node_key → (r,g,b) palette colour for activity
+    edge_items: list = field(default_factory=list)
+    edge_items_tagged: list = field(default_factory=list)     # 6-tuples: (item, sn, tn, excitatory, is_curve, original_pen)
+    edge_params: list = field(default_factory=list)           # raw draw params, replayed on zoom to fix rim coords
+    panel_items: list = field(default_factory=list)
+    panel_rect_map: dict = field(default_factory=dict)        # container → PlotDataItem (panel background rect)
+    container_label_items: dict = field(default_factory=dict)  # container → TextItem (annotation above rect)
+    container_note_items: dict = field(default_factory=dict)  # container → [ScatterPlotItem, TextItem] (bottom-right glyph)
+    container_note_icon_pos: dict = field(default_factory=dict)  # container → (x, y) of the glyph, for hit-testing
+    camera_items: dict = field(default_factory=dict)          # sensor.name → pg.ImageItem (CameraSensor only)
+    camera_rects: dict = field(default_factory=dict)          # same keys → (x, y, w, h) for re-anchoring after setImage
+    image_node_items: dict = field(default_factory=dict)      # node_key → list of plot items (circle, img, label, …)
+    note_items: list = field(default_factory=list)            # flat list of all note graphics items (removed each rebuild)
+    note_item_map: dict = field(default_factory=dict)         # id(note) → {'items': [...]} for incremental drag updates
+    mod_colors: dict = field(default_factory=dict)            # {nt_name: (r,g,b)} built at build time
+    mod_pens: dict = field(default_factory=dict)              # {nt_name: QPen} cached modulator border pens
+    src_nodes: dict = field(default_factory=dict)             # {node_key: nt_name}
+    rcv_nodes: dict = field(default_factory=dict)             # {node_key: [nt_name, ...]}
+    wave_phase: dict = field(default_factory=dict)            # {nt_name: float 0→1}  advances when active
+    deriv_node_positions: list = field(default_factory=list)  # node positions that get a derivative dot
+    img_node_keys: set = field(default_factory=set)           # node keys of image nodes (edges end at their ring)
+
+
+class NetworkRenderer:
+    """Draws the network: nodes, edges, panels, notes, image thumbnails, and
+    the live refresh (activity colours, panels) — from the window's
+    LayoutResult. Owns the drawn items (`drawn`, a SceneItems)."""
+
+    _NOTE_FILL   = '#F5E08A'
+    _NOTE_BORDER = '#C8A030'
+
+    _FADE_OPACITY = 0.12
+
+
+    def __init__(self, win):
+        self.win = win
+        self.drawn = SceneItems()          # replaced by every draw()
+        self.redrawing        = False      # reentrancy guard for redraw_nodes
+        self.rebuilding_edges = False
+        self.range_signal_connected = False
+        # Stored once so connect/disconnect always use the same slot object.
+        self.rebuild_edges_slot = self.rebuild_edges
+        self.pen_default  = pg.mkPen(C['dark'], width=1.5)
+        self.pen_selected = pg.mkPen(C['primary'], width=6)
+        self.pen_multi    = pg.mkPen('#E07828', width=6)
+        self.pen_osc      = pg.mkPen('#00AAAA', width=3)   # teal = tracked in oscilloscope
+        self.pen_muted    = pg.mkPen('#909090', width=1.5, style=Qt.DashLine)
+
+    def create_overlays(self):
+        """Drag indicators (column snap) and the connection-drag preview line,
+        added to the window's plot once it exists."""
+        plot = self.win._plot
+        self.drag_indicator = pg.InfiniteLine(
+            angle=90,
+            pen=pg.mkPen('#6AAAD4', width=2, style=Qt.DashLine),
+        )
+        self.drag_indicator.setVisible(False)
+        plot.addItem(self.drag_indicator)
+
+        self.h_drag_indicator = pg.InfiniteLine(
+            angle=0,
+            pen=pg.mkPen('#6AAAD4', width=2, style=Qt.DashLine),
+        )
+        self.h_drag_indicator.setVisible(False)
+        plot.addItem(self.h_drag_indicator)
+
+        self.conn_preview = pg.PlotDataItem(
+            pen=pg.mkPen('#E07828', width=2, style=Qt.DashLine)
+        )
+        self.conn_preview.setVisible(False)
+        self.conn_preview.setZValue(20)
+        plot.addItem(self.conn_preview)
+
+    def on_refresh_timer(self):
+        if not self.win._building and self.drawn.all_scatter is not None:
+            brain = getattr(self.win.gui, 'brain', None)
             if brain is not None:
                 try:
-                    self._redraw_nodes(brain)
+                    self.redraw_nodes(brain)
                 except Exception:
                     pass
                 try:
@@ -41,37 +158,37 @@ class _RenderMixin:
                 except Exception:
                     pass
                 try:
-                    self._update_weight_panel()
+                    self.update_weight_panel()
                 except Exception:
                     pass
                 try:
-                    self._update_activation_panel()
+                    self.update_activation_panel()
                 except Exception:
                     pass
 
     def _update_camera_nodes(self):
-        for obj in list(self.gui.circuit.layers) + list(self.gui.circuit.sensors):
+        for obj in list(self.win.gui.circuit.layers) + list(self.win.gui.circuit.sensors):
             if not obj.is_image_node:
                 continue
             for key, data in obj.thumbnail_frames(32):
-                item = self._camera_items.get(key)
+                item = self.drawn.camera_items.get(key)
                 if item is None:
                     continue
                 item.setImage(data, axisOrder='row-major')
-                rect = self._camera_rects.get(key)
+                rect = self.drawn.camera_rects.get(key)
                 if rect is not None:
                     item.setRect(*rect)
 
     def _update_anim(self, brain):
-        if self._ring_scatter is None:
+        if self.drawn.ring_scatter is None:
             return
 
         # Activation per neuromodulator substance
         nt_activation = {}
         if brain is not None:
-            for layer in getattr(self.gui.circuit, 'layers', []):
+            for layer in getattr(self.win.gui.circuit, 'layers', []):
                 nt = getattr(layer, 'neuromodulator_transmitter', None)
-                if not nt or nt not in self._mod_colors:
+                if not nt or nt not in self.drawn.mod_colors:
                     continue
                 attr = getattr(brain, layer.name, None)
                 if attr is None:
@@ -79,9 +196,9 @@ class _RenderMixin:
                 arr = np.atleast_1d(attr.output if hasattr(attr, 'output') else attr)
                 act = float(np.clip(np.mean(arr), 0, 1)) if arr.size > 0 else 0.0
                 nt_activation[nt] = max(nt_activation.get(nt, 0.0), act)
-            for sensor in getattr(self.gui.circuit, 'sensors', []):
+            for sensor in getattr(self.win.gui.circuit, 'sensors', []):
                 nt = getattr(sensor, 'neuromodulator_transmitter', None)
-                if not nt or nt not in self._mod_colors:
+                if not nt or nt not in self.drawn.mod_colors:
                     continue
                 val = getattr(brain, sensor.name, None)
                 if val is None:
@@ -93,20 +210,20 @@ class _RenderMixin:
         # Advance wave phase only when the source is active
         for nt, act in nt_activation.items():
             if act >= 0.05:
-                self._wave_phase[nt] = (self._wave_phase.get(nt, 0.0) + 0.07) % 1.0
+                self.drawn.wave_phase[nt] = (self.drawn.wave_phase.get(nt, 0.0) + 0.07) % 1.0
 
-        r_node    = self._NODE_R
+        r_node    = self.win._NODE_R
         ring_spots = []
 
         # Receiver satellites — small filled dot whose edge touches the node edge
         SAT_SIZE = 9               # dot diameter in pixels
         SAT_BASE = np.pi / 4       # starting angle (upper-right)
-        dx       = self._vb.viewPixelSize()[0]          # data units per pixel
+        dx       = self.win._vb.viewPixelSize()[0]          # data units per pixel
         SAT_R    = (r_node * 120 + SAT_SIZE / 2) * dx  # pixel-node-radius + sat px-radius → scene units
-        for node_key, nt_list in self._rcv_nodes.items():
-            if not self._spot_visible.get(node_key, True):
+        for node_key, nt_list in self.drawn.rcv_nodes.items():
+            if not self.drawn.spot_visible.get(node_key, True):
                 continue
-            pos = self._positions.get(node_key)
+            pos = self.win._lay.positions.get(node_key)
             if pos is None:
                 continue
             x, y = pos
@@ -115,7 +232,7 @@ class _RenderMixin:
                 angle = SAT_BASE + idx * (2 * np.pi / n)
                 sx    = x + SAT_R * np.cos(angle)
                 sy    = y + SAT_R * np.sin(angle)
-                rgb   = self._mod_colors[mod_name]
+                rgb   = self.drawn.mod_colors[mod_name]
                 color = QColor(int(rgb[0]*255), int(rgb[1]*255), int(rgb[2]*255))
                 ring_spots.append({
                     'pos':   (sx, sy),
@@ -127,19 +244,19 @@ class _RenderMixin:
         # Source waves — 3 concentric expanding rings, activation-gated
         N_WAVES   = 3
         MAX_EXTRA = 60   # px the wave expands beyond the node edge
-        for node_key, nt in self._src_nodes.items():
-            if not self._spot_visible.get(node_key, True):
+        for node_key, nt in self.drawn.src_nodes.items():
+            if not self.drawn.spot_visible.get(node_key, True):
                 continue
-            pos = self._positions.get(node_key)
+            pos = self.win._lay.positions.get(node_key)
             if pos is None:
                 continue
             act = nt_activation.get(nt, 0.0)
             if act < 0.05:
                 continue
             x, y  = pos
-            rgb   = self._mod_colors[nt]
+            rgb   = self.drawn.mod_colors[nt]
             base_color = QColor(int(rgb[0]*255), int(rgb[1]*255), int(rgb[2]*255))
-            phase = self._wave_phase.get(nt, 0.0)
+            phase = self.drawn.wave_phase.get(nt, 0.0)
             for i in range(N_WAVES):
                 p     = (phase + i / N_WAVES) % 1.0
                 alpha = int(220 * (1 - p) * act)
@@ -153,44 +270,47 @@ class _RenderMixin:
                     'pen': pg.mkPen(c, width=2),
                 })
 
-        self._ring_scatter.setData(spots=ring_spots)
+        self.drawn.ring_scatter.setData(spots=ring_spots)
 
     @staticmethod
-    def _hex_rgb(h):
+    def hex_rgb(h):
         h = h.lstrip('#')
         return tuple(int(h[i:i+2], 16) / 255.0 for i in (0, 2, 4))
 
-    def _draw_edges(self, positions, n_map):
-        # Build set of position keys that belong to image-display nodes (cameras,
-        # Leaky2dLayer, Conv2dLayer pool='none').  _draw_edge uses this to offset
-        # arc endpoints to the image circle rim rather than the neuron-dot rim.
-        _img_keys: set = set()
-        for _s in self.gui.circuit.sensors:
-            if _s.is_image_node:
-                if _sensor_is_lateralized(_s, self.gui.circuit):
-                    _img_keys.add(f'{_s.name}_L_0')
-                    _img_keys.add(f'{_s.name}_R_0')
+    def _image_node_keys(self):
+        """Position keys of image-display nodes (cameras / camera halves,
+        Leaky2dLayer, Conv2dLayer pool='none', viz_n == 1 layers)."""
+        keys = set()
+        for s in self.win.gui.circuit.sensors:
+            if s.is_image_node:
+                if _sensor_is_lateralized(s, self.win.gui.circuit):
+                    keys.update(f'{half}_0' for half in half_names(s.name))
                 else:
-                    _img_keys.add(f'{_s.name}_0')
-        for _l in self.gui.circuit.layers:
-            if _l.is_image_node or getattr(_l, 'viz_n', None) == 1:
-                _img_keys.add(f'{_l.name}_0')
-        self._img_node_keys = _img_keys
+                    keys.add(f'{s.name}_0')
+        for l in self.win.gui.circuit.layers:
+            if l.is_image_node or getattr(l, 'viz_n', None) == 1:
+                keys.add(f'{l.name}_0')
+        return keys
+
+    def _draw_edges(self, positions, n_map):
+        # _draw_edge uses this to offset arc endpoints to the image circle rim
+        # rather than the neuron-dot rim.
+        self.drawn.img_node_keys = self._image_node_keys()
 
         # When a specific neuron is selected, filter edges to only show connections
         # involving that neuron's index (rows/cols in the weight matrix).
         sel_layer = sel_idx = None
-        if self._selected:
-            parts = self._selected.rsplit('_', 1)
+        if self.win.editing.sel.node:
+            parts = self.win.editing.sel.node.rsplit('_', 1)
             if len(parts) == 2 and parts[1].lstrip('-').isdigit():
                 sel_layer, sel_idx = parts[0], int(parts[1])
 
         by_target  = defaultdict(list)
         tgt_hem_map = {}
 
-        _active   = self._active_names
-        _subsumed = getattr(self, '_subsumed_by', {})
-        for conn in self.gui.circuit.connections:
+        _active   = self.win._lay.active_names
+        _subsumed = self.win._lay.subsumed_by
+        for conn in self.win.gui.circuit.connections:
             src, tgt, W = conn.src, conn.tgt, conn.W
             src_draw     = _subsumed.get(src, src)
             tgt_draw     = _subsumed.get(tgt, tgt)
@@ -199,7 +319,7 @@ class _RenderMixin:
                 if src_draw not in _active or tgt_draw not in _active:
                     continue
                 if _is_remapped and src_draw == tgt_draw:
-                    continue   # both collapsed to same subsumer — skip self-loop
+                    continue   # both collapsed to same subsumer — skip self.win-loop
 
             # Connections involving hidden (subsumed) layers are not drawn —
             # the z-cut view shows only the active layers and their direct connections.
@@ -212,89 +332,95 @@ class _RenderMixin:
             nt = n_map.get(tgt, 1)
 
             # Resolve endpoint objects for the classifier (src may be layer or sensor).
-            src_obj = (next((l for l in self.gui.circuit.layers  if l.name == src), None)
-                       or next((s for s in self.gui.circuit.sensors if s.name == src), None))
-            tgt_obj = next((l for l in self.gui.circuit.layers if l.name == tgt), None)
+            src_obj = (next((l for l in self.win.gui.circuit.layers  if l.name == src), None)
+                       or next((s for s in self.win.gui.circuit.sensors if s.name == src), None))
+            tgt_obj = next((l for l in self.win.gui.circuit.layers if l.name == tgt), None)
 
-            kind = self._connection_kind(src_obj, tgt_obj, W, ns, nt)
+            kind = self.win.layout_engine.connection_kind(src_obj, tgt_obj, W, ns, nt)
 
-            if kind == self._CK_TEACH:
+            if kind == self.win._CK_TEACH:
                 self._draw_teach_connection(src, tgt, W, ns, nt, positions,
                                             sel_layer=sel_layer, sel_idx=sel_idx)
-                continue
-            if kind == self._CK_TD:
+            elif kind == self.win._CK_TD:
                 self._draw_td_connection(src, tgt, W, ns, nt, positions,
                                          sel_layer=sel_layer, sel_idx=sel_idx)
-                continue
-            if kind == self._CK_CONV4D:
+            elif kind == self.win._CK_CONV4D:
                 self._draw_conv4d_connection(src, tgt, W, positions, n_map,
                                              sel_layer, sel_idx)
-                continue
-            if kind == self._CK_DENSE:
+            elif kind == self.win._CK_DENSE:
                 self._draw_dense_connection(src, tgt, W, ns, nt, positions,
                                             sel_layer=sel_layer, sel_idx=sel_idx)
+            else:
+                self._collect_arcs(src, tgt, W, ns, nt, kind == self.win._CK_THIN, positions,
+                                   sel_layer, sel_idx, by_target, tgt_hem_map)
+
+        self._draw_collected_arcs(by_target, tgt_hem_map, positions)
+        self._draw_internal_edges(positions, sel_layer, sel_idx)
+
+    def _collect_arcs(self, src, tgt, W, ns, nt, is_thin, positions, sel_layer, sel_idx,
+                      by_target, tgt_hem_map):
+        """THIN or THICK connection: one arc per non-zero weight, accumulated per
+        target node in by_target (drawn together so arcs into a node fan out).
+
+        A combined lateralized source is detected first. Two cases:
+          A) Conv2dLayer pair: src has _lateral_pair → partner nodes from partner layer.
+          B) Joint-pair sensor half: src ends _L/_R from a pair sensor → partner nodes
+             from the mirror sensor half (e.g. sensor0_R for src=sensor0_L)."""
+        _src_lyr_d   = next((l for l in self.win.gui.circuit.layers if l.name == src), None)
+        _pair_nm_d   = getattr(_src_lyr_d, 'lateral_pair', None) if _src_lyr_d else None
+        _pair_lyr_d  = None
+        _pair_sensor_half_d = None
+        _n_L_d       = ns
+        if _pair_nm_d and W.ndim == 2:
+            _p = next((l for l in self.win.gui.circuit.layers if l.name == _pair_nm_d), None)
+            if _p and W.shape[1] == (_src_lyr_d.n or 0) + (_p.n or 0):
+                _pair_lyr_d = _p
+                _n_L_d = _src_lyr_d.n or 0
+                ns = W.shape[1]
+        elif W.ndim == 2 and side_of(src):
+            _src_snsr_d = parent_sensor(self.win.gui.circuit.sensors, src)
+            if (_src_snsr_d is not None
+                    and _sensor_is_lateralized(_src_snsr_d, self.win.gui.circuit)
+                    and W.shape[1] == ns * 2):
+                _pair_sensor_half_d = _mirror_name(src)
+                _n_L_d = ns
+                ns = W.shape[1]
+        if W.ndim == 2 and (W.shape[0] < nt or W.shape[1] < ns):
+            return  # stale W matrix; skip rather than IndexError
+        for i in range(nt):
+            if sel_idx is not None and tgt == sel_layer and i != sel_idx:
                 continue
-
-            # THIN or THICK — detect combined lateralized source then accumulate into by_target.
-            # Two cases:
-            #   A) Conv2dLayer pair: src has _lateral_pair → partner nodes from partner layer.
-            #   B) Joint-pair sensor half: src ends _L/_R from a pair sensor → partner nodes
-            #      from the mirror sensor half (e.g. sensor0_R for src=sensor0_L).
-            _src_lyr_d   = next((l for l in self.gui.circuit.layers if l.name == src), None)
-            _pair_nm_d   = getattr(_src_lyr_d, 'lateral_pair', None) if _src_lyr_d else None
-            _pair_lyr_d  = None
-            _pair_sensor_half_d = None
-            _n_L_d       = ns
-            if _pair_nm_d and W.ndim == 2:
-                _p = next((l for l in self.gui.circuit.layers if l.name == _pair_nm_d), None)
-                if _p and W.shape[1] == (_src_lyr_d.n or 0) + (_p.n or 0):
-                    _pair_lyr_d = _p
-                    _n_L_d = _src_lyr_d.n or 0
-                    ns = W.shape[1]
-            elif W.ndim == 2 and (src.endswith('_L') or src.endswith('_R')):
-                _src_snsr_d = next((s for s in self.gui.circuit.sensors
-                                    if s.name == src.rsplit('_', 1)[0]), None)
-                if (_src_snsr_d is not None
-                        and _sensor_is_lateralized(_src_snsr_d, self.gui.circuit)
-                        and W.shape[1] == ns * 2):
-                    _pair_sensor_half_d = _mirror_name(src)
-                    _n_L_d = ns
-                    ns = W.shape[1]
-            if W.ndim == 2 and (W.shape[0] < nt or W.shape[1] < ns):
-                continue  # stale W matrix; skip rather than IndexError
-            _is_thin = (kind == self._CK_THIN)
-            for i in range(nt):
-                if sel_idx is not None and tgt == sel_layer and i != sel_idx:
+            tn      = f'{tgt}_{i}'
+            _p_tn   = positions.get(tn)
+            tgt_hem = ((_p_tn[1] >= 0.5) if nt > 1 else None) if _p_tn is not None \
+                      else _hemisphere(i, nt)
+            tgt_hem_map[tn] = tgt_hem
+            for j in range(ns):
+                if sel_idx is not None and src == sel_layer and j != sel_idx:
                     continue
-                tn      = f'{tgt}_{i}'
-                _p_tn   = positions.get(tn)
-                tgt_hem = ((_p_tn[1] >= 0.5) if nt > 1 else None) if _p_tn is not None \
-                          else self._hemisphere(i, nt)
-                tgt_hem_map[tn] = tgt_hem
-                for j in range(ns):
-                    if sel_idx is not None and src == sel_layer and j != sel_idx:
-                        continue
-                    w = float(W[i, j]) if W.ndim == 2 else float(W.flat[0])
-                    if abs(w) < 1e-10:
-                        continue
-                    # For combined pair connections, j≥n_L_d → nodes from the R half.
-                    # R neurons appear in visual top-to-bottom order, which is reverse
-                    # index order: column n_L → R_(n_R-1), column n_L+1 → R_(n_R-2), etc.
-                    if _pair_lyr_d and j >= _n_L_d:
-                        _n_R_d = _pair_lyr_d.n or 1
-                        sn = f'{_pair_nm_d}_{self._reversed_idx(j - _n_L_d, _n_R_d, "R")}'
-                    elif _pair_sensor_half_d and j >= _n_L_d:
-                        _n_R_d = _n_L_d   # each side has the same n
-                        sn = f'{_pair_sensor_half_d}_{self._reversed_idx(j - _n_L_d, _n_R_d, "R")}'
-                    else:
-                        sn = f'{src}_{j}'
-                    if sn not in positions or tn not in positions:
-                        continue
-                    _p_sn   = positions.get(sn)
-                    src_hem = ((_p_sn[1] >= 0.5) if ns > 1 else None) if _p_sn is not None \
-                              else self._hemisphere(j, ns)
-                    by_target[tn].append((sn, w, src_hem, _is_thin))
+                w = float(W[i, j]) if W.ndim == 2 else float(W.flat[0])
+                if abs(w) < 1e-10:
+                    continue
+                # For combined pair connections, j≥n_L_d → nodes from the R half.
+                # R neurons appear in visual top-to-bottom order, which is reverse
+                # index order: column n_L → R_(n_R-1), column n_L+1 → R_(n_R-2), etc.
+                if _pair_lyr_d and j >= _n_L_d:
+                    _n_R_d = _pair_lyr_d.n or 1
+                    sn = f'{_pair_nm_d}_{_reversed_idx(j - _n_L_d, _n_R_d, "R")}'
+                elif _pair_sensor_half_d and j >= _n_L_d:
+                    _n_R_d = _n_L_d   # each side has the same n
+                    sn = f'{_pair_sensor_half_d}_{_reversed_idx(j - _n_L_d, _n_R_d, "R")}'
+                else:
+                    sn = f'{src}_{j}'
+                if sn not in positions or tn not in positions:
+                    continue
+                _p_sn   = positions.get(sn)
+                src_hem = ((_p_sn[1] >= 0.5) if ns > 1 else None) if _p_sn is not None \
+                          else _hemisphere(j, ns)
+                by_target[tn].append((sn, w, src_hem, is_thin))
 
+    def _draw_collected_arcs(self, by_target, tgt_hem_map, positions):
+        """Draw the arcs collected by _collect_arcs, fanned out per target node."""
         for tn, incoming in by_target.items():
             p1      = positions[tn]
             k       = len(incoming)
@@ -303,13 +429,15 @@ class _RenderMixin:
             for idx, (sn, w, src_hem, is_thin) in enumerate(incoming_sorted):
                 p0  = positions[sn]
                 t   = (idx / (k - 1) - 0.5) if k > 1 else 0.0
-                sb  = self._signed_bow(src_hem, tgt_hem, self._CROSS_BOW,
+                sb  = _signed_bow(src_hem, tgt_hem, self.win._CROSS_BOW,
                                        (p0[1] + p1[1]) / 2)
                 _lw = 0.6 if is_thin else 3.0
                 self._draw_edge(p0, p1, w, sb, ctrl_perp=0.18 * t, sn=sn, tn=tn,
                                 lw=_lw, mark=not is_thin)
 
-        for layer in self.gui.circuit.layers:
+    def _draw_internal_edges(self, positions, sel_layer, sel_idx):
+        """Within-layer edges declared by a layer's internal_edges()."""
+        for layer in self.win.gui.circuit.layers:
             if not hasattr(layer, 'internal_edges'):
                 continue
             n      = layer.n or 2
@@ -335,11 +463,11 @@ class _RenderMixin:
                     odx = (p0[0] + p1[0]) / 2 - cx   # chord-midpoint – centre
                     ody = (p0[1] + p1[1]) / 2 - cy
                     # dot( (cdy,-cdx), (odx,ody) ) > 0 → bow>0 is already outward
-                    sb = self._INTERNAL_BOW if (cdy * odx - cdx * ody) >= 0 \
-                         else -self._INTERNAL_BOW
+                    sb = self.win._INTERNAL_BOW if (cdy * odx - cdx * ody) >= 0 \
+                         else -self.win._INTERNAL_BOW
                 else:
-                    sb = self._signed_bow(self._hemisphere(fi, n), self._hemisphere(ti, n),
-                                          self._INTERNAL_BOW,
+                    sb = _signed_bow(_hemisphere(fi, n), _hemisphere(ti, n),
+                                          self.win._INTERNAL_BOW,
                                           (positions[sn][1] + positions[tn][1]) / 2)
                 self._draw_edge(positions[sn], positions[tn], w, sb, sn=sn, tn=tn,
                                lw=0.6, mark=False)
@@ -354,18 +482,17 @@ class _RenderMixin:
         p_s = positions.get(f'{src}_0')
         if p_s is None:
             return
-        src_sensor = next((s for s in self.gui.circuit.sensors if s.name == src), None)
+        src_sensor = next((s for s in self.win.gui.circuit.sensors if s.name == src), None)
         if src_sensor is None:
-            parent = src.rsplit('_', 1)[0]
-            src_sensor = next((s for s in self.gui.circuit.sensors if s.name == parent), None)
-        is_lat_R = (src.endswith('_R')
+            src_sensor = parent_sensor(self.win.gui.circuit.sensors, src)
+        is_lat_R = (side_of(src) == 'R'
                     and src_sensor is not None
-                    and _sensor_is_lateralized(src_sensor, self.gui.circuit))
+                    and _sensor_is_lateralized(src_sensor, self.win.gui.circuit))
         tgt_n = n_map.get(tgt, n_filters)
         lw    = 0.6 if n_filters > 4 else 3.0
         mark  = n_filters <= 4
         for i in range(n_filters):
-            tgt_idx = self._reversed_idx(i, tgt_n, 'R' if is_lat_R else 'L')
+            tgt_idx = _reversed_idx(i, tgt_n, 'R' if is_lat_R else 'L')
             if sel_idx is not None and tgt == sel_layer and sel_idx != tgt_idx:
                 continue
             tn = f'{tgt}_{tgt_idx}'
@@ -376,14 +503,14 @@ class _RenderMixin:
             if cw < 1e-10:
                 cw = float(np.abs(W[i]).max())
             mid_y = (p_s[1] + p_t[1]) / 2
-            sb = self._CROSS_BOW if mid_y >= 0.5 else -self._CROSS_BOW
+            sb = self.win._CROSS_BOW if mid_y >= 0.5 else -self.win._CROSS_BOW
             self._draw_edge(p_s, p_t, cw, sb, sn=f'{src}_0', tn=tn, lw=lw, mark=mark)
 
     def _draw_td_connection(self, src, tgt, W, ns, nt, positions,
                             sel_layer=None, sel_idx=None):
         """Draw all connections into a TDLayer — amber, always visible, ghost lines for zero weights."""
-        amber_active = self._TD_EDGE + (210,)   # solid learned weight
-        amber_zero   = self._TD_EDGE + (100,)   # ghost: unlearned slot (slightly transparent)
+        amber_active = self.win._TD_EDGE + (210,)   # solid learned weight
+        amber_zero   = self.win._TD_EDGE + (100,)   # ghost: unlearned slot (slightly transparent)
         for i in range(nt):
             if sel_idx is not None and tgt == sel_layer and i != sel_idx:
                 continue
@@ -400,7 +527,7 @@ class _RenderMixin:
                 w = float(W[i, j]) if W.ndim == 2 else float(W.flat[0])
                 p_s = positions[sn_key]
                 mid_y = (p_s[1] + p_t[1]) / 2
-                sb = self._CROSS_BOW if mid_y >= 0.5 else -self._CROSS_BOW
+                sb = self.win._CROSS_BOW if mid_y >= 0.5 else -self.win._CROSS_BOW
                 if abs(w) < 1e-10:
                     self._draw_edge(p_s, p_t, 1.0, sb, sn=sn_key, tn=tn_key,
                                     lw=1.0, color=amber_zero, style=Qt.DashLine,
@@ -421,7 +548,7 @@ class _RenderMixin:
         it's a fixed structural readout (see SnapshotLayer.help_text). Every
         edge gets the same appearance regardless of W's actual value.
         """
-        teach_color = self._TEACH_EDGE + (210,)
+        teach_color = self.win._TEACH_EDGE + (210,)
         for i in range(nt):
             if sel_idx is not None and tgt == sel_layer and i != sel_idx:
                 continue
@@ -438,7 +565,7 @@ class _RenderMixin:
                 w = float(W[i, j]) if W.ndim == 2 else float(W.flat[0])
                 p_s = positions[sn_key]
                 mid_y = (p_s[1] + p_t[1]) / 2
-                sb = self._CROSS_BOW if mid_y >= 0.5 else -self._CROSS_BOW
+                sb = self.win._CROSS_BOW if mid_y >= 0.5 else -self.win._CROSS_BOW
                 self._draw_edge(p_s, p_t, w, sb, sn=sn_key, tn=tn_key,
                                 lw=3.0, color=teach_color, style=Qt.SolidLine,
                                 mark=False, tgt_gap=0.4)
@@ -455,7 +582,7 @@ class _RenderMixin:
         for i in range(nt):
             if sel_idx is not None and tgt == sel_layer:
                 if src == sel_layer:
-                    pass  # self-connection: decide per (i,j) below
+                    pass  # self.win-connection: decide per (i,j) below
                 elif i != sel_idx:
                     continue
             tn_key = f'{tgt}_{i}'
@@ -465,7 +592,7 @@ class _RenderMixin:
             for j in range(ns):
                 if sel_idx is not None:
                     if src == sel_layer and tgt == sel_layer:
-                        # self-connection: show only edges touching the selected neuron
+                        # self.win-connection: show only edges touching the selected neuron
                         if i != sel_idx and j != sel_idx:
                             continue
                     elif src == sel_layer and j != sel_idx:
@@ -478,92 +605,79 @@ class _RenderMixin:
                     continue
                 p_s = positions[sn_key]
                 mid_y = (p_s[1] + p_t[1]) / 2
-                sb = self._CROSS_BOW if mid_y >= 0.5 else -self._CROSS_BOW
+                sb = self.win._CROSS_BOW if mid_y >= 0.5 else -self.win._CROSS_BOW
                 self._draw_edge(p_s, p_t, w, sb, sn=sn_key, tn=tn_key, lw=0.6)
 
-    def _rebuild_edges(self):
+    def rebuild_edges(self):
         """Redraw all edges at the current viewPixelSize — called on every zoom/pan."""
-        if self._building or self._rebuilding_edges:
+        if self.win._building or self.rebuilding_edges:
             return
-        self._rebuilding_edges = True
+        self.rebuilding_edges = True
         try:
-            saved = list(self._edge_params)
-            for item in self._edge_items:
+            saved = list(self.drawn.edge_params)
+            for item in self.drawn.edge_items:
                 try:
-                    self._plot.removeItem(item)
+                    self.win._plot.removeItem(item)
                 except Exception:
                     pass
-            self._edge_items = []
-            self._edge_items_tagged = []
-            self._edge_params = []          # _draw_edge will repopulate
+            self.drawn.edge_items = []
+            self.drawn.edge_items_tagged = []
+            self.drawn.edge_params = []          # _draw_edge will repopulate
             for p in saved:
                 self._draw_edge(*p)
-            self._apply_edge_highlight()    # restore any active selection highlight
-            if self._hidden_containers:
-                self._apply_group_visibility()
+            self.win.editing.apply_edge_highlight()    # restore any active selection highlight
+            if self.win._hidden_containers:
+                self.apply_group_visibility()
         finally:
-            self._rebuilding_edges = False
+            self.rebuilding_edges = False
 
     def _draw_edge(self, p0, p1, weight, signed_bow, ctrl_perp=0.0, sn=None, tn=None, lw=None, color=None, style=None, mark=None, marker_style='circle', tgt_gap=0.0):
-        self._edge_params.append((p0, p1, weight, signed_bow, ctrl_perp, sn, tn, lw, color, style, mark, marker_style, tgt_gap))
+        self.drawn.edge_params.append((p0, p1, weight, signed_bow, ctrl_perp, sn, tn, lw, color, style, mark, marker_style, tgt_gap))
         excitatory = weight >= 0
-        color      = color if color is not None else self._EDGE_POS
+        color      = color if color is not None else self.win._EDGE_POS
         lw         = lw if lw is not None else 3.0
         style      = style if style is not None else (Qt.SolidLine if excitatory else Qt.DashLine)
 
         # r_vis: actual scene-unit node radius at current zoom (nodes are pxMode=True,
         # size=NODE_R*240px, so pixel radius = NODE_R*120 → scene units = NODE_R*120*dy).
         try:
-            _, _dy = self._vb.viewPixelSize()
+            _, _dy = self.win._vb.viewPixelSize()
         except Exception:
             _dy = 1.0 / 120.0
-        r = self._NODE_R * 120 * _dy
+        r = self.win._NODE_R * 120 * _dy
 
         # Image-display nodes (cameras, Leaky2dLayer, Conv2dLayer pool='none') have a
         # much larger circular border drawn in data coords.  Use that radius for the
         # endpoint offset so arcs terminate at the circle rim, not at the node centre.
-        _IMAGE_R = 0.12   # W_DATA/2 + 0.02 in data units — must match build block
-        _img = getattr(self, '_img_node_keys', set())
+        _IMAGE_R = 0.12   # data units — just outside the image node's ring (see _add_image_node)
+        _img = self.drawn.img_node_keys
         r_src = _IMAGE_R if sn in _img else r
         r_tgt_base = _IMAGE_R if tn in _img else r
+
+        d_nodes = np.hypot(p1[0] - p0[0], p1[1] - p0[1])
+        edge_pen = pg.mkPen(color, width=lw, style=style)
+        if d_nodes < 1e-9:
+            xs, ys = _self_loop_pts(p0, r)
+            self._add_edge_item(pg.PlotDataItem(xs, ys, pen=edge_pen), 3,
+                                sn, tn, excitatory, True, edge_pen)
+            return
 
         # Enforce a minimum bow so the arc clears the node circles.  The geometric
         # minimum ensures the bezier excursion > r; the 0.4 visual margin is added
         # only for same-column nodes (d < 4r) where a tiny bow would be invisible.
         r_bow = max(r_src, r_tgt_base)
-        d_nodes = np.hypot(p1[0] - p0[0], p1[1] - p0[1])
-        if d_nodes < 1e-9:
-            # Self-loop: small arc from 12 o'clock to 2 o'clock on the neuron rim,
-            # bowing outward via a quadratic bezier with control point at 1 o'clock.
-            p_start = (p0[0] + r * np.cos(np.radians(90)),
-                       p0[1] + r * np.sin(np.radians(90)))
-            p_end   = (p0[0] + r * np.cos(np.radians(30)),
-                       p0[1] + r * np.sin(np.radians(30)))
-            ctrl    = (p0[0] + (r + r * 1.5) * np.cos(np.radians(60)),
-                       p0[1] + (r + r * 1.5) * np.sin(np.radians(60)))
-            t  = np.linspace(0, 1, 30)
-            xs = ((1-t)**2*p_start[0] + 2*(1-t)*t*ctrl[0] + t**2*p_end[0]).tolist()
-            ys = ((1-t)**2*p_start[1] + 2*(1-t)*t*ctrl[1] + t**2*p_end[1]).tolist()
-            edge_pen = pg.mkPen(color, width=lw, style=style)
-            item = pg.PlotDataItem(xs, ys, pen=edge_pen)
-            item.setZValue(3)
-            self._plot.addItem(item)
-            self._edge_items.append(item)
-            self._edge_items_tagged.append((item, sn, tn, excitatory, True, edge_pen))
-            return
-        if d_nodes > 0:
-            geo_min = np.sqrt(max(0.0, (2 * r_bow / d_nodes) ** 2 - 1.0))
-            visual_margin = 0.4 if d_nodes < 4 * r_bow else 0.0
-            min_bow = geo_min + visual_margin
-            if abs(signed_bow) < min_bow:
-                if signed_bow != 0:
-                    signed_bow = np.copysign(min_bow, signed_bow)
-                else:
-                    # Safety for any remaining zero-bow edge: preserve up/down
-                    # symmetry by signing with source-relative-to-target y.
-                    signed_bow = min_bow if p0[1] >= p1[1] else -min_bow
+        geo_min = np.sqrt(max(0.0, (2 * r_bow / d_nodes) ** 2 - 1.0))
+        visual_margin = 0.4 if d_nodes < 4 * r_bow else 0.0
+        min_bow = geo_min + visual_margin
+        if abs(signed_bow) < min_bow:
+            if signed_bow != 0:
+                signed_bow = np.copysign(min_bow, signed_bow)
+            else:
+                # Safety for any remaining zero-bow edge: preserve up/down
+                # symmetry by signing with source-relative-to-target y.
+                signed_bow = min_bow if p0[1] >= p1[1] else -min_bow
 
-        ctrl = self._ctrl_pt(p0, p1, signed_bow)
+        ctrl = _ctrl_pt(p0, p1, signed_bow)
         if ctrl_perp:
             dx, dy = p1[0] - p0[0], p1[1] - p0[1]
             d = np.hypot(dx, dy) + 1e-9
@@ -572,43 +686,34 @@ class _RenderMixin:
 
         # Rim points: start/end aimed toward the control point.
         # tgt_gap > 0 stops the arc tgt_gap*r before the target rim (gap in scene units).
-        d0 = np.hypot(ctrl[0] - p0[0], ctrl[1] - p0[1])
-        d1 = np.hypot(ctrl[0] - p1[0], ctrl[1] - p1[1])
-        r_tgt = r_tgt_base * (1.0 + tgt_gap)
-        if d0 > 1e-6:
-            p0r = (p0[0] + r_src * (ctrl[0] - p0[0]) / d0,
-                   p0[1] + r_src * (ctrl[1] - p0[1]) / d0)
-        else:
-            nx, ny = p1[0] - p0[0], p1[1] - p0[1]
-            nd = np.hypot(nx, ny) + 1e-9
-            p0r = (p0[0] + r_src * nx / nd, p0[1] + r_src * ny / nd)
-        if d1 > 1e-6:
-            p1r = (p1[0] + r_tgt * (ctrl[0] - p1[0]) / d1,
-                   p1[1] + r_tgt * (ctrl[1] - p1[1]) / d1)
-        else:
-            nx, ny = p0[0] - p1[0], p0[1] - p1[1]
-            nd = np.hypot(nx, ny) + 1e-9
-            p1r = (p1[0] + r_tgt * nx / nd, p1[1] + r_tgt * ny / nd)
+        p0r = _rim_point(p0, ctrl, p1, r_src)
+        p1r = _rim_point(p1, ctrl, p0, r_tgt_base * (1.0 + tgt_gap))
 
         thin = lw < 1.5
-        pts = self._bezier_pts(p0r, ctrl, p1r, n=25 if thin else 80)
+        pts = _bezier_pts(p0r, ctrl, p1r, n=25 if thin else 80)
         if len(pts) < 2:
             return
 
         xs = [p[0] for p in pts]
         ys = [p[1] for p in pts]
-        edge_pen = pg.mkPen(color, width=lw, style=style)
-        item = pg.PlotDataItem(xs, ys, pen=edge_pen)
-        item.setZValue(3)
-        self._plot.addItem(item)
-        self._edge_items.append(item)
-        self._edge_items_tagged.append((item, sn, tn, excitatory, True, edge_pen))
+        self._add_edge_item(pg.PlotDataItem(xs, ys, pen=edge_pen), 3,
+                            sn, tn, excitatory, True, edge_pen)
 
         do_mark = (not thin) if mark is None else mark
-        if not do_mark:
-            return
+        if do_mark:
+            self._draw_edge_marker(pts[-1], p1, color, thin, excitatory, marker_style,
+                                   _dy, sn, tn)
 
-        ex, ey = pts[-1]
+    def _add_edge_item(self, item, z, sn, tn, excitatory, is_curve, pen):
+        item.setZValue(z)
+        self.win._plot.addItem(item)
+        self.drawn.edge_items.append(item)
+        self.drawn.edge_items_tagged.append((item, sn, tn, excitatory, is_curve, pen))
+
+    def _draw_edge_marker(self, end, p1, color, thin, excitatory, marker_style, _dy, sn, tn):
+        """Synapse marker at the arc's end: a filled (excitatory) / hollow
+        (inhibitory) dot tangent to the target node, or a perpendicular tick."""
+        ex, ey = end
         ux, uy = ex - p1[0], ey - p1[1]
         ud = np.hypot(ux, uy)
         if ud > 1e-9:
@@ -619,66 +724,68 @@ class _RenderMixin:
         if marker_style == 'tick':
             # Perpendicular tick at the target rim — PlotDataItem renders reliably
             perp_x, perp_y = -uy, ux
-            tick_half = self._NODE_R * 55 * _dy
+            tick_half = self.win._NODE_R * 55 * _dy
             tick_item = pg.PlotDataItem(
                 [ex - tick_half * perp_x, ex + tick_half * perp_x],
                 [ey - tick_half * perp_y, ey + tick_half * perp_y],
                 pen=marker_pen,
             )
-            tick_item.setZValue(6)
-            self._plot.addItem(tick_item)
-            self._edge_items.append(tick_item)
-            self._edge_items_tagged.append((tick_item, sn, tn, excitatory, True, marker_pen))
+            self._add_edge_item(tick_item, 6, sn, tn, excitatory, True, marker_pen)
         else:
             # Circle marker: filled dot tangent to the target node surface
-            half_m = self._MARKER_R * 60 * _dy
+            half_m = self.win._MARKER_R * 60 * _dy
             scatter = pg.ScatterPlotItem(
                 [ex + half_m * ux], [ey + half_m * uy],
-                size=self._MARKER_R * 120,
+                size=self.win._MARKER_R * 120,
                 brush=pg.mkBrush(color) if excitatory else pg.mkBrush(C['bg']),
                 pen=marker_pen,
             )
-            scatter.setZValue(6)
-            self._plot.addItem(scatter)
-            self._edge_items.append(scatter)
-            self._edge_items_tagged.append((scatter, sn, tn, excitatory, False, marker_pen))
+            self._add_edge_item(scatter, 6, sn, tn, excitatory, False, marker_pen)
 
-    def build(self):
-        self._compact_containers()
-        self._update_z_slider()
-        self._building = True
-        self._gw.setUpdatesEnabled(False)
-        try:
-            self._build_inner()
-        finally:
-            self._building = False
-            self._gw.setUpdatesEnabled(True)
-            self._gw.update()
-        # Redraw edges once the widget has settled to its final pixel size.
-        QTimer.singleShot(0, self._rebuild_edges)
-        # Reapply camera image rects after the event loop settles (in case
-        # Qt reorders transforms during addItem or scene attachment).
-        QTimer.singleShot(0, self._reapply_camera_rects)
-        # Notify the app so arena overlays and oscilloscope channels stay in sync.
-        self.gui.rebuild_channels()
-        if self._side_view and self._side_view.isVisible():
-            self._side_view.refresh()
-
-    def _reapply_camera_rects(self):
-        for key, item in self._camera_items.items():
-            rect = self._camera_rects.get(key)
+    def reapply_camera_rects(self):
+        for key, item in self.drawn.camera_items.items():
+            rect = self.drawn.camera_rects.get(key)
             if rect is not None:
                 item.setRect(*rect)
 
-    def _build_inner(self):
-        self._infer_and_set_n()
+    def draw(self):
+        """Rebuild the whole network drawing from the circuit, in steps."""
+        self.win.layout_engine.infer_and_set_n()
+        old_image_items = self._clear_scene()
 
-        for item in (self._edge_items + self._panel_items + self._text_items
-                     + list(self._container_label_items.values())
-                     + [it for items in self._container_note_items.values() for it in items]
-                     + self._note_items):
+        self.win._lay = self.win.layout_engine.compute()
+        positions, sensor_nodes, groups = self.win._lay.positions, self.win._lay.sensor_nodes, self.win._lay.groups
+        n_map = self.win.layout_engine.n_map()
+
+        self.rebuild_group_buttons()
+        self._draw_panels(positions, groups)
+        self._draw_edges(positions, n_map)
+        self._connect_range_signal()
+
+        image_node_keys = self._draw_node_spots(positions, sensor_nodes)
+        self._draw_camera_nodes(positions, old_image_items)
+        self._draw_image_layer_nodes(positions, old_image_items)
+        self._remove_stale_image_items(old_image_items)
+        self._prepare_derivative_markers(positions, image_node_keys)
+        self._prepare_neuromod_rings()
+        self._fit_view(positions)
+
+        self.win._vb.disableAutoRange()
+        self.apply_group_visibility()
+        self._draw_notes()
+
+    def _clear_scene(self):
+        """Remove every drawn item and start a fresh SceneItems. Image items
+        are returned (not destroyed) so the rebuild can reuse them — this avoids
+        the transform/scene detach race that caused stale images to appear at
+        wrong positions on rebuild; leftovers are removed afterwards."""
+        old = self.drawn
+        for item in (old.edge_items + old.panel_items + old.text_items
+                     + list(old.container_label_items.values())
+                     + [it for items in old.container_note_items.values() for it in items]
+                     + old.note_items):
             try:
-                self._plot.removeItem(item)
+                self.win._plot.removeItem(item)
             except Exception:
                 pass
             try:
@@ -690,469 +797,212 @@ class _RenderMixin:
                     item.scene().removeItem(item)
             except Exception:
                 pass
-        # Keep existing camera ImageItems alive in the scene — reuse them in
-        # the creation pass below rather than destroying and re-adding them.
-        # Items for sensors that are no longer present are removed after the
-        # creation loop.  This avoids the transform/scene detach race that
-        # caused stale images to appear at wrong positions on rebuild.
-        _old_cam_items = dict(self._camera_items)
-        self._camera_items      = {}
-        self._camera_rects      = {}
-        self._image_node_items  = {}
-        if self._all_scatter is not None:
+        for item in (old.all_scatter, old.ring_scatter, old.deriv_scatter):
+            if item is not None:
+                try:
+                    self.win._plot.removeItem(item)
+                except Exception:
+                    pass
+        self.drawn = SceneItems()
+        self.win.editing.sel.pen_override = {}
+        self.win.editing.sel.highlighted  = None
+        self.win.editing.sel.edge     = None
+        return dict(old.camera_items)
+
+    def _connect_range_signal(self):
+        """Redraw edges whenever zoom/pan changes viewPixelSize."""
+        if self.range_signal_connected:
             try:
-                self._plot.removeItem(self._all_scatter)
+                self.win._vb.sigRangeChanged.disconnect(self.rebuild_edges_slot)
             except Exception:
                 pass
-            self._all_scatter = None
-        if self._ring_scatter is not None:
-            try:
-                self._plot.removeItem(self._ring_scatter)
-            except Exception:
-                pass
-            self._ring_scatter = None
-        if self._deriv_scatter is not None:
-            try:
-                self._plot.removeItem(self._deriv_scatter)
-            except Exception:
-                pass
-            self._deriv_scatter = None
-        self._wave_phase = {}
-        self._src_nodes  = {}
-        self._rcv_nodes  = {}
-        self._spot_names        = []
-        self._spot_base_rgb     = {}
-        self._spot_alpha        = {}
-        self._spot_visible      = {}
-        self._spot_pen_override = {}
-        self._edge_items        = []
-        self._edge_items_tagged = []
-        self._edge_params       = []
-        self._panel_items       = []
-        self._note_items        = []
-        self._note_item_map     = {}
-        self._panel_rect_map    = {}
-        self._container_label_items   = {}
-        self._container_note_items    = {}
-        self._container_note_icon_pos = {}
-        self._text_items        = []
-        self._text_map          = {}
-        self._node_container_map      = {}
-        self._highlighted_node  = None
-        self._selected_edge     = None
+        self.win._vb.sigRangeChanged.connect(self.rebuild_edges_slot)
+        self.range_signal_connected = True
 
-        positions, sensor_nodes, groups = self._layout()
-        self._positions = positions
-        n_map = self._n_map()
+    def _node_objects(self):
+        """Layer / sensor (and lateral sensor half) name → object."""
+        objs = {l.name: l for l in self.win.gui.circuit.layers}
+        objs.update({s.name: s for s in self.win.gui.circuit.sensors})
+        for s in self.win.gui.circuit.sensors:
+            if _sensor_is_lateralized(s, self.win.gui.circuit):
+                for half in half_names(s.name):
+                    objs[half] = s
+        return objs
 
-        self._container_x_map = {}
-        for _, _, container_nodes, x_col, container, *_ in groups:
-            self._container_x_map[container] = x_col
-            for node_key in container_nodes:
-                self._node_container_map[node_key] = container
-
-        # Compact layout: redistribute visible columns evenly, preserving the
-        # coordinate space (x_unit) used by _layout() so spacing is consistent.
-        if self._compact_mode and self._hidden_containers:
-            all_containers = sorted(self._container_x_map.keys())
-            vis_containers = [d for d in all_containers if d not in self._hidden_containers]
-            n_vis = len(vis_containers)
-            if 0 < n_vis < len(all_containers):
-                all_xs = [self._container_x_map[d] for d in all_containers]
-                x_min, x_max = min(all_xs), max(all_xs)
-                if n_vis == 1:
-                    new_xs = {vis_containers[0]: (x_min + x_max) / 2}
-                else:
-                    step = (x_max - x_min) / (n_vis - 1)
-                    new_xs = {container: x_min + i * step
-                              for i, container in enumerate(vis_containers)}
-                for node_key, container in self._node_container_map.items():
-                    if container in new_xs and node_key in positions:
-                        old_x, y = positions[node_key]
-                        dx = new_xs[container] - self._container_x_map[container]
-                        positions[node_key] = (old_x + dx, y)
-                for container, nx in new_xs.items():
-                    self._container_x_map[container] = nx
-
-        if positions:
-            xs = [p[0] for p in positions.values()]
-            self._palette_x = (min(xs) + max(xs)) / 2
-        else:
-            self._palette_x = 0.5
-
-        from sensors import CameraSensor as _CamSensor
-
-        # Show "New Network" button only for DataBrain
-        is_data_brain = isinstance(self.gui.brain, DataBrain) if self.gui.brain else False
-
-        self._rebuild_group_buttons()
-        self._draw_panels(positions, groups)
-        self._draw_edges(positions, n_map)
-
-        # Reconnect zoom/pan handler so edges are redrawn whenever viewPixelSize changes.
-        if self._range_signal_connected:
-            try:
-                self._vb.sigRangeChanged.disconnect(self._rebuild_edges_slot)
-            except Exception:
-                pass
-        self._vb.sigRangeChanged.connect(self._rebuild_edges_slot)
-        self._range_signal_connected = True
-
-        layer_color = {
-            layer.name: layer.color
-            for layer in self.gui.circuit.layers
-            if getattr(layer, 'color', None) is not None
-        }
+    def _draw_node_spots(self, positions, sensor_nodes):
+        """One scatter spot (+ centre label) per neuron. Sensors are hollow
+        circles; image nodes get an invisible zero-size spot (their thumbnail is
+        drawn separately) so hide/show works the same for every node.
+        Returns the set of image-node keys."""
+        layer_color = {layer.name: layer.color for layer in self.win.gui.circuit.layers
+                       if getattr(layer, 'color', None) is not None}
 
         # Sensors: hollow circles; palette colour used for border + activity fill.
-        self._sensor_nodes      = sensor_nodes
-        self._sensor_pens       = {}
-        self._sensor_active_rgb = {}
-        bg_rgb = self._hex_rgb(C['bg'])
-        for i, sensor in enumerate(self.gui.circuit.sensors):
+        self.drawn.sensor_pens       = {}
+        self.drawn.sensor_active_rgb = {}
+        bg_rgb = self.hex_rgb(C['bg'])
+        for i, sensor in enumerate(self.win.gui.circuit.sensors):
             col = getattr(sensor, '_viz_color', None) or _CHAN_PALETTE[i % len(_CHAN_PALETTE)]
-            if _sensor_is_lateralized(sensor, self.gui.circuit):
-                n_half = sensor.n_per_side()
-                for side in ('L', 'R'):
-                    for j in range(n_half):
-                        key = f'{sensor.name}_{side}_{j}'
-                        self._sensor_pens[key]       = pg.mkPen(col, width=2.5)
-                        self._sensor_active_rgb[key] = self._hex_rgb(col)
+            if _sensor_is_lateralized(sensor, self.win.gui.circuit):
+                keys = [f'{sensor.name}_{side}_{j}' for side in SIDES
+                        for j in range(sensor.n_per_side())]
             else:
-                for j in range(sensor.n_total or 0):
-                    key = f'{sensor.name}_{j}'
-                    self._sensor_pens[key]       = pg.mkPen(col, width=2.5)
-                    self._sensor_active_rgb[key] = self._hex_rgb(col)
+                keys = [f'{sensor.name}_{j}' for j in range(sensor.n_total or 0)]
+            for key in keys:
+                self.drawn.sensor_pens[key]       = pg.mkPen(col, width=2.5)
+                self.drawn.sensor_active_rgb[key] = self.hex_rgb(col)
 
-        r = self._NODE_R
-        _all_objs_init = {l.name: l for l in self.gui.circuit.layers}
-        _all_objs_init.update({s.name: s for s in self.gui.circuit.sensors})
-        for s in self.gui.circuit.sensors:
-            if _sensor_is_lateralized(s, self.gui.circuit):
-                _all_objs_init[f'{s.name}_L'] = s
-                _all_objs_init[f'{s.name}_R'] = s
-        # Image nodes — suppress both center spot and center text to avoid overlaying thumbnail.
-        # image_layer_keys: is_image_node layers (Leaky2dLayer, Conv2dLayer pool='none', etc).
-        # image_sensor_keys: camera sensor half nodes (lateralized or not).
-        _image_layer_keys = {
-            f'{l.name}_0' for l in self.gui.circuit.layers
-            if l.is_image_node or getattr(l, 'viz_n', None) == 1
-        }
-        _image_sensor_keys = set()
-        for _s in self.gui.circuit.sensors:
-            if _s.is_image_node:
-                if _sensor_is_lateralized(_s, self.gui.circuit):
-                    _image_sensor_keys.add(f'{_s.name}_L_0')
-                    _image_sensor_keys.add(f'{_s.name}_R_0')
-                else:
-                    _image_sensor_keys.add(f'{_s.name}_0')
-        _image_node_keys = _image_layer_keys | _image_sensor_keys
+        objs = self._node_objects()
+        # Image nodes — suppress both centre spot and centre text so they don't
+        # overlay the thumbnail.
+        image_node_keys = self._image_node_keys()
 
-        # For lateralized sensor halves, compute how many nodes the L half has so that
-        # R indices continue where L left off: sensor_L_j → sensor_j, sensor_R_j → sensor_{n_L+j}.
-        _lat_sensor_n_L = {
-            s.name: s.n_per_side()
-            for s in self.gui.circuit.sensors
-            if _sensor_is_lateralized(s, self.gui.circuit)
-        }
+        # Lateralized sensor halves are labelled continuously: sensor_L_j → sensor_j,
+        # sensor_R_j → sensor_{n_L + j}.
+        lat_sensor_n_L = {s.name: s.n_per_side() for s in self.win.gui.circuit.sensors
+                          if _sensor_is_lateralized(s, self.win.gui.circuit)}
 
+        r = self.win._NODE_R
         spots = []
         for name, (x, y) in positions.items():
             layer_name = name.rsplit('_', 1)[0]
             if name in sensor_nodes:
                 rgb   = bg_rgb
                 brush = pg.mkBrush(C['bg'])
-                pen_s = self._sensor_pens.get(name, pg.mkPen(C['primary'], width=2.5))
+                pen_s = self.drawn.sensor_pens.get(name, pg.mkPen(C['primary'], width=2.5))
             else:
                 fc    = layer_color.get(layer_name, C['primary'])
-                rgb   = self._hex_rgb(fc)
+                rgb   = self.hex_rgb(fc)
                 brush = pg.mkBrush(fc)
                 pen_s = pg.mkPen(C['dark'], width=1.5)
-            self._spot_names.append(name)
-            self._spot_base_rgb[name]  = rgb
-            self._spot_alpha[name]     = 1.0
-            self._spot_visible[name]   = True
+            self.drawn.spot_names.append(name)
+            self.drawn.spot_base_rgb[name]  = rgb
+            self.drawn.spot_alpha[name]     = 1.0
+            self.drawn.spot_visible[name]   = True
 
-            if name in _image_node_keys:
-                # Image nodes: zero-size invisible scatter spot so hide/show works
-                # identically to regular nodes.  Visual representation (circle +
-                # thumbnail + label) is built in the image drawing blocks below and
-                # stored in _image_node_items for visibility toggling in _redraw_nodes.
+            if name in image_node_keys:
                 spots.append({'pos': (x, y), 'size': 0,
                               'brush': pg.mkBrush(0, 0, 0, 0), 'pen': pg.mkPen(None),
                               'data': name})
-                continue  # no center text for image nodes
+                continue  # no centre text for image nodes
 
-            _obj_init  = _all_objs_init.get(layer_name)
-            _n_init    = getattr(_obj_init, 'n', 1) or 1
-            _is_ring_i = getattr(_obj_init, 'viz_layout', None) == 'ring'
-            _scale_i   = (self._RING_SCALE if _is_ring_i
-                          else (self._DENSE_NODE_SCALE if _n_init > 4 else 1.0))
-            spots.append({'pos': (x, y), 'size': r * _scale_i * 240,
-                          'brush': brush, 'pen': pen_s,
-                          'data': name})
-            # Lateralized sensor halves: relabel sensor_L/R_j → sensor_j / sensor_{n_L+j}.
-            _parts = name.rsplit('_', 2)
-            if (name in sensor_nodes and len(_parts) == 3
-                    and _parts[1] in ('L', 'R')):
-                _sbase, _side, _sidx = _parts
-                _j = int(_sidx)
-                if _side == 'R':
-                    _j += _lat_sensor_n_L.get(_sbase, 1)
-                display_name = f'{_sbase}_{_j}'
+            obj     = objs.get(layer_name)
+            n_obj   = getattr(obj, 'n', 1) or 1
+            is_ring = getattr(obj, 'viz_layout', None) == 'ring'
+            scale   = self.win._RING_SCALE if is_ring else (self.win._DENSE_NODE_SCALE if n_obj > 4 else 1.0)
+            spots.append({'pos': (x, y), 'size': r * scale * 240,
+                          'brush': brush, 'pen': pen_s, 'data': name})
+            parts = name.rsplit('_', 2)
+            if name in sensor_nodes and len(parts) == 3 and parts[1] in SIDES:
+                sbase, side, sidx = parts
+                j = int(sidx) + (lat_sensor_n_L.get(sbase, 1) if side == 'R' else 0)
+                display_name = f'{sbase}_{j}'
             else:
                 display_name = name
             txt = pg.TextItem(display_name, color=C['dark'], anchor=(0.5, 0.5))
             txt.setPos(x, y)
             txt.setFont(QFont('Segoe UI', 6))
             txt.setZValue(8)
-            self._plot.addItem(txt)
-            self._text_items.append(txt)
-            self._text_map[name] = txt
+            self.win._plot.addItem(txt)
+            self.drawn.text_items.append(txt)
+            self.drawn.text_map[name] = txt
 
-        self._all_scatter = pg.ScatterPlotItem()
-        self._all_scatter.setData(spots=spots)
-        self._all_scatter.setZValue(5)
-        self._all_scatter.sigClicked.connect(self._on_spots_clicked)
-        self._plot.addItem(self._all_scatter)
+        self.drawn.all_scatter = pg.ScatterPlotItem()
+        self.drawn.all_scatter.setData(spots=spots)
+        self.drawn.all_scatter.setZValue(5)
+        self.drawn.all_scatter.sigClicked.connect(self.win.editing.on_spots_clicked)
+        self.win._plot.addItem(self.drawn.all_scatter)
+        return image_node_keys
 
-        # Camera image nodes — one pg.ImageItem per CameraSensor (or two for split).
-        # W_DATA / H_DATA are display sizes in data coords, independent of sensor dims.
-        # DISP_H must match the constant used in _update_camera_nodes.
-        W_DATA, H_DATA, DISP_H = 0.15, 0.1125, 32
-        for sensor in self.gui.circuit.sensors:
-            if not isinstance(sensor, _CamSensor):
+    def _add_image_node(self, cx, cy, ring_color, item_key, w_px, label, old_image_items, fill=0):
+        """Draw one image node — a ring, a thumbnail ImageItem (reused from the
+        previous build when possible) and a label. Returns the drawn items."""
+        theta = np.linspace(0, 2 * np.pi, 65)
+        r     = np.hypot(_IMAGE_W / 2, _IMAGE_H / 2)
+        circ  = pg.PlotDataItem(
+            cx + r * np.cos(theta), cy + r * np.sin(theta),
+            pen=pg.mkPen(ring_color, width=2.0),
+            fillLevel=cy - r, brush=pg.mkBrush(C['bg']),
+        )
+        circ.setZValue(5.5)
+        self.win._plot.addItem(circ)
+        self.drawn.panel_items.append(circ)
+        img_item = old_image_items.pop(item_key, None)
+        if img_item is None:
+            img_item = pg.ImageItem()
+            img_item.setZValue(6)
+            img_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+            self.win._plot.addItem(img_item, ignoreBounds=True)
+        img_item.setImage(np.full((_IMAGE_DISP_H, max(w_px, 1), 3), fill, dtype=np.uint8),
+                          axisOrder='row-major')
+        rect = (cx - _IMAGE_W / 2, cy - _IMAGE_H / 2, _IMAGE_W, _IMAGE_H)
+        img_item.setRect(*rect)
+        self.drawn.camera_items[item_key] = img_item
+        self.drawn.camera_rects[item_key] = rect
+        lbl = pg.TextItem(label, color=C['dark'], anchor=(0.5, 1.0))
+        lbl.setPos(cx, cy + r + 0.01)
+        lbl.setFont(QFont('Segoe UI', 6))
+        lbl.setZValue(8)
+        self.win._plot.addItem(lbl)
+        self.drawn.text_items.append(lbl)
+        return [circ, img_item, lbl]
+
+    def _draw_camera_nodes(self, positions, old_image_items):
+        """One image node per camera — two for a lateralized camera (one per half)."""
+        for sensor in self.win.gui.circuit.sensors:
+            if not sensor.is_camera:
                 continue
+            col = getattr(sensor, '_viz_color', None) or '#888888'
             if getattr(sensor, 'lateralized', False):
-                half = sensor.width // 2
-                ovl  = getattr(sensor, 'overlap', 0)
-                slices = {
-                    'L': (0,          int(np.clip(half + ovl, 0, sensor.width))),
-                    'R': (int(np.clip(half - ovl, 0, sensor.width)), sensor.width),
-                }
-                for side, (px0, px1) in slices.items():
+                for idx, side in enumerate(SIDES):
                     node_key = f'{sensor.name}_{side}_0'
                     pos = positions.get(node_key)
                     if pos is None:
                         continue
-                    cx, cy = pos
-                    _theta = np.linspace(0, 2 * np.pi, 65)
-                    _r    = np.hypot(W_DATA / 2, H_DATA / 2)
-                    _col  = getattr(sensor, '_viz_color', None) or '#888888'
-                    _circ = pg.PlotDataItem(
-                        cx + _r * np.cos(_theta), cy + _r * np.sin(_theta),
-                        pen=pg.mkPen(_col, width=2.0),
-                        fillLevel=cy - _r, brush=pg.mkBrush(C['bg']),
-                    )
-                    _circ.setZValue(5.5)
-                    self._plot.addItem(_circ)
-                    self._panel_items.append(_circ)
-                    w_px = max(px1 - px0, 1)
-                    key = f'{sensor.name}_{side}'
-                    img_item = _old_cam_items.pop(key, None)
-                    if img_item is None:
-                        img_item = pg.ImageItem()
-                        img_item.setZValue(6)
-                        img_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
-                        self._plot.addItem(img_item, ignoreBounds=True)
-                    blank = np.zeros((DISP_H, w_px, 3), dtype=np.uint8)
-                    img_item.setImage(blank, axisOrder='row-major')
-                    cam_rect = (cx - W_DATA / 2, cy - H_DATA / 2, W_DATA, H_DATA)
-                    img_item.setRect(*cam_rect)
-                    self._camera_items[key] = img_item
-                    self._camera_rects[key] = cam_rect
-                    _idx  = 0 if side == 'L' else 1
-                    _dlbl = f'{sensor.name}_{_idx}'
-                    lbl = pg.TextItem(_dlbl, color=C['dark'], anchor=(0.5, 1.0))
-                    lbl.setPos(cx, cy + _r + 0.01)
-                    lbl.setFont(QFont('Segoe UI', 6))
-                    lbl.setZValue(8)
-                    self._plot.addItem(lbl)
-                    self._text_items.append(lbl)
-                    self._image_node_items[node_key] = [_circ, img_item, lbl]
+                    self.drawn.image_node_items[node_key] = self._add_image_node(
+                        *pos, col, f'{sensor.name}_{side}', sensor.half_width(side),
+                        f'{sensor.name}_{idx}', old_image_items)
             else:
                 pos = positions.get(f'{sensor.name}_0')
                 if pos is None:
                     continue
-                cx, cy = pos
-                _theta = np.linspace(0, 2 * np.pi, 65)
-                _r    = np.hypot(W_DATA / 2, H_DATA / 2)
-                _col  = getattr(sensor, '_viz_color', None) or '#888888'
-                _circ = pg.PlotDataItem(
-                    cx + _r * np.cos(_theta), cy + _r * np.sin(_theta),
-                    pen=pg.mkPen(_col, width=2.0),
-                    fillLevel=cy - _r, brush=pg.mkBrush(C['bg']),
-                )
-                _circ.setZValue(5.5)
-                self._plot.addItem(_circ)
-                self._panel_items.append(_circ)
-                key = sensor.name
-                img_item = _old_cam_items.pop(key, None)
-                if img_item is None:
-                    img_item = pg.ImageItem()
-                    img_item.setZValue(6)
-                    img_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
-                    self._plot.addItem(img_item, ignoreBounds=True)
-                blank = np.zeros((DISP_H, sensor.width, 3), dtype=np.uint8)
-                img_item.setImage(blank, axisOrder='row-major')
-                cam_rect = (cx - W_DATA / 2, cy - H_DATA / 2, W_DATA, H_DATA)
-                img_item.setRect(*cam_rect)
-                self._camera_items[key] = img_item
-                self._camera_rects[key] = cam_rect
-                lbl = pg.TextItem(sensor.name, color=C['dark'], anchor=(0.5, 1.0))
-                lbl.setPos(cx, cy + _r + 0.01)
-                lbl.setFont(QFont('Segoe UI', 6))
-                lbl.setZValue(8)
-                self._plot.addItem(lbl)
-                self._text_items.append(lbl)
-                self._image_node_items[f'{sensor.name}_0'] = [_circ, img_item, lbl]
+                self.drawn.image_node_items[f'{sensor.name}_0'] = self._add_image_node(
+                    *pos, col, sensor.name, sensor.width, sensor.name, old_image_items)
 
-        # Leaky2dLayer image nodes — displayed like cameras (single image thumbnail).
-        from neurons import Leaky2dLayer as _L2d
-        for lyr in self.gui.circuit.layers:
-            if not isinstance(lyr, _L2d):
+    def _draw_image_layer_nodes(self, positions, old_image_items):
+        """Image layers (is_image_node: Leaky2dLayer; Conv2dLayer / Reichardt2dLayer
+        with pool='none') — displayed like cameras, a single thumbnail each."""
+        for lyr in self.win.gui.circuit.layers:
+            if not lyr.is_image_node:
                 continue
             pos = positions.get(f'{lyr.name}_0')
             if pos is None:
                 continue
             cx, cy = pos
-            _theta = np.linspace(0, 2 * np.pi, 65)
-            _r     = np.hypot(W_DATA / 2, H_DATA / 2)
-            _col   = getattr(lyr, 'color', None) or '#888888'
-            _circ  = pg.PlotDataItem(
-                cx + _r * np.cos(_theta), cy + _r * np.sin(_theta),
-                pen=pg.mkPen(_col, width=2.0),
-                fillLevel=cy - _r, brush=pg.mkBrush(C['bg']),
-            )
-            _circ.setZValue(5.5)
-            self._plot.addItem(_circ)
-            self._panel_items.append(_circ)
-            w_px = lyr.frame_w or max(1, int((lyr.n // max(lyr.in_ch, 1)) ** 0.5))
-            key  = lyr.name
-            img_item = _old_cam_items.pop(key, None)
-            if img_item is None:
-                img_item = pg.ImageItem()
-                img_item.setZValue(6)
-                img_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
-                self._plot.addItem(img_item, ignoreBounds=True)
-            blank = np.zeros((DISP_H, w_px, 3), dtype=np.uint8)
-            img_item.setImage(blank, axisOrder='row-major')
-            cam_rect = (cx - W_DATA / 2, cy - H_DATA / 2, W_DATA, H_DATA)
-            img_item.setRect(*cam_rect)
-            self._camera_items[key] = img_item
-            self._camera_rects[key] = cam_rect
-            _dlbl = (lyr.name[:-2] + ('_0' if lyr.name.endswith('_L') else '_1')
-                     if lyr.name.endswith(('_L', '_R')) else lyr.name)
-            lbl = pg.TextItem(_dlbl, color=C['dark'], anchor=(0.5, 1.0))
-            lbl.setPos(cx, cy + _r + 0.01)
-            lbl.setFont(QFont('Segoe UI', 6))
-            lbl.setZValue(8)
-            self._plot.addItem(lbl)
-            self._text_items.append(lbl)
-            _node_items = [_circ, img_item, lbl]
+            # Placeholder width until the first frame arrives.
+            in_ch = max(getattr(lyr, 'in_ch', 1) or 1, 1)
+            w_px  = getattr(lyr, 'frame_w', None) or max(1, int(((lyr.n or 1) // in_ch) ** 0.5))
+            side  = side_of(lyr.name)
+            label = base_name(lyr.name) + ('_0' if side == 'L' else '_1') if side else lyr.name
+            # Signed outputs (e.g. Reichardt correlation maps) start at mid-grey.
+            node_items = self._add_image_node(
+                cx, cy, getattr(lyr, 'color', None) or '#888888', lyr.name, w_px, label,
+                old_image_items, fill=127 if lyr.signed_image else 0)
             if getattr(lyr, 'output_mode', 'none') == 'derivative':
-                _dot_y = cy + (H_DATA / 2 + _r) / 2
-                _dot = pg.ScatterPlotItem(x=[cx], y=[_dot_y], size=6, symbol='o',
-                                          brush=pg.mkBrush(C['dark']), pen=pg.mkPen(None))
-                _dot.setZValue(7)
-                self._plot.addItem(_dot)
-                self._panel_items.append(_dot)
-                _node_items.append(_dot)
-            self._image_node_items[f'{lyr.name}_0'] = _node_items
+                r = np.hypot(_IMAGE_W / 2, _IMAGE_H / 2)
+                dot = pg.ScatterPlotItem(x=[cx], y=[cy + (_IMAGE_H / 2 + r) / 2], size=6,
+                                         symbol='o', brush=pg.mkBrush(C['dark']), pen=pg.mkPen(None))
+                dot.setZValue(7)
+                self.win._plot.addItem(dot)
+                self.drawn.panel_items.append(dot)
+                node_items.append(dot)
+            self.drawn.image_node_items[f'{lyr.name}_0'] = node_items
 
-        # Conv2dLayer pool='none' image nodes — displayed like cameras (single thumbnail).
-        from neurons import Conv2dLayer as _Conv2d
-        for lyr in self.gui.circuit.layers:
-            if not isinstance(lyr, _Conv2d) or getattr(lyr, 'pool', '') != 'none':
-                continue
-            pos = positions.get(f'{lyr.name}_0')
-            if pos is None:
-                continue
-            cx, cy = pos
-            _theta = np.linspace(0, 2 * np.pi, 65)
-            _r     = np.hypot(W_DATA / 2, H_DATA / 2)
-            _col   = getattr(lyr, 'color', None) or '#888888'
-            _circ  = pg.PlotDataItem(
-                cx + _r * np.cos(_theta), cy + _r * np.sin(_theta),
-                pen=pg.mkPen(_col, width=2.0),
-                fillLevel=cy - _r, brush=pg.mkBrush(C['bg']),
-            )
-            _circ.setZValue(5.5)
-            self._plot.addItem(_circ)
-            self._panel_items.append(_circ)
-            w_px = getattr(lyr, 'frame_w', None) or 1
-            key  = lyr.name
-            img_item = _old_cam_items.pop(key, None)
-            if img_item is None:
-                img_item = pg.ImageItem()
-                img_item.setZValue(6)
-                img_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
-                self._plot.addItem(img_item, ignoreBounds=True)
-            blank = np.zeros((DISP_H, max(w_px, 1), 3), dtype=np.uint8)
-            img_item.setImage(blank, axisOrder='row-major')
-            cam_rect = (cx - W_DATA / 2, cy - H_DATA / 2, W_DATA, H_DATA)
-            img_item.setRect(*cam_rect)
-            self._camera_items[key] = img_item
-            self._camera_rects[key] = cam_rect
-            _dlbl = (lyr.name[:-2] + ('_0' if lyr.name.endswith('_L') else '_1')
-                     if lyr.name.endswith(('_L', '_R')) else lyr.name)
-            lbl = pg.TextItem(_dlbl, color=C['dark'], anchor=(0.5, 1.0))
-            lbl.setPos(cx, cy + _r + 0.01)
-            lbl.setFont(QFont('Segoe UI', 6))
-            lbl.setZValue(8)
-            self._plot.addItem(lbl)
-            self._text_items.append(lbl)
-            self._image_node_items[f'{lyr.name}_0'] = [_circ, img_item, lbl]
-
-        # Reichardt2dLayer pool='none' image nodes — single thumbnail showing spatial correlation map.
-        from neurons import Reichardt2dLayer as _R2d
-        for lyr in self.gui.circuit.layers:
-            if not isinstance(lyr, _R2d) or getattr(lyr, 'pool', '') != 'none':
-                continue
-            pos = positions.get(f'{lyr.name}_0')
-            if pos is None:
-                continue
-            cx, cy = pos
-            _theta = np.linspace(0, 2 * np.pi, 65)
-            _r     = np.hypot(W_DATA / 2, H_DATA / 2)
-            _col   = getattr(lyr, 'color', None) or '#888888'
-            _circ  = pg.PlotDataItem(
-                cx + _r * np.cos(_theta), cy + _r * np.sin(_theta),
-                pen=pg.mkPen(_col, width=2.0),
-                fillLevel=cy - _r, brush=pg.mkBrush(C['bg']),
-            )
-            _circ.setZValue(5.5)
-            self._plot.addItem(_circ)
-            self._panel_items.append(_circ)
-            w_px = getattr(lyr, 'frame_w', None) or 1
-            key  = lyr.name
-            img_item = _old_cam_items.pop(key, None)
-            if img_item is None:
-                img_item = pg.ImageItem()
-                img_item.setZValue(6)
-                img_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
-                self._plot.addItem(img_item, ignoreBounds=True)
-            # Correlation output is signed — initialise to mid-grey.
-            blank = np.full((DISP_H, max(w_px, 1), 3), 127, dtype=np.uint8)
-            img_item.setImage(blank, axisOrder='row-major')
-            cam_rect = (cx - W_DATA / 2, cy - H_DATA / 2, W_DATA, H_DATA)
-            img_item.setRect(*cam_rect)
-            self._camera_items[key] = img_item
-            self._camera_rects[key] = cam_rect
-            _dlbl = (lyr.name[:-2] + ('_0' if lyr.name.endswith('_L') else '_1')
-                     if lyr.name.endswith(('_L', '_R')) else lyr.name)
-            lbl = pg.TextItem(_dlbl, color=C['dark'], anchor=(0.5, 1.0))
-            lbl.setPos(cx, cy + _r + 0.01)
-            lbl.setFont(QFont('Segoe UI', 6))
-            lbl.setZValue(8)
-            self._plot.addItem(lbl)
-            self._text_items.append(lbl)
-            self._image_node_items[f'{lyr.name}_0'] = [_circ, img_item, lbl]
-
-        # Remove ImageItems for sensors/layers that are no longer in the circuit.
-        for item in _old_cam_items.values():
+    def _remove_stale_image_items(self, old_image_items):
+        """Remove ImageItems for sensors/layers that are no longer in the circuit."""
+        for item in old_image_items.values():
             try:
-                self._vb.removeItem(item)
+                self.win._vb.removeItem(item)
             except Exception:
                 pass
             try:
@@ -1161,86 +1011,76 @@ class _RenderMixin:
             except Exception:
                 pass
 
-        # Derivative node markers: positions stored here; spots are updated
-        # dynamically in _redraw_nodes using viewPixelSize() so the dot always
-        # sits at the north of the node circle regardless of zoom level.
-        layer_map = {l.name: l for l in self.gui.circuit.layers}
-        self._deriv_node_positions = [
+    def _prepare_derivative_markers(self, positions, image_node_keys):
+        """Derivative node markers: positions stored here; spots are updated
+        dynamically in _redraw_nodes using viewPixelSize() so the dot always
+        sits at the north of the node circle regardless of zoom level."""
+        layer_map = {l.name: l for l in self.win.gui.circuit.layers}
+        self.drawn.deriv_node_positions = [
             (x, y)
             for name, (x, y) in positions.items()
             if getattr(layer_map.get(name.rsplit('_', 1)[0]), 'output_mode', 'none') == 'derivative'
-            and name not in _image_node_keys
+            and name not in image_node_keys
         ]
-        self._deriv_scatter = pg.ScatterPlotItem()
-        self._deriv_scatter.setZValue(7)
-        self._plot.addItem(self._deriv_scatter)
+        self.drawn.deriv_scatter = pg.ScatterPlotItem()
+        self.drawn.deriv_scatter.setZValue(7)
+        self.win._plot.addItem(self.drawn.deriv_scatter)
 
-        self._mod_colors = {}
-        for obj in list(self.gui.circuit.layers) + list(self.gui.circuit.sensors):
+    def _prepare_neuromod_rings(self):
+        """Neuromodulator colours, and which nodes send / receive each signal
+        (drawn as rings by the refresh timer)."""
+        self.drawn.mod_colors = {}
+        for obj in list(self.win.gui.circuit.layers) + list(self.win.gui.circuit.sensors):
             nt = getattr(obj, 'neuromodulator_transmitter', None)
             nc = getattr(obj, 'neuromodulator_color', None)
             if nt and nc:
-                self._mod_colors[nt] = self._hex_rgb(nc)
-        self._mod_pens = {
+                self.drawn.mod_colors[nt] = self.hex_rgb(nc)
+        self.drawn.mod_pens = {
             nt: pg.mkPen(QColor(int(rgb[0]*255), int(rgb[1]*255), int(rgb[2]*255)), width=4)
-            for nt, rgb in self._mod_colors.items()
+            for nt, rgb in self.drawn.mod_colors.items()
         }
 
-        # Build source-node and receiver-node lookup tables; ring scatter draws both
-        all_objs = {l.name: l for l in self.gui.circuit.layers}
-        all_objs.update({s.name: s for s in self.gui.circuit.sensors})
-        for s in self.gui.circuit.sensors:
-            if _sensor_is_lateralized(s, self.gui.circuit):
-                all_objs[f'{s.name}_L'] = s
-                all_objs[f'{s.name}_R'] = s
-
-        self._src_nodes = {}
-        self._rcv_nodes = {}
-        for node_key in self._spot_names:
-            lname = node_key.rsplit('_', 1)[0]
-            obj   = all_objs.get(lname)
+        objs = self._node_objects()
+        self.drawn.src_nodes = {}
+        self.drawn.rcv_nodes = {}
+        for node_key in self.drawn.spot_names:
+            obj = objs.get(node_key.rsplit('_', 1)[0])
             if obj is None:
                 continue
             nt = getattr(obj, 'neuromodulator_transmitter', None)
-            if nt and nt in self._mod_colors:
-                self._src_nodes[node_key] = nt
-                if nt not in self._wave_phase:
-                    self._wave_phase[nt] = 0.0
-            rcv = [row[0] for row in getattr(obj, 'modulators', [])
-                   if row[0] in self._mod_colors]
+            if nt and nt in self.drawn.mod_colors:
+                self.drawn.src_nodes[node_key] = nt
+                if nt not in self.drawn.wave_phase:
+                    self.drawn.wave_phase[nt] = 0.0
+            rcv = [row[0] for row in getattr(obj, 'modulators', []) if row[0] in self.drawn.mod_colors]
             if rcv:
-                self._rcv_nodes[node_key] = rcv
+                self.drawn.rcv_nodes[node_key] = rcv
 
-        self._ring_scatter = pg.ScatterPlotItem()
-        self._ring_scatter.setZValue(4.5)
-        self._plot.addItem(self._ring_scatter)
+        self.drawn.ring_scatter = pg.ScatterPlotItem()
+        self.drawn.ring_scatter.setZValue(4.5)
+        self.win._plot.addItem(self.drawn.ring_scatter)
 
-        # Sourced from _full_positions (all z-levels combined), not the just-drawn
-        # `positions`, so scrubbing the z-cut slider — which only changes which subset
-        # of the network is currently shown, not the network itself — doesn't rescale
-        # the view. _node_container_map only knows about the currently-drawn `positions`, so a
-        # node that's part of _full_positions but not currently z-cut-visible naturally
-        # falls through the `not in self._hidden_containers` check (`.get` → None) and still
-        # counts toward the fit range, which is what's wanted. Explicitly hidden columns
-        # (Columns panel) are unaffected — those still shrink the view as before.
-        ref_positions = getattr(self, '_full_positions', None) or positions
-        if ref_positions:
-            vis_pos = [p for nk, p in ref_positions.items()
-                       if self._node_container_map.get(nk) not in self._hidden_containers]
-            use = vis_pos if vis_pos else list(ref_positions.values())
-            xs = [p[0] for p in use]
-            ys = [p[1] for p in use]
-            self._plot.setRange(
-                xRange=(min(xs) - 0.35, max(xs) + 0.25),
-                yRange=(min(ys) - 0.30, max(ys) + 0.40),
-                padding=0,
-            )
-        else:
-            self._plot.setRange(xRange=(-0.25, 1.25), yRange=(-0.30, 1.40), padding=0)
-
-        self._vb.disableAutoRange()
-        self._apply_group_visibility()
-        self._draw_notes()
+    def _fit_view(self, positions):
+        """Fit the view to the network. Sourced from _full_positions (all z-levels
+        combined), not the just-drawn `positions`, so scrubbing the z-cut slider —
+        which only changes which subset is shown — doesn't rescale the view.
+        Nodes not currently z-cut-visible fall through the hidden-column check
+        (`.get` → None) and still count toward the fit; explicitly hidden columns
+        (Columns panel) still shrink the view."""
+        ref_positions = self.win._lay.full_positions or positions
+        if not ref_positions:
+            self.win._plot.setRange(xRange=(-0.25, 1.25), yRange=(-0.30, 1.40), padding=0)
+            return
+        vis_pos = [p for nk, p in ref_positions.items()
+                   if self.win._lay.node_container_map.get(nk) not in self.win._hidden_containers]
+        use = vis_pos if vis_pos else list(ref_positions.values())
+        xs = [p[0] for p in use]
+        ys = [p[1] for p in use]
+        self.win._plot.setRange(
+            xRange=(min(xs) - 0.35, max(xs) + 0.25),
+            yRange=(min(ys) - 0.30, max(ys) + 0.40),
+            padding=0,
+        )
 
     def _panel_label_text(self, container):
         """Text for a column panel's title: an auto-title of whoever currently
@@ -1248,18 +1088,18 @@ class _RenderMixin:
         "Set label..." nickname if one has been set; else the name of
         whichever occupant was added to the circuit first, so a fresh
         container starts out captioned instead of blank."""
-        ghost_count = getattr(self, '_ghost_count', {})
-        container_winner_names = getattr(self, '_container_winner_names', {})
+        ghost_count = self.win._lay.ghost_count
+        container_winner_names = self.win._lay.container_winner_names
         if ghost_count.get(container, 0) > 0 and container_winner_names.get(container):
             return ', '.join(container_winner_names[container])
-        label = self._container_labels.get(self._container_key(container))
+        label = self.win._container_labels.get(self.win.layout_engine.container_key(container))
         if label:
             return label
-        return self._first_occupant_name(container)
+        return self.win.layout_engine.first_occupant_name(container)
 
     def _ghost_display_name(self, name):
         """A ghost's own container label if it has one, else its raw name."""
-        return self._container_labels.get(name, name)
+        return self.win._container_labels.get(name, name)
 
     def _isolated_height_extent(self, n):
         """Y-extent (min, max) an object with n neurons would have if it were the
@@ -1267,18 +1107,18 @@ class _RenderMixin:
         on y=0.5) — used to estimate a hidden container's height when it isn't
         currently active, so its real neuron positions aren't available."""
         n = max(1, n)
-        spacing = min(2 * self._NODE_R, 1.0 / n)
+        spacing = min(2 * self.win._NODE_R, 1.0 / n)
         half = (n - 1) * spacing / 2.0
         return 0.5 - half, 0.5 + half
 
-    def _span_envelope_ys(self, container_data, start_col, span):
+    def span_envelope_ys(self, container_data, start_col, span):
         """All y-values spanned by native columns [start_col, start_col+span-1]:
         the real positions of whichever object currently wins each column, or an
         isolated-height estimate (from its raw neuron count) for one that's
         currently hidden — so a container spanning several columns gets a height
         that reflects everything it covers, not just whichever single native
         column it happens to be rendered/anchored from."""
-        native_col_n = getattr(self, '_native_col_n', {})
+        native_col_n = self.win._lay.native_col_n
         ys = []
         for off in range(span):
             col = start_col + off
@@ -1292,16 +1132,16 @@ class _RenderMixin:
         return ys
 
     def _draw_panels(self, positions, groups):
-        r, px = self._NODE_R, self._PAD_X
+        r, px = self.win._NODE_R, self.win._PAD_X
         py    = 0.04
         container_data = defaultdict(lambda: {'ys': [], 'types': set(), 'x': 0.0})
         for container_type, _, container_nodes, x_col, container, *_ in groups:
             ys = [positions[n][1] for n in container_nodes if n in positions]
             container_data[container]['ys'].extend(ys)
             container_data[container]['types'].add(container_type)
-            container_data[container]['x'] = self._container_x_map.get(container, x_col)
+            container_data[container]['x'] = self.win._lay.container_x_map.get(container, x_col)
 
-        ghosts_by_container = getattr(self, '_ghosts_by_container', {})
+        ghosts_by_container = self.win._lay.ghosts_by_container
 
         _GHOST_DX = 0.022   # rightward shift per ghost step (data units) — kept tight
         _GHOST_DY = 0.070   # upward shift per ghost step  — room for its own label
@@ -1311,13 +1151,13 @@ class _RenderMixin:
                 continue
             x_col    = data['x']
             container_type = 'sensor' if 'sensor' in data['types'] else 'layer'
-            fc_s, ec_s = self._PANEL_CFG[container_type]
-            _span     = getattr(self, '_container_span_map', {}).get(container, 1)
-            _x_unit   = getattr(self, '_x_unit', 1.0)
+            fc_s, ec_s = self.win._PANEL_CFG[container_type]
+            _span     = self.win._lay.container_span_map.get(container, 1)
+            _x_unit   = self.win._lay.x_unit
             _he       = (_span - 1) / 2.0 * _x_unit   # extra half-width each side
             # Envelope over every column this panel spans, not just its own —
             # a wide winner should be at least as tall as whatever it's hiding.
-            ys = self._span_envelope_ys(container_data, container, _span) or data['ys']
+            ys = self.span_envelope_ys(container_data, container, _span) or data['ys']
             rect_bot = min(ys) - r - py
             rect_top = max(ys) + r + py
 
@@ -1349,7 +1189,7 @@ class _RenderMixin:
                     # A wide ghost (span>1) gets its own height envelope across
                     # everything IT covers, same as a wide real winner does above.
                     if entry['span'] > 1:
-                        g_ys = self._span_envelope_ys(container_data, nc, entry['span'])
+                        g_ys = self.span_envelope_ys(container_data, nc, entry['span'])
                         g_rect_bot = min(g_ys) - r - py if g_ys else rect_bot
                         g_rect_top = max(g_ys) + r + py if g_ys else rect_top
                     else:
@@ -1365,17 +1205,17 @@ class _RenderMixin:
                         fillLevel=g_rect_bot + gy,
                     )
                     ghost.setZValue(0)
-                    self._plot.addItem(ghost)
-                    self._panel_items.append(ghost)
+                    self.win._plot.addItem(ghost)
+                    self.drawn.panel_items.append(ghost)
 
                     ghost_lbl = pg.TextItem(self._ghost_display_name(entry['name']),
                                             anchor=(0.0, 0.0), color=QColor(ec_s))
                     ghost_lbl.setFont(_small_bold_font())
                     ghost_lbl.setPos(g_x_col - r - px - g_he + 0.003,
-                                     g_rect_top + gy + self._LABEL_TOP_MARGIN)
+                                     g_rect_top + gy + self.win._LABEL_TOP_MARGIN)
                     ghost_lbl.setZValue(0.5)
-                    self._plot.addItem(ghost_lbl)
-                    self._panel_items.append(ghost_lbl)
+                    self.win._plot.addItem(ghost_lbl)
+                    self.drawn.panel_items.append(ghost_lbl)
 
             rect_item = pg.PlotDataItem(
                 [x_col - r - px - _he, x_col + r + px + _he,
@@ -1387,9 +1227,9 @@ class _RenderMixin:
                 fillLevel=rect_bot,
             )
             rect_item.setZValue(1)
-            self._plot.addItem(rect_item)
-            self._panel_items.append(rect_item)
-            self._panel_rect_map[container] = rect_item
+            self.win._plot.addItem(rect_item)
+            self.drawn.panel_items.append(rect_item)
+            self.drawn.panel_rect_map[container] = rect_item
 
             # Columns shared across z-levels auto-title from whoever currently
             # wins — a fixed column-position nickname would go stale the moment
@@ -1400,35 +1240,32 @@ class _RenderMixin:
                 lbl_item = pg.TextItem(label, anchor=(0.0, 0.0),
                                        color=QColor(ec_s))
                 lbl_item.setFont(_small_bold_font())
-                lbl_item.setPos(x_col - r - px - _he + 0.003, rect_top + self._LABEL_TOP_MARGIN)
+                lbl_item.setPos(x_col - r - px - _he + 0.003, rect_top + self.win._LABEL_TOP_MARGIN)
                 lbl_item.setZValue(10)
-                self._plot.addItem(lbl_item)
-                self._container_label_items[container] = lbl_item
+                self.win._plot.addItem(lbl_item)
+                self.drawn.container_label_items[container] = lbl_item
 
-            note_text = self._container_notes.get(self._container_key(container), '')
+            note_text = self.win._container_notes.get(self.win.layout_engine.container_key(container), '')
             if note_text:
-                icon_x = x_col + r + px + _he - self._CONTAINER_NOTE_PAD
-                icon_y = rect_bot + self._CONTAINER_NOTE_PAD
+                icon_x = x_col + r + px + _he - self.win._CONTAINER_NOTE_PAD
+                icon_y = rect_bot + self.win._CONTAINER_NOTE_PAD
                 note_items = self._make_container_note_items(icon_x, icon_y)
                 for item in note_items:
-                    self._plot.addItem(item)
-                self._container_note_items[container]    = note_items
-                self._container_note_icon_pos[container] = (icon_x, icon_y)
-
-    _NOTE_FILL   = '#F5E08A'
-    _NOTE_BORDER = '#C8A030'
+                    self.win._plot.addItem(item)
+                self.drawn.container_note_items[container]    = note_items
+                self.drawn.container_note_icon_pos[container] = (icon_x, icon_y)
 
     def _make_container_note_items(self, x, y):
         """Build the small note-glyph items for a container — same colours as
         a collapsed sticky note, just smaller and anchored to a fixed point
         (the container's bottom-right corner) instead of being draggable."""
         icon = pg.ScatterPlotItem(
-            x=[x], y=[y], size=self._CONTAINER_NOTE_ICON_PX * 2, symbol='o',
+            x=[x], y=[y], size=self.win._CONTAINER_NOTE_ICON_PX * 2, symbol='o',
             pen=pg.mkPen(self._NOTE_BORDER, width=1.2),
             brush=pg.mkBrush(self._NOTE_FILL),
         )
         icon.setZValue(20)
-        label_font = QFont(self._NOTE_FONT_FAMILY, self._NOTE_FONT_SIZE - 1)
+        label_font = QFont(self.win._NOTE_FONT_FAMILY, self.win._NOTE_FONT_SIZE - 1)
         label_font.setBold(True)
         label = pg.TextItem('N', anchor=(0.5, 0.5), color=self._NOTE_BORDER)
         label.setFont(label_font)
@@ -1436,52 +1273,52 @@ class _RenderMixin:
         label.setZValue(21)
         return [icon, label]
 
-    def _refresh_container_note(self, container):
+    def refresh_container_note(self, container):
         """Redraw a single container's note glyph in place after an edit —
         mirrors _refresh_container_label."""
-        old = self._container_note_items.pop(container, None)
-        self._container_note_icon_pos.pop(container, None)
+        old = self.drawn.container_note_items.pop(container, None)
+        self.drawn.container_note_icon_pos.pop(container, None)
         if old is not None:
             for item in old:
                 try:
-                    self._plot.removeItem(item)
+                    self.win._plot.removeItem(item)
                 except Exception:
                     pass
-        note_text = self._container_notes.get(self._container_key(container), '')
+        note_text = self.win._container_notes.get(self.win.layout_engine.container_key(container), '')
         if not note_text:
             return
-        r, px = self._NODE_R, self._PAD_X
+        r, px = self.win._NODE_R, self.win._PAD_X
         py = 0.04
-        container_nodes = [nk for nk, c in self._node_container_map.items() if c == container]
+        container_nodes = [nk for nk, c in self.win._lay.node_container_map.items() if c == container]
         if not container_nodes:
             return
-        x_col = self._container_x_map.get(container, 0.5)
-        col_ys = [self._positions[nk][1] for nk in container_nodes if nk in self._positions]
+        x_col = self.win._lay.container_x_map.get(container, 0.5)
+        col_ys = [self.win._lay.positions[nk][1] for nk in container_nodes if nk in self.win._lay.positions]
         if not col_ys:
             return
         rect_bot = min(col_ys) - r - py
-        _span    = getattr(self, '_container_span_map', {}).get(container, 1)
-        _x_unit  = getattr(self, '_x_unit', 1.0)
+        _span    = self.win._lay.container_span_map.get(container, 1)
+        _x_unit  = self.win._lay.x_unit
         _he      = (_span - 1) / 2.0 * _x_unit
-        icon_x = x_col + r + px + _he - self._CONTAINER_NOTE_PAD
-        icon_y = rect_bot + self._CONTAINER_NOTE_PAD
+        icon_x = x_col + r + px + _he - self.win._CONTAINER_NOTE_PAD
+        icon_y = rect_bot + self.win._CONTAINER_NOTE_PAD
         note_items = self._make_container_note_items(icon_x, icon_y)
         for item in note_items:
-            self._plot.addItem(item)
-        self._container_note_items[container]    = note_items
-        self._container_note_icon_pos[container] = (icon_x, icon_y)
+            self.win._plot.addItem(item)
+        self.drawn.container_note_items[container]    = note_items
+        self.drawn.container_note_icon_pos[container] = (icon_x, icon_y)
 
     def _make_note_items(self, note):
         """Build the graphics items for one note (collapsed icon, or box+text+toggle)."""
-        note_font = QFont(self._NOTE_FONT_FAMILY, self._NOTE_FONT_SIZE)
+        note_font = QFont(self.win._NOTE_FONT_FAMILY, self.win._NOTE_FONT_SIZE)
         if note.collapsed:
             icon = pg.ScatterPlotItem(
-                x=[note.x], y=[note.y], size=self._NOTE_ICON_PX * 2, symbol='o',
+                x=[note.x], y=[note.y], size=self.win._NOTE_ICON_PX * 2, symbol='o',
                 pen=pg.mkPen(self._NOTE_BORDER, width=1.5),
                 brush=pg.mkBrush(self._NOTE_FILL),
             )
             icon.setZValue(20)
-            label_font = QFont(self._NOTE_FONT_FAMILY, self._NOTE_FONT_SIZE)
+            label_font = QFont(self.win._NOTE_FONT_FAMILY, self.win._NOTE_FONT_SIZE)
             label_font.setBold(True)
             label = pg.TextItem('N', anchor=(0.5, 0.5), color=self._NOTE_BORDER)
             label.setFont(label_font)
@@ -1489,7 +1326,7 @@ class _RenderMixin:
             label.setZValue(21)
             items = [icon, label]
         else:
-            w, h = self._note_size(note)
+            w, h = self.note_size(note)
             x0, x1 = note.x, note.x + w
             y0, y1 = note.y - h, note.y
             rect = pg.PlotDataItem(
@@ -1500,10 +1337,10 @@ class _RenderMixin:
             )
             rect.setZValue(20)
 
-            txt = pg.TextItem('\n'.join(self._note_lines(note)),
+            txt = pg.TextItem('\n'.join(self.note_lines(note)),
                               anchor=(0.0, 0.0), color=C['dark'])
             txt.setFont(note_font)
-            txt.setPos(x0 + self._NOTE_PAD, y1 - self._NOTE_PAD)
+            txt.setPos(x0 + self.win._NOTE_PAD, y1 - self.win._NOTE_PAD)
             txt.setZValue(21)
 
             toggle = pg.TextItem('−', anchor=(1.0, 0.0), color=self._NOTE_BORDER)
@@ -1514,7 +1351,7 @@ class _RenderMixin:
             items = [rect, txt, toggle]
 
         for item in items:
-            item.setVisible(self._notes_visible)
+            item.setVisible(self.win._notes_visible)
         return items
 
     def _draw_notes(self):
@@ -1523,82 +1360,74 @@ class _RenderMixin:
         A single malformed/broken note must never take down the rest of the
         rebuild (edge repositioning, channel rebuild, etc. all run *after*
         this in build() and would otherwise silently never happen again)."""
-        self._note_items    = []
-        self._note_item_map = {}
-        for note in self.gui.circuit.notes:
+        self.drawn.note_items    = []
+        self.drawn.note_item_map = {}
+        for note in self.win.gui.circuit.notes:
             try:
                 items = self._make_note_items(note)
             except Exception as e:
                 print(f"[NetworkViz] Failed to draw note {note!r}: {e}")
                 continue
             for item in items:
-                self._plot.addItem(item)
-            self._note_items.extend(items)
-            self._note_item_map[id(note)] = items
+                self.win._plot.addItem(item)
+            self.drawn.note_items.extend(items)
+            self.drawn.note_item_map[id(note)] = items
 
-    def _redraw_note(self, note):
+    def redraw_note(self, note):
         """Redraw a single note in place — used for drag/collapse updates so
         we don't pay for a full build() on every mouse-move frame."""
-        old_items = self._note_item_map.pop(id(note), [])
+        old_items = self.drawn.note_item_map.pop(id(note), [])
         for item in old_items:
             try:
-                self._plot.removeItem(item)
+                self.win._plot.removeItem(item)
             except Exception:
                 pass
             try:
-                self._note_items.remove(item)
+                self.drawn.note_items.remove(item)
             except ValueError:
                 pass
         items = self._make_note_items(note)
         for item in items:
-            self._plot.addItem(item)
-        self._note_items.extend(items)
-        self._note_item_map[id(note)] = items
+            self.win._plot.addItem(item)
+        self.drawn.note_items.extend(items)
+        self.drawn.note_item_map[id(note)] = items
 
-    def _remove_note_items(self, note):
+    def remove_note_items(self, note):
         """Remove a note's graphics items from the scene without touching circuit.notes."""
-        old_items = self._note_item_map.pop(id(note), [])
+        old_items = self.drawn.note_item_map.pop(id(note), [])
         for item in old_items:
             try:
-                self._plot.removeItem(item)
+                self.win._plot.removeItem(item)
             except Exception:
                 pass
             try:
-                self._note_items.remove(item)
+                self.drawn.note_items.remove(item)
             except ValueError:
                 pass
 
-    def update(self, brain):
-        if self._building or self._all_scatter is None:
-            return
-        try:
-            self._redraw_nodes(brain)
-        except Exception:
-            pass
-
-    def _redraw_nodes(self, brain=None):
+    def redraw_nodes(self, brain=None):
         """Rebuild all spot data and push to the single ScatterPlotItem in one call."""
-        if self._redrawing or self._all_scatter is None or not self._spot_names:
+        if self.redrawing or self.drawn.all_scatter is None or not self.drawn.spot_names:
             return
-        self._redrawing = True
+        self.redrawing = True
         try:
-            active = self._ACTIVE_RGB
-            r_node = self._NODE_R
+            active = self.win._ACTIVE_RGB
+            r_node = self.win._NODE_R
             spots      = []
-            all_layers  = {l.name: l for l in self.gui.circuit.layers}
-            all_sensors = {s.name: s for s in self.gui.circuit.sensors}
-            for name in self._spot_names:
-                if not self._spot_visible.get(name, True):
+            all_layers  = {l.name: l for l in self.win.gui.circuit.layers}
+            all_sensors = {s.name: s for s in self.win.gui.circuit.sensors}
+            for name in self.drawn.spot_names:
+                if not self.drawn.spot_visible.get(name, True):
                     continue
-                if name not in self._positions:
+                if name not in self.win._lay.positions:
                     continue
-                x, y      = self._positions[name]
-                base_rgb  = self._spot_base_rgb.get(name, (0.5, 0.5, 0.5))
-                alpha     = self._spot_alpha.get(name, 1.0)
+                x, y      = self.win._lay.positions[name]
+                base_rgb  = self.drawn.spot_base_rgb.get(name, (0.5, 0.5, 0.5))
+                alpha     = self.drawn.spot_alpha.get(name, 1.0)
                 layer_name = name.rsplit('_', 1)[0]
 
                 is_muted  = getattr(all_layers.get(layer_name), 'muted', False)
-                is_sensor = name in self._sensor_nodes
+                is_sensor = name in self.win._lay.sensor_nodes
 
                 if is_muted:
                     # Muted: flat grey, no activity colouring
@@ -1625,79 +1454,75 @@ class _RenderMixin:
                 brush  = pg.mkBrush(QColor(int(base_rgb[0] * 255),
                                            int(base_rgb[1] * 255),
                                            int(base_rgb[2] * 255), a_int))
-                po = self._spot_pen_override.get(name)
+                po = self.win.editing.sel.pen_override.get(name)
                 if po == 'selected':
-                    pen = self._pen_selected
+                    pen = self.pen_selected
                 elif po == 'multi':
-                    pen = self._pen_multi
+                    pen = self.pen_multi
                 elif is_muted:
-                    pen = self._pen_muted
+                    pen = self.pen_muted
                 elif is_sensor:
                     _s_nt = getattr(all_sensors.get(layer_name),
                                     'neuromodulator_transmitter', None)
-                    if _s_nt and _s_nt in self._mod_pens:
-                        pen = self._mod_pens[_s_nt]
+                    if _s_nt and _s_nt in self.drawn.mod_pens:
+                        pen = self.drawn.mod_pens[_s_nt]
                     else:
-                        pen = self._sensor_pens.get(name, self._pen_default)
-                elif layer_name in self.gui.tracked_osc_items():
-                    pen = self._pen_osc
-                elif getattr(all_layers.get(layer_name), 'neuromodulator_transmitter', None) in self._mod_pens:
+                        pen = self.drawn.sensor_pens.get(name, self.pen_default)
+                elif layer_name in self.win.gui.tracked_osc_items():
+                    pen = self.pen_osc
+                elif getattr(all_layers.get(layer_name), 'neuromodulator_transmitter', None) in self.drawn.mod_pens:
                     nt = all_layers[layer_name].neuromodulator_transmitter
-                    pen = self._mod_pens[nt]
+                    pen = self.drawn.mod_pens[nt]
                 else:
-                    pen = self._pen_default
+                    pen = self.pen_default
                 obj = all_layers.get(layer_name)
                 is_ring = getattr(obj, 'viz_layout', None) == 'ring'
                 _n_rd   = getattr(obj, 'n', 1) or 1
-                _scale  = (self._RING_SCALE if is_ring
-                           else (self._DENSE_NODE_SCALE if _n_rd > 4 else 1.0))
+                _scale  = (self.win._RING_SCALE if is_ring
+                           else (self.win._DENSE_NODE_SCALE if _n_rd > 4 else 1.0))
                 dot_r = r_node * _scale * 240
                 spots.append({'pos': (x, y), 'size': dot_r,
                               'brush': brush, 'pen': pen, 'data': name})
 
-            self._all_scatter.setData(spots=spots)
+            self.drawn.all_scatter.setData(spots=spots)
 
             # Image nodes (cameras, Leaky2dLayer, Conv2dLayer pool='none') — visibility
             # mirrors _spot_visible so hide/show works the same way as regular nodes.
-            for node_key, items in self._image_node_items.items():
-                visible = self._spot_visible.get(node_key, True)
+            for node_key, items in self.drawn.image_node_items.items():
+                visible = self.drawn.spot_visible.get(node_key, True)
                 for item in items:
                     item.setVisible(visible)
 
             # Derivative dot: recompute y_off each frame via viewPixelSize so the
             # dot always touches the north of the node circle at any zoom level.
-            if self._deriv_scatter is not None and self._deriv_node_positions:
+            if self.drawn.deriv_scatter is not None and self.drawn.deriv_node_positions:
                 r_d = r_node * 0.20   # slightly smaller than before
                 try:
-                    _, dy = self._vb.viewPixelSize()
+                    _, dy = self.win._vb.viewPixelSize()
                     y_off = (r_node - r_d) * 120 * dy
                 except Exception:
                     y_off = (r_node - r_d)
                 d_spots = [
                     {'pos': (x, y + y_off), 'size': r_d * 240,
                      'brush': pg.mkBrush(C['dark']), 'pen': pg.mkPen(None)}
-                    for (x, y) in self._deriv_node_positions
+                    for (x, y) in self.drawn.deriv_node_positions
                 ]
-                self._deriv_scatter.setData(spots=d_spots)
+                self.drawn.deriv_scatter.setData(spots=d_spots)
         finally:
-            self._redrawing = False
+            self.redrawing = False
         # Keep camera images pinned to their scatter nodes (guards against any
         # transform reset that may occur when setImage changes the image shape).
-        for key, item in self._camera_items.items():
-            rect = self._camera_rects.get(key)
+        for key, item in self.drawn.camera_items.items():
+            rect = self.drawn.camera_rects.get(key)
             if rect is not None:
                 item.setRect(*rect)
 
 
-    # ── Column visibility / labeling (moved from network_viz_actions.py — these
-    # directly create/mutate pyqtgraph items, unlike the editing methods that
-    # trigger them, e.g. _on_container_hide/_on_container_disable in network_viz_editing.py) ──
-
-    def _update_weight_panel(self):
-        if not self._weight_pinned:
+    def update_weight_panel(self):
+        if not self.win._weight_pinned:
             return
-        conn_map = {(c.src, c.tgt): c for c in self.gui.circuit.connections}
-        for (src, tgt), entry_widget in self._weight_pinned.items():
+        conn_map = {(c.src, c.tgt): c for c in self.win.gui.circuit.connections}
+        for (src, tgt), entry_widget in self.win._weight_pinned.items():
             conn = conn_map.get((src, tgt))
             if conn is None:
                 continue
@@ -1708,11 +1533,11 @@ class _RenderMixin:
                 W = W.reshape(1, -1)
             entry_widget.set_matrix(W)
 
-    def _update_activation_panel(self):
-        if not self._activation_pinned:
+    def update_activation_panel(self):
+        if not self.win._activation_pinned:
             return
-        layer_map = {l.name: l for l in self.gui.circuit.layers}
-        for name, entry_widget in self._activation_pinned.items():
+        layer_map = {l.name: l for l in self.win.gui.circuit.layers}
+        for name, entry_widget in self.win._activation_pinned.items():
             layer_obj = layer_map.get(name)
             if layer_obj is None or layer_obj.output is None:
                 continue
@@ -1721,19 +1546,19 @@ class _RenderMixin:
                 out = out.detach().numpy()
             entry_widget.set_values(np.ravel(np.asarray(out, dtype=float)))
 
-    def _clear_selection_highlight(self):
-        self._spot_pen_override.clear()
-        self._redraw_nodes()
+    def clear_selection_highlight(self):
+        self.win.editing.sel.pen_override.clear()
+        self.redraw_nodes()
 
-    def _rebuild_group_buttons(self):
-        while self._group_bar_lay.count() > 1:
-            item = self._group_bar_lay.takeAt(0)
+    def rebuild_group_buttons(self):
+        while self.win._group_bar_lay.count() > 1:
+            item = self.win._group_bar_lay.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
 
-        sorted_containers = sorted(self._container_x_map.keys())
-        ghost_count            = getattr(self, '_ghost_count', {})
-        container_winner_names = getattr(self, '_container_winner_names', {})
+        sorted_containers = sorted(self.win._lay.container_x_map.keys())
+        ghost_count            = self.win._lay.ghost_count
+        container_winner_names = self.win._lay.container_winner_names
         _btn_ss = (
             "QPushButton{padding:0 4px;font-size:9px;"
             "border:1px solid #A0B0C0;border-radius:3px;background:#E8F0F8;}"
@@ -1743,8 +1568,8 @@ class _RenderMixin:
             if ghost_count.get(container, 0) > 0 and container_winner_names.get(container):
                 container_label = ', '.join(container_winner_names[container])
             else:
-                container_label = self._container_labels.get(
-                    self._container_key(container), str(i + 1))
+                container_label = self.win._container_labels.get(
+                    self.win.layout_engine.container_key(container), str(i + 1))
             row_w = QWidget()
             row = QHBoxLayout(row_w)
             row.setContentsMargins(0, 0, 0, 0)
@@ -1757,92 +1582,85 @@ class _RenderMixin:
 
             btn_vis = QPushButton("H")
             btn_vis.setCheckable(True)
-            btn_vis.setChecked(container in self._hidden_containers)
-            btn_vis.setEnabled(container not in self._disabled_containers)
+            btn_vis.setChecked(container in self.win._hidden_containers)
+            btn_vis.setEnabled(container not in self.win._disabled_containers)
             btn_vis.setFixedSize(20, 18)
             btn_vis.setToolTip("Hide / show this column")
             btn_vis.setStyleSheet(
                 _btn_ss + f"QPushButton:checked{{background:{C['muted']};}}"
             )
-            btn_vis.toggled.connect(lambda checked, container=container: self._on_container_hide(container, checked))
+            btn_vis.toggled.connect(lambda checked, container=container: self.win._on_container_hide(container, checked))
             row.addWidget(btn_vis)
 
             btn_dis = QPushButton("D")
             btn_dis.setCheckable(True)
-            btn_dis.setChecked(container in self._disabled_containers)
+            btn_dis.setChecked(container in self.win._disabled_containers)
             btn_dis.setFixedSize(20, 18)
             btn_dis.setToolTip("Disable / enable this column")
             btn_dis.setStyleSheet(
                 _btn_ss + "QPushButton:checked{background:#C0392B;color:white;}"
             )
-            btn_dis.toggled.connect(lambda checked, container=container: self._on_container_disable(container, checked))
+            btn_dis.toggled.connect(lambda checked, container=container: self.win._on_container_disable(container, checked))
             row.addWidget(btn_dis)
 
             row_w.setFixedHeight(22)
-            self._group_bar_lay.insertWidget(i, row_w)
+            self.win._group_bar_lay.insertWidget(i, row_w)
 
-        has_any = bool(self._hidden_containers or self._disabled_containers)
-        self._btn_show_all.setEnabled(bool(self._hidden_containers))
-        self._btn_enable_all.setEnabled(bool(self._disabled_containers))
+        has_any = bool(self.win._hidden_containers or self.win._disabled_containers)
+        self.win._btn_show_all.setEnabled(bool(self.win._hidden_containers))
+        self.win._btn_enable_all.setEnabled(bool(self.win._disabled_containers))
 
-    def _apply_group_visibility(self):
-        for node_key in self._spot_names:
-            container = self._node_container_map.get(node_key)
-            hidden = container in self._hidden_containers
-            self._spot_visible[node_key] = not hidden
-            txt = self._text_map.get(node_key)
+    def apply_group_visibility(self):
+        for node_key in self.drawn.spot_names:
+            container = self.win._lay.node_container_map.get(node_key)
+            hidden = container in self.win._hidden_containers
+            self.drawn.spot_visible[node_key] = not hidden
+            txt = self.drawn.text_map.get(node_key)
             if txt:
                 txt.setVisible(not hidden)
-        self._redraw_nodes()
-        for item, sn, tn, *_ in self._edge_items_tagged:
-            s_dv = self._node_container_map.get(sn)
-            t_dv = self._node_container_map.get(tn)
-            hidden = (s_dv in self._hidden_containers) or (t_dv in self._hidden_containers)
+        self.redraw_nodes()
+        for item, sn, tn, *_ in self.drawn.edge_items_tagged:
+            s_dv = self.win._lay.node_container_map.get(sn)
+            t_dv = self.win._lay.node_container_map.get(tn)
+            hidden = (s_dv in self.win._hidden_containers) or (t_dv in self.win._hidden_containers)
             item.setVisible(not hidden)
-        for container, rect_item in self._panel_rect_map.items():
-            rect_item.setVisible(container not in self._hidden_containers)
-        # Column labels stay visible even when the column itself is hidden, so a
-        # collapsed group still shows what it's called.
-
-    def _refresh_container_label(self, container):
-        old = self._container_label_items.pop(container, None)
+        for container, rect_item in self.drawn.panel_rect_map.items():
+            rect_item.setVisible(container not in self.win._hidden_containers)
+    def refresh_container_label(self, container):
+        old = self.drawn.container_label_items.pop(container, None)
         if old is not None:
-            self._plot.removeItem(old)
+            self.win._plot.removeItem(old)
         # Shared (multi-z) columns auto-title from the current winner, same as
         # in _draw_panels — a manually-set nickname only applies to
         # single-occupant columns.
         label = self._panel_label_text(container)
         if label:
-            r, px = self._NODE_R, self._PAD_X
+            r, px = self.win._NODE_R, self.win._PAD_X
             py = 0.04
-            container_type_nodes = [nk for nk, c in self._node_container_map.items()
+            container_type_nodes = [nk for nk, c in self.win._lay.node_container_map.items()
                               if c == container]
             if container_type_nodes:
-                x_col = self._container_x_map.get(container, 0.5)
-                is_sensor = any(nk in self._sensor_nodes for nk in container_type_nodes)
-                _, ec_s = self._PANEL_CFG['sensor' if is_sensor else 'layer']
-                col_ys = [self._positions[nk][1]
+                x_col = self.win._lay.container_x_map.get(container, 0.5)
+                is_sensor = any(nk in self.win._lay.sensor_nodes for nk in container_type_nodes)
+                _, ec_s = self.win._PANEL_CFG['sensor' if is_sensor else 'layer']
+                col_ys = [self.win._lay.positions[nk][1]
                           for nk in container_type_nodes
-                          if nk in self._positions]
+                          if nk in self.win._lay.positions]
                 rect_top = (max(col_ys) + r + py) if col_ys else 0.6
-                _span   = getattr(self, '_container_span_map', {}).get(container, 1)
-                _x_unit = getattr(self, '_x_unit', 1.0)
+                _span   = self.win._lay.container_span_map.get(container, 1)
+                _x_unit = self.win._lay.x_unit
                 _he     = (_span - 1) / 2.0 * _x_unit
                 lbl_item = pg.TextItem(label, anchor=(0.0, 0.0),
                                        color=QColor(ec_s))
                 lbl_item.setFont(_small_bold_font())
-                lbl_item.setPos(x_col - r - px - _he + 0.003, rect_top + self._LABEL_TOP_MARGIN)
+                lbl_item.setPos(x_col - r - px - _he + 0.003, rect_top + self.win._LABEL_TOP_MARGIN)
                 lbl_item.setZValue(10)
-                self._plot.addItem(lbl_item)
-                self._container_label_items[container] = lbl_item
-        self._rebuild_group_buttons()
+                self.win._plot.addItem(lbl_item)
+                self.drawn.container_label_items[container] = lbl_item
+        self.rebuild_group_buttons()
 
-    # ── Circuit highlighting (view mode only) ─────────────────────────────────
-
-    _FADE_OPACITY = 0.12
-
-    def _highlight_edges(self, center_node):
-        self._highlighted_node = center_node
+    def highlight_edges(self, center_node):
+        self.win.editing.sel.highlighted = center_node
         center_layer = center_node.rsplit('_', 1)[0]
 
         # Build directed adjacency from cross-layer edges only.
@@ -1850,7 +1668,7 @@ class _RenderMixin:
         # from pulling in the entire contralateral circuit during BFS.
         fwd = defaultdict(set)   # source → {targets}
         bwd = defaultdict(set)   # target → {sources}
-        for _, sn, tn, *_ in self._edge_items_tagged:
+        for _, sn, tn, *_ in self.drawn.edge_items_tagged:
             if sn.rsplit('_', 1)[0] == tn.rsplit('_', 1)[0]:
                 continue  # skip within-layer edges for traversal
             fwd[sn].add(tn)
@@ -1874,22 +1692,22 @@ class _RenderMixin:
         # same-layer set — this prevents all 64 edges of an 8×8 ring attractor from
         # lighting up when you click one neuron.  For small layers, include the whole
         # layer so mutual-inhibition edges are shown in full.
-        n_map = self._n_map()
+        n_map = self.win.layout_engine.n_map()
         n_center = n_map.get(center_layer, 1)
-        if n_center > self._DENSE_THRESHOLD:
+        if n_center > self.win._DENSE_THRESHOLD:
             same_layer = {center_node}
         else:
-            same_layer = {n for n in self._spot_names
+            same_layer = {n for n in self.drawn.spot_names
                           if n.rsplit('_', 1)[0] == center_layer}
         display_set = circuit | same_layer
 
         # Fade nodes and labels not in display_set
-        for node_key in self._spot_names:
-            self._spot_alpha[node_key] = (1.0 if node_key in display_set
+        for node_key in self.drawn.spot_names:
+            self.drawn.spot_alpha[node_key] = (1.0 if node_key in display_set
                                           else self._FADE_OPACITY)
-        for node_key, txt in self._text_map.items():
+        for node_key, txt in self.drawn.text_map.items():
             txt.setOpacity(1.0 if node_key in display_set else self._FADE_OPACITY)
-        self._redraw_nodes()
+        self.redraw_nodes()
 
         # Highlight edges:
         # - within-layer: show if any endpoint is in display_set
@@ -1897,7 +1715,7 @@ class _RenderMixin:
         #   (both in bwd_set OR both in fwd_set). This prevents "shortcut" edges
         #   (e.g. light→motor when viewing layer5) from lighting up just because
         #   their endpoints happen to be reachable via independent paths.
-        for item, sn, tn, *_ in self._edge_items_tagged:
+        for item, sn, tn, *_ in self.drawn.edge_items_tagged:
             if sn.rsplit('_', 1)[0] == tn.rsplit('_', 1)[0]:
                 lit = (sn in display_set) or (tn in display_set)
             else:
@@ -1905,8 +1723,8 @@ class _RenderMixin:
                        (sn in fwd_set and tn in fwd_set))
             item.setOpacity(1.0 if lit else self._FADE_OPACITY)
 
-    def _highlight_selected_edge(self, src, tgt):
-        for item, sn, tn, _, is_curve, *_ in self._edge_items_tagged:
+    def highlight_selected_edge(self, src, tgt):
+        for item, sn, tn, _, is_curve, *_ in self.drawn.edge_items_tagged:
             if sn.rsplit('_', 1)[0] == src and tn.rsplit('_', 1)[0] == tgt:
                 if is_curve:
                     item.setPen(pg.mkPen('#E07828', width=4.5))
@@ -1914,11 +1732,11 @@ class _RenderMixin:
                     item.setBrush(pg.mkBrush('#E07828'))
                     item.setPen(pg.mkPen('#E07828', width=3.0))
 
-    def _clear_edge_selection(self):
-        if not self._selected_edge:
+    def clear_edge_selection(self):
+        if not self.win.editing.sel.edge:
             return
-        src, tgt = self._selected_edge
-        for item, sn, tn, excitatory, is_curve, original_pen in self._edge_items_tagged:
+        src, tgt = self.win.editing.sel.edge
+        for item, sn, tn, excitatory, is_curve, original_pen in self.drawn.edge_items_tagged:
             if sn.rsplit('_', 1)[0] == src and tn.rsplit('_', 1)[0] == tgt:
                 if is_curve:
                     item.setPen(original_pen)
@@ -1926,56 +1744,99 @@ class _RenderMixin:
                     orig_rgba = original_pen.color().getRgb()
                     item.setBrush(pg.mkBrush(orig_rgba) if excitatory else pg.mkBrush(C['bg']))
                     item.setPen(original_pen)
-        self._selected_edge = None
+        self.win.editing.sel.edge = None
 
-    def _clear_edge_highlight(self):
-        self._highlighted_node = None
-        for node_key in self._spot_names:
-            self._spot_alpha[node_key] = 1.0
-        for _, txt in self._text_map.items():
+    def clear_edge_highlight(self):
+        self.win.editing.sel.highlighted = None
+        for node_key in self.drawn.spot_names:
+            self.drawn.spot_alpha[node_key] = 1.0
+        for _, txt in self.drawn.text_map.items():
             txt.setOpacity(1.0)
-        self._redraw_nodes()
-        for item, *_ in self._edge_items_tagged:
+        self.redraw_nodes()
+        for item, *_ in self.drawn.edge_items_tagged:
             item.setOpacity(1.0)
 
-    # ── Node drag (reorder container) ─────────────────────────────────────────────
-
-    def _show_drag_indicator(self, snap_x, mouse_y=None, layer=None):
+    def show_drag_indicator(self, snap_x, mouse_y=None, layer=None):
         # Same column and y provided → horizontal slot indicator.
         if layer is not None and mouse_y is not None:
             # Use the layer's visual x position rather than its raw .layer position
             # so that layers with layer=None (e.g. the _L half of a lateralized
             # pair) are detected as same-column when they should be.
             my_x = next(
-                (self._positions[f'{layer.name}_{j}'][0]
+                (self.win._lay.positions[f'{layer.name}_{j}'][0]
                  for j in range(layer.n or 0)
-                 if f'{layer.name}_{j}' in self._positions),
+                 if f'{layer.name}_{j}' in self.win._lay.positions),
                 None,
             )
             col_x = my_x
             if col_x is not None and abs(snap_x - col_x) < 1e-9:
-                snap_y, _ = self._get_container_snap_y(layer, mouse_y)
-                self._h_drag_indicator.setValue(snap_y)
-                self._h_drag_indicator.setVisible(True)
-                self._drag_indicator.setVisible(False)
+                snap_y, _ = self.win.layout_engine.get_container_snap_y(layer, mouse_y)
+                self.h_drag_indicator.setValue(snap_y)
+                self.h_drag_indicator.setVisible(True)
+                self.drag_indicator.setVisible(False)
                 return
-        self._drag_indicator.setValue(snap_x)
-        self._drag_indicator.setVisible(True)
-        self._h_drag_indicator.setVisible(False)
+        self.drag_indicator.setValue(snap_x)
+        self.drag_indicator.setVisible(True)
+        self.h_drag_indicator.setVisible(False)
 
-    def _hide_drag_indicator(self):
-        self._drag_indicator.setVisible(False)
-        self._h_drag_indicator.setVisible(False)
+    def hide_drag_indicator(self):
+        self.drag_indicator.setVisible(False)
+        self.h_drag_indicator.setVisible(False)
 
-    def _update_conn_preview(self, mouse_pt):
-        sx, sy = self._positions[self._conn_from]
-        self._conn_preview.setData([sx, mouse_pt.x()], [sy, mouse_pt.y()])
-        self._conn_preview.setVisible(True)
+    def update_conn_preview(self, mouse_pt):
+        sx, sy = self.win._lay.positions[self.win.editing.conn_from]
+        self.conn_preview.setData([sx, mouse_pt.x()], [sy, mouse_pt.y()])
+        self.conn_preview.setVisible(True)
 
-    def _hide_conn_preview(self):
-        self._conn_preview.setVisible(False)
+    def hide_conn_preview(self):
+        self.conn_preview.setVisible(False)
 
+    # ── Note text metrics ────────────────────────────────────────────────────
 
+    def note_font_metrics(self):
+        from PySide6.QtGui import QFont, QFontMetrics
+        return QFontMetrics(QFont(self.win._NOTE_FONT_FAMILY, self.win._NOTE_FONT_SIZE))
+
+    def note_lines(self, note):
+        """Word-wrap a note's text to fit _NOTE_W, measured in *actual* pixel
+        font metrics (not a guessed character count) so the background box
+        computed by note_size always matches what's rendered — a fixed
+        chars-per-line heuristic drifts badly across the wide range of zoom
+        levels different-sized networks end up at.
+        """
+        fm = self.note_font_metrics()
+        dx, _dy = self.win._vb.viewPixelSize()
+        max_px = (self.win._NOTE_W - 2 * self.win._NOTE_PAD) / dx if dx > 0 else 200.0
+        max_px = max(20.0, max_px)
+        lines = []
+        for para in (note.text or '').split('\n'):
+            cur = ''
+            for word in para.split(' '):
+                trial = f'{cur} {word}'.strip() if cur else word
+                if not cur or fm.horizontalAdvance(trial) <= max_px:
+                    cur = trial
+                else:
+                    lines.append(cur)
+                    cur = word
+            lines.append(cur)
+        return lines or ['']
+
+    def note_size(self, note):
+        """Return (w, h) of an expanded note's background box, in data coords.
+
+        Measures a throwaway TextItem's real boundingRect() rather than
+        estimating from QFontMetrics — pyqtgraph's own multi-line text layout
+        uses more vertical space per line than QFontMetrics.height()/
+        lineSpacing() predict, so an estimate consistently undersizes the box
+        and the text spills out the bottom.
+        """
+        import pyqtgraph as pg
+        from PySide6.QtGui import QFont
+        txt = pg.TextItem('\n'.join(self.note_lines(note)))
+        txt.setFont(QFont(self.win._NOTE_FONT_FAMILY, self.win._NOTE_FONT_SIZE))
+        _dx, dy = self.win._vb.viewPixelSize()
+        h = 2 * self.win._NOTE_PAD + txt.boundingRect().height() * dy
+        return self.win._NOTE_W, h
 
 
 # ============================================================

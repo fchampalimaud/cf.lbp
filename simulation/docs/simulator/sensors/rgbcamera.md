@@ -2,7 +2,7 @@
 
 ![RGBCameraSensor](../../assets/figures/sensor_rgbcamera.svg)
 
-Raycasts `width × height` pixels across the field of view and returns RGB colour (same raycasting as `GrayCameraSensor`, all 3 channels retained).
+MuJoCo renders a `width × height` perspective image from the robot's pose and the sensor returns its RGB colour (same rendering and `fps` frame rate as [`GrayCameraSensor`](graycamera.md), all 3 channels retained).
 
 ## Output shape (channels-first / CHW)
 
@@ -20,11 +20,12 @@ Connect to a `Conv2dLayer` with `in_ch=3` (set automatically from camera mode).
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `width` | 64 | Number of rays (horizontal resolution) |
-| `height` | 48 | Tile rows (1 = single strip) |
+| `width` | 64 | Horizontal resolution (pixels) |
+| `height` | 48 | Image rows (1 = single strip) |
 | `fov` | 90° | Horizontal field of view |
 | `center_angle` | 0° | Center offset from robot heading |
-| `vertical_angle` | 0° | Camera tilt — positive = tilted down (ground), negative = tilted up (sky). Each image row sees a different ground distance: bottom rows closer, top rows farther. At 90° the camera points straight down and the image goes black. |
-| `max_range` | 10.0 | Max ray length in world units |
+| `vertical_angle` | 0° | Camera tilt — positive = tilted down (ground), negative = tilted up (sky). At 90° the camera looks straight down at the floor. |
+| `max_range` | 10.0 | Not used by the MuJoCo render (kept for saved networks) |
+| `fps` | 60 | Frames per simulated second (0 = as fast as possible) |
 | `lateralized` | False | Split output into left/right halves |
 | `overlap` | 0 | Pixels past midline included in each half |

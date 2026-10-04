@@ -39,6 +39,9 @@ class AgentGroup:
     color:      str
     name:       str
     member_ids: list
+    # Last code brain this group ran — restored when it switches back from
+    # Network mode to Code brain mode.
+    last_code_module: object = None
 
 
 class AgentRegistry:
@@ -86,8 +89,9 @@ class AgentRegistry:
         # Optional callbacks wired by the owner (SimController) to keep other
         # subsystems (MuJoCo, network slot maps) in sync without this class
         # needing to know they exist.
-        self.on_agents_changed = None   # callable() -> None, called after add/remove/clear
-        self.on_agent_removed  = None   # callable(agent_id) -> None, called just before an agent is popped
+        self.on_agents_changed    = None   # callable() -> None, called after add/remove/clear
+        self.on_agent_removed     = None   # callable(agent_id) -> None, called just before an agent is popped
+        self.on_selection_changed = None   # callable() -> None, called when the selected agent changes
 
     # ── Agent access ─────────────────────────────────────────────────────────
 
@@ -103,7 +107,7 @@ class AgentRegistry:
     def agent(self):
         if not self._agents:
             return None
-        a = self._agent_by_id(self._selected_id)
+        a = self.agent_by_id(self._selected_id)
         return a if a is not None else self._agents[-1]
 
     @property
@@ -136,7 +140,7 @@ class AgentRegistry:
         a = self.agent
         return a.trail_xy if a is not None else deque(maxlen=500)
 
-    def _agent_by_id(self, agent_id):
+    def agent_by_id(self, agent_id):
         """Look up a RobotAgent by its stable id, or None if it no longer exists."""
         for a in self._agents:
             if a.id == agent_id:
@@ -200,8 +204,10 @@ class AgentRegistry:
         return True
 
     def select_agent(self, agent_id: int):
-        if self._agent_by_id(agent_id) is not None:
+        if self.agent_by_id(agent_id) is not None and agent_id != self._selected_id:
             self._selected_id = agent_id
+            if self.on_selection_changed:
+                self.on_selection_changed()
 
     def clear(self):
         """Empty the registry entirely (agents, groups, selection) — used when
@@ -238,6 +244,10 @@ class AgentRegistry:
 
     def get_group(self, group_id):
         return self._groups.get(group_id)
+
+    def clear_groups(self):
+        """Drop every group (the agents themselves stay)."""
+        self._groups.clear()
 
     def groups_ordered(self):
         """Groups in creation order — matches the agent table's row order."""

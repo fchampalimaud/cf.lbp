@@ -15,6 +15,12 @@ TD(0) reward-prediction critic. Implements the Schultz/Dayan/Montague (1997) dop
 
 $$V = \sum_i W_i \, s_i, \quad \delta = r + \gamma V - V_{\text{prev}}, \quad \Delta W_i = \alpha_{\text{eff}} \, \delta \otimes s_{i,\text{prev}}$$
 
+The update credits the previous tick's input `s_prev`, because δ compares this tick's prediction with the previous one.
+
+Like every layer, V goes through the shared pipeline first — bias, noise (`noise_std` / `noise_tau`, see [Noise](leaky.md#noise)), output mode, leaky filter — so noise on V also reaches the weight update.
+
+Learning rates are **per tick at the default time step dt = 0.01 s** and scale with dt, so learning per second is the same at any dt (see [Noise](leaky.md#noise) for why the default dt is the reference).
+
 **Output:** V(s) ∈ ℝⁿ — predicted future reward per neuron.
 
 ## Wiring

@@ -45,10 +45,10 @@ class SimLogger:
         """Open a log file and start recording. Auto-names if path is None."""
         if self.running:
             self.stop()
-        os.makedirs('logs', exist_ok=True)
-        if path is None:
+        if path is None:   # the user's logs/ folder (data_paths)
+            import data_paths
             ts   = datetime.now().strftime('%Y%m%d_%H%M%S')
-            path = f'logs/sim_{ts}.jsonl'
+            path = str(data_paths.user_path('logs', f'sim_{ts}.jsonl'))
         self._path      = path
         self._file      = open(path, 'w', encoding='utf-8')
         self._row_count = 0

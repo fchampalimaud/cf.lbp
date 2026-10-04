@@ -1,19 +1,16 @@
 """
-sim_controller.py — the core simulation loop, composed from four focused
-collaborators: AgentRegistry (agent_registry.py), NetworkController
-(network_controller.py), RobotModeController (robot_mode_controller.py), and
-MuJoCoController (mujoco_controller.py).
+sim_controller.py — the app's simulation loop around a Qt-free Simulation
+(simulation.py: world, agents, MuJoCo engine, sim time, task, step/reset),
+plus four collaborators: AgentRegistry (agent_registry.py, owned by the
+Simulation), NetworkController (network_controller.py), RobotModeController
+(robot_mode_controller.py), and MuJoCoController (mujoco_controller.py,
+display side only).
 
-SimController itself owns only genuinely core-loop concerns: the QTimer,
-running/timing state, and the per-frame/per-tick orchestration that calls into
-the four collaborators. Every method/property the collaborators used to expose
-directly on SimController is kept as a thin delegating wrapper, so existing
-external code (LBPSimulator.py, sim_app_brain.py, sim_app_session.py,
-network_viz_actions.py, world_editor.py) that reaches into e.g.
-self._sim_ctrl._agents / ._net_host / ._mujoco_engine / .add_agent(...) keeps
-working unchanged. Migrating those callers to address self._sim_ctrl.registry/
-.network/.robot/.mujoco directly is a deliberate, separate follow-up — see
-TODO.md.
+SimController itself owns only what needs Qt or the outside world: the
+QTimer, running/timing state, signals, arena/oscilloscope/logger feeds, and
+network / real-robot I/O. Callers use the collaborators directly
+(sim_ctrl.registry / .sim / .network / .robot / .mujoco); SimController only
+keeps methods that coordinate more than one of them.
 """
 
 import time
@@ -22,7 +19,8 @@ import numpy as np
 from PySide6.QtCore import QObject, QTimer, Qt, Signal
 
 from sim_constants import C
-from sim_engine import tick_physics
+from simulation import Simulation
+from sim_engine import run_brain, choose_motor_command
 from agent_registry import AgentRegistry
 from network_controller import NetworkController
 from robot_mode_controller import RobotModeController
@@ -69,22 +67,21 @@ class SimController(QObject):
         self._motor_override = get_motor_override
 
         self.registry = AgentRegistry(sim_cfg, circuit, brain_mgr)
+        self.sim      = Simulation(world, sim_cfg, self.registry)
         self.network  = NetworkController(parent=self)
         self.robot    = RobotModeController(sim_cfg, get_motor_override)
-        self.mujoco   = MuJoCoController(arena, sim_cfg)
+        self.mujoco   = MuJoCoController(arena, sim_cfg, self.sim)
 
         # Resolve the bidirectional writes the old monolithic class had
         # between the registry and MuJoCo/networking via explicit callbacks,
         # instead of the registry reaching directly into either.
-        self.registry.on_agents_changed = lambda: self.mujoco.rebuild(self.world, self.registry.agents)
-        self.registry.on_agent_removed  = self.network.forget_agent
-        self.network.get_running        = lambda: self.running
-
-        self._active_task = None
+        self.registry.on_agents_changed    = self._on_agents_changed
+        self.registry.on_agent_removed     = self.network.forget_agent
+        self.registry.on_selection_changed = self.sync_robot_items
+        self.network.get_running           = lambda: self.running
 
         self.running    = False
-        self.time_index = 0
-        self.speed_mult = 1
+        self.speed_mult = 200
         self._rt_mode   = False
         self._time_debt = 0.0
         self._phys_ms_acc = 0.0
@@ -96,142 +93,24 @@ class SimController(QObject):
         self._timer.setInterval(20)
         self._timer.timeout.connect(self._loop)
 
-    # ── Backward-compatible delegates: agent registry ───────────────────────
+        self.sync_robot_items()   # one arena disk for the initial agent
 
-    @property
-    def _agents(self):
-        return self.registry.agents
-
-    @property
-    def _selected_id(self):
-        return self.registry.selected_id
-
-    @property
-    def _agent(self):
-        return self.registry.agent
-
-    @property
-    def _groups(self):
-        return self.registry._groups
-
-    @property
-    def circuit(self):
-        return self.registry.circuit
-
-    @property
-    def brain_mgr(self):
-        return self.registry.brain_mgr
-
-    @property
-    def brain(self):
-        return self.registry.brain
-
-    @brain.setter
-    def brain(self, value):
-        self.registry.brain = value
-
-    @property
-    def bot_pos(self):
-        return self.registry.bot_pos
-
-    @property
-    def trail_xy(self):
-        return self.registry.trail_xy
-
-    def _agent_by_id(self, agent_id):
-        return self.registry._agent_by_id(agent_id)
-
-    def index_of_agent(self, agent_id):
-        return self.registry.index_of_agent(agent_id)
-
-    def add_agent(self, circuit, brain_mgr, name=None, color=None) -> int:
-        return self.registry.add_agent(circuit, brain_mgr, name=name, color=color)
+    # ── Agents ─────────────────────────────────────────────────────────────
 
     def remove_agent(self, agent_id: int):
+        """Remove an agent; while hosting the registry may become empty
+        (clients arrive and leave dynamically)."""
         self.registry.remove_agent(agent_id, allow_empty=self.network.is_hosting)
 
-    def select_agent(self, agent_id: int):
-        self.registry.select_agent(agent_id)
-
-    def create_group(self, module, color, name, first_agent_id) -> int:
-        return self.registry.create_group(module, color, name, first_agent_id)
-
-    def add_agent_to_group(self, group_id: int, agent_id: int):
-        self.registry.add_agent_to_group(group_id, agent_id)
-
-    def group_of_agent(self, agent_id):
-        return self.registry.group_of_agent(agent_id)
-
-    def get_group(self, group_id):
-        return self.registry.get_group(group_id)
-
-    def groups_ordered(self):
-        return self.registry.groups_ordered()
-
-    def remove_group(self, group_id):
-        self.registry.remove_group(group_id)
-
-    # ── Backward-compatible delegates: networking ───────────────────────────
-
-    @property
-    def sig_client_ready(self):
-        return self.network.sig_client_ready
-
-    @property
-    def sig_client_disconnect(self):
-        return self.network.sig_client_disconnect
-
-    @property
-    def sig_go_received(self):
-        return self.network.sig_go_received
-
-    @property
-    def sig_client_registered(self):
-        return self.network.sig_client_registered
-
-    @property
-    def sig_agent_removed(self):
-        return self.network.sig_agent_removed
-
-    @property
-    def _net_host(self):
-        return self.network.host
-
-    @property
-    def _net_client(self):
-        return self.network.client
-
-    @property
-    def _slot_to_agent_id(self):
-        return self.network._slot_to_agent_id
-
-    @property
-    def _agent_id_to_slot(self):
-        return self.network._agent_id_to_slot
-
-    @property
-    def _net_frame_rate(self):
-        return self.network._net_frame_rate
-
-    @_net_frame_rate.setter
-    def _net_frame_rate(self, value):
-        self.network._net_frame_rate = value
-
-    @property
-    def _net_disconnect_timeout(self):
-        return self.network._net_disconnect_timeout
-
-    @_net_disconnect_timeout.setter
-    def _net_disconnect_timeout(self, value):
-        self.network._net_disconnect_timeout = value
+    # ── Networking ─────────────────────────────────────────────────────────
 
     def enable_network_host(self, port=None):
         """Start a SimNetHost. Host mode is a pure physics server — the
         registry is emptied first (no local agents; clients arrive dynamically)."""
         if self.network.is_hosting:
             return
-        self.registry.clear()
-        self.network.enable_host(port)
+        self.network.enable_host(port)   # raises OSError if the port can't be opened —
+        self.registry.clear()            # then the local agents are kept
 
     def disable_network_host(self):
         """Stop the SimNetHost and clear the remote flag on all agents."""
@@ -266,19 +145,7 @@ class SimController(QObject):
         except RuntimeError:
             pass
 
-    # ── Backward-compatible delegates: real-robot mode ──────────────────────
-
-    @property
-    def _robot_mode(self):
-        return self.robot.enabled
-
-    @property
-    def _robot_driver(self):
-        return self.robot.driver
-
-    @property
-    def _motor_thread(self):
-        return self.robot.motor_thread
+    # ── Real-robot mode ────────────────────────────────────────────────────
 
     def enable_robot_mode(self, state: bool):
         """
@@ -290,7 +157,7 @@ class SimController(QObject):
         if was_running:
             self.stop()
 
-        self.robot.enable(state, self.circuit)
+        self.robot.enable(state, self.registry.circuit)
         if state:
             self._osc_ctrl.add_channel_names({'mL_sent', 'mR_sent'})
         else:
@@ -300,30 +167,22 @@ class SimController(QObject):
             self.start()
 
     def _get_motor_commands(self):
-        return self.robot.get_motor_commands(self.circuit, self.brain)
+        return self.robot.get_motor_commands(self.registry.circuit, self.registry.brain)
 
     def _send_motor_stop(self):
-        self.robot.send_motor_stop(self.circuit)
+        self.robot.send_motor_stop(self.registry.circuit)
 
-    # ── Backward-compatible delegates: MuJoCo ───────────────────────────────
+    # ── Arena ──────────────────────────────────────────────────────────────
 
-    @property
-    def _mujoco_engine(self):
-        return self.mujoco.engine
+    def _on_agents_changed(self):
+        """Agents were added or removed: rebuild MuJoCo, update the arena disks."""
+        self.mujoco.rebuild()
+        self.sync_robot_items()
 
-    @property
-    def _view_3d(self):
-        return self.mujoco.view_3d
-
-    def enable_mujoco(self, state, world, sim_cfg):
-        """Enable or disable the MuJoCo engine. Returns (ok, error_str_or_None)."""
-        return self.mujoco.enable(state, world, self.registry.agents)
-
-    def rebuild_mujoco(self, world, sim_cfg):
-        self.mujoco.rebuild(world, self.registry.agents)
-
-    def render_mujoco_overhead(self):
-        self.mujoco.render_overhead()
+    def sync_robot_items(self):
+        """Arena disks follow the agent list (and colors / selection). Called on
+        every registry change; call it after changing an agent's color."""
+        self._arena.sync_robot_items(self.registry.agents, self.registry.selected_id)
 
     def sync_robot_markers(self):
         """Push each agent's current bot_pos into its arena vector marker,
@@ -335,15 +194,6 @@ class SimController(QObject):
         LBPSimulator._setup_world — it only ever touches the arena."""
         self._arena.sync_agents(self.registry.agents, self.registry.selected_id,
                                  self.sim_cfg, self._trail_visible(), include_trail=False)
-
-    def reposition_mujoco_robots(self):
-        self.mujoco.reposition_robots(self.registry.agents)
-
-    def show_mujoco_viewer(self):
-        self.mujoco.show_viewer()
-
-    def set_view_3d(self, enabled):
-        self.mujoco.set_view_3d(enabled)
 
     # ── Speed / real-time mode ────────────────────────────────────────────
 
@@ -364,7 +214,7 @@ class SimController(QObject):
 
     def start(self):
         # Host mode needs no local brain — agents arrive dynamically as clients connect.
-        if not self.network.is_hosting and not self.brain:
+        if not self.network.is_hosting and not self.registry.brain:
             return
         # Client mode: arm (send 'ready') and wait for host 'go' before ticking.
         if self.network.is_client:
@@ -381,16 +231,38 @@ class SimController(QObject):
         self._timer.start()
 
     def stop(self):
+        # reset() calls stop() unconditionally (even when not running) to force
+        # timer/motor state clean; only announce a real running->stopped
+        # transition, so a Run click's reset() doesn't emit a spurious STOPPED
+        # that makes Auto-record (sim_app_session._SessionMixin) finalize an
+        # in-progress manual recording right before immediately starting a new one.
+        was_running = self.running
         self.running = False
         self._timer.stop()
         self.robot.stop_motor_thread()
-        self.sig_status_changed.emit("■  STOPPED", C['muted'])
+        if was_running:
+            # Pause: everything stays where it is; Run continues from here.
+            self.sig_status_changed.emit("⏸  PAUSED", C['warning'])
         if self.robot.enabled:
             self._send_motor_stop()
 
+    def _render_free_running_cameras(self):
+        """Render every agent's fps == 0 cameras once per display cycle, between
+        batches of simulation steps — as fast as the app runs, without holding
+        up the other sensors' per-step sampling. Cameras with fps > 0 render
+        inside step_agents on their own sim-time schedule instead. Independent
+        of "Top view"/"Show 3D": what a camera sees is always a MuJoCo render,
+        whatever the arena canvas shows (docs/simulator/architecture.md
+        "Views on the same world")."""
+        # Real robot and network-client modes get camera data from elsewhere.
+        if self.robot.enabled or self.network.is_client:
+            return
+        self.sim.render_free_running_cameras()
+
     def step(self):
-        if self.brain and not self.running:
+        if self.registry.brain and not self.running:
             self._tick()
+            self._render_free_running_cameras()
             overhead_rgb = None
             if self.mujoco.view_3d and self.mujoco.engine is not None:
                 overhead_rgb = self.mujoco.engine.render_overhead(512, 512)
@@ -399,65 +271,30 @@ class SimController(QObject):
             # fix (see TODO.md), not a side effect to be wary of.
             self._emit_frame_ready(overhead_rgb)
 
-    def _sync_mounted_patches(self):
-        """Sync every mounted gradient patch's position to its carrying robot.
-        mounted_on stores a stable agent id (not a list position), so a mount
-        can never silently drift onto the wrong robot after some other agent
-        is added/removed. Called both per-tick (before sensor sampling) and
-        right after reset() repositions agents, so a mounted patch never
-        renders at a stale position."""
-        for patch in self.world.patches:
-            agent_id = patch.get('mounted_on')
-            if agent_id is not None:
-                agent = self.registry._agent_by_id(agent_id)
-                if agent is not None:
-                    patch['x'] = agent.bot_pos[0]
-                    patch['y'] = agent.bot_pos[1]
-
     def reset(self):
         self.stop()
-        self.time_index = 0
-
-        for i, agent in enumerate(self.registry.agents):
-            offset_x = i * 0.5 if i > 0 else 0.0
-            agent.bot_pos[:] = [self.sim_cfg.init_x + offset_x, self.sim_cfg.init_y, 0.0]
-            agent.trail_xy.clear()
-            for joint in agent.circuit.joints:
-                joint.angle = 0.0
-                joint.vel   = 0.0
-            if agent.brain:
-                agent.brain.setup()
-                for layer in agent.circuit.layers:
-                    layer.reset()
-                for sensor in agent.circuit.sensors:
-                    sensor.reset()
-
-        # Snap mounted gradients to their (now-reset) robots immediately, rather
-        # than leaving them at their pre-reset position until the first tick —
-        # _setup_world()'s gradient render (called by the caller right after
-        # this) would otherwise draw a mounted patch at a stale, possibly
-        # far-away spot for a frame, looking like the gradient vanished.
-        self._sync_mounted_patches()
-
-        if self.mujoco.engine is not None:
-            self.mujoco.engine.reset([a.bot_pos for a in self.registry.agents])
+        # Also snaps mounted gradients to their (now-reset) robots immediately,
+        # rather than leaving them at their pre-reset position until the first
+        # tick — _setup_world()'s gradient render (called by the caller right
+        # after this) would otherwise draw a mounted patch at a stale spot.
+        self.sim.reset()
 
         self._osc_ctrl.reset_trace()
-        self._arena.setup_sensors(self.circuit.sensors, self._osc_ctrl.channel_colors)
-        if self._active_task is not None:
-            self._active_task.reset(self.world, self.sim_cfg)
+        self._arena.setup_sensors(self.registry.circuit.sensors, self._osc_ctrl.channel_colors)
 
         sel = self.registry.agent
         self._arena.sync_agents(self.registry.agents, sel.id if sel is not None else None,
                                  self.sim_cfg, self._trail_visible())
 
         self._osc_ctrl.update_osc()
+        # Back at the start: Run begins a fresh run.
+        self.sig_status_changed.emit("■  STOPPED", C['muted'])
 
     # ── Core loop ─────────────────────────────────────────────────────────────
 
     def _emit_frame_ready(self, overhead_rgb=None):
         """Emit sig_frame_ready with the current selected-agent id resolved the
-        same way self._agent is (falls back to the last agent if the stored
+        same way registry.agent is (falls back to the last agent if the stored
         selection no longer matches a live one)."""
         sel = self.registry.agent
         self.sig_frame_ready.emit(self.registry.agents, sel.id if sel is not None else None,
@@ -503,20 +340,9 @@ class SimController(QObject):
                     break
 
         overhead_rgb = None
-        if self.mujoco.engine is not None:
-            # render_cameras() is gated ONLY on the engine existing (the "3D
-            # (MuJoCo)" checkbox), NOT on view_3d ("Top view"/"Show 3D"). So
-            # every CameraSensor's _last_frame gets a real, textured MuJoCo
-            # render as soon as the checkbox is on, even if the arena canvas
-            # still displays the plain 2-D view below. Don't infer what a
-            # camera sensor sees from what the canvas looks like — see
-            # docs/simulator/architecture.md "Views on the same world".
-            if self.brain is not None:
-                self.mujoco.engine.render_cameras(
-                    self.brain, self.circuit.sensors,
-                    agent_idx=self.registry.index_of_agent(self.registry.selected_id) or 0)
-            if self.mujoco.view_3d:
-                overhead_rgb = self.mujoco.engine.render_overhead(512, 512)
+        self._render_free_running_cameras()
+        if self.mujoco.engine is not None and self.mujoco.view_3d:
+            overhead_rgb = self.mujoco.engine.render_overhead(512, 512)
 
         step_ms = self._phys_ms_acc / max(steps_done, 1)
         _t1 = time.perf_counter()
@@ -552,18 +378,19 @@ class SimController(QObject):
 
     def _tick_robot(self):
         """One physics-substep of real-robot mode, driven by RobotModeController."""
-        values = self.robot.tick(self.circuit, self.brain, self._osc_ctrl)
+        values = self.robot.tick(self.registry.circuit, self.registry.brain, self._osc_ctrl)
         self.sig_tick_values.emit(values)
-        self.time_index += 1
+        self.sim.time_index += 1
 
     def _tick(self):
-        self.time_index += 1
         _t0 = time.perf_counter()
 
         # ── CLIENT MODE ───────────────────────────────────────────────────────
-        # When connected to a remote host, receive sensor data, run brain, and
-        # send motors. Skip local physics entirely (world runs on the host).
+        # The world runs on the remote host: sensing = the host's sensor packet,
+        # acting = send the motors back. Think / motors are the same code as
+        # the simulator, including the keyboard taking priority.
         if self.network.is_client:
+            self.sim.time_index += 1
             agent = self.registry.agent
             if agent.brain is not None:
                 data, dt = self.network.client.pop_sensors()
@@ -572,14 +399,11 @@ class SimController(QObject):
                         setattr(agent.brain, name,
                                 np.array(values, dtype=np.float32))
                     try:
-                        result = agent.brain.loop(dt or self.sim_cfg.dt)
-                        if isinstance(result, (tuple, list)) and len(result) >= 2:
-                            mL, mR = float(result[0]), float(result[1])
-                        else:
-                            mL = mR = 0.0
+                        brain_cmd = run_brain(agent.brain, dt or self.sim_cfg.dt)
                     except Exception as exc:
                         print(f"[net_client] brain.loop error: {exc}")
-                        mL = mR = 0.0
+                        brain_cmd = (0.0, 0.0)
+                    mL, mR = choose_motor_command(agent.circuit, brain_cmd, self._motor_override())
                     self.network.client.send_motors(mL, mR)
             # Update oscilloscope from brain attributes (set just above)
             self.sig_tick_values.emit({
@@ -590,87 +414,36 @@ class SimController(QObject):
             return
         # ─────────────────────────────────────────────────────────────────────
 
-        self._sync_mounted_patches()
-
-        override = self._motor_override()
-        _engine  = self.mujoco.engine
+        keyboard = self._motor_override()
         agents   = self.registry.agents
         selected_id = self.registry.selected_id
 
         def _motor_for(agent):
-            """Return motor override for agent, or None for brain-driven."""
-            if agent.id == selected_id and override is not None:
-                return override
+            """Motor source per rules/motor_commands.md: keyboard (selected agent)
+            > network client > None (the agent's own brain drives)."""
+            if agent.id == selected_id and keyboard is not None:
+                return keyboard
             return self.network.resolve_remote_motors(agent.id)
 
-        # Run physics for every agent; accumulate selected agent's raw output.
-        # MuJoCo path: batch all agents into one mj_forward so inter-agent contacts
-        # are resolved correctly in a single physics step.
-        selected_raw = {}
-        if _engine is not None:
-            agent_list = [(a.bot_pos, a.brain, a.circuit.sensors, a.circuit)
-                          for a in agents]
-            overrides_list = [_motor_for(a) for a in agents]
-            raws = _engine.tick_physics_batch(agent_list, self.world, self.sim_cfg, overrides_list)
-            if self._trail_visible():
-                for agent in agents:
-                    agent.trail_xy.append((agent.bot_pos[0], agent.bot_pos[1]))
-            if agents:
-                sel_pos = self.registry.index_of_agent(selected_id)
-                selected_raw = raws[sel_pos] if sel_pos is not None else raws[-1]
-            # HOST: send sensor data to any connected remote clients — unified
-            # with the non-MuJoCo path below (previously this batch path sent
-            # after the loop while the per-agent path sent inline inside it).
-            if self.network.is_hosting:
-                for a in agents:
-                    slot_idx = self.network.slot_for_agent(a.id)
-                    if slot_idx is not None and a.brain is not None:
-                        self.network.host_maybe_send(slot_idx, a.brain, a.circuit.sensors, self.sim_cfg.dt)
-        else:
-            # Snapshot every agent's pre-tick position as a circle, so DistanceSensor/
-            # CollisionSensor can see other agents as obstacles — snapshotted once up
-            # front (not re-read per agent) so sensing doesn't depend on iteration
-            # order as agents move one after another below.
-            all_circles = [{'x': a.bot_pos[0], 'y': a.bot_pos[1], 'r': self.sim_cfg.body_radius}
-                           for a in agents]
-            for i, agent in enumerate(agents):
-                mo = _motor_for(agent)
-                other_agents = all_circles[:i] + all_circles[i + 1:]
-                raw = tick_physics(
-                    agent.bot_pos, agent.brain, agent.circuit.sensors,
-                    self.world, self.sim_cfg, circuit=agent.circuit, motor_override=mo,
-                    other_agents=other_agents)
-                if self._trail_visible():
-                    agent.trail_xy.append((agent.bot_pos[0], agent.bot_pos[1]))
-                if agent.id == selected_id:
-                    selected_raw = raw
-            # HOST: send sensor data to remote clients — moved out of the
-            # per-agent physics loop to match the MuJoCo path above.
-            if self.network.is_hosting:
-                for agent in agents:
-                    slot_idx = self.network.slot_for_agent(agent.id)
-                    if slot_idx is not None and agent.brain is not None:
-                        self.network.host_maybe_send(slot_idx, agent.brain, agent.circuit.sensors, self.sim_cfg.dt)
-
-        # Selected agent post-processing: override write-back, oscilloscope, logger.
-        if not agents:
+        raws = self.sim.step(_motor_for)
+        if not raws:
             self._phys_ms_acc += (time.perf_counter() - _t0) * 1000
             return
-        agent = self.registry.agent
-        raw   = selected_raw
 
-        if override is not None:
-            from neurons import MotorLayer as _MotorLayer
-            import torch as _torch
-            for _layer in agent.circuit.layers:
-                if isinstance(_layer, _MotorLayer):
-                    _lobj = getattr(agent.brain, _layer.name, _layer)
-                    if hasattr(_lobj, 'output') and _lobj.output is not None:
-                        _n = int(_lobj.output.numel()) if hasattr(_lobj.output, 'numel') \
-                             else len(np.atleast_1d(_lobj.output))
-                        _vals = [float(override[_j]) if _j < len(override) else 0.0
-                                 for _j in range(_n)]
-                        _lobj.output = _torch.tensor(_vals, dtype=_torch.float32)
+        if self._trail_visible():
+            for agent in agents:
+                agent.trail_xy.append((agent.bot_pos[0], agent.bot_pos[1]))
+        # HOST: send sensor data to any connected remote clients.
+        if self.network.is_hosting:
+            for a in agents:
+                slot_idx = self.network.slot_for_agent(a.id)
+                if slot_idx is not None and a.brain is not None:
+                    self.network.host_maybe_send(slot_idx, a.brain, a.circuit.sensors, self.sim_cfg.dt)
+
+        # Selected agent post-processing: oscilloscope, logger.
+        sel_pos = self.registry.index_of_agent(selected_id)
+        raw   = raws[sel_pos] if sel_pos is not None else raws[-1]
+        agent = self.registry.agent
 
         layer_names = {l.name for l in agent.circuit.layers}
         for lname in self._osc_ctrl._osc_items - {'mL', 'mR', 'sL', 'sR'}:
@@ -690,10 +463,7 @@ class SimController(QObject):
                         if jdx < len(out):
                             raw[lname] = float(out[jdx])
 
-        if self._active_task is not None:
-            self._active_task.tick(self.world, agent.bot_pos, self.sim_cfg, self.sim_cfg.dt)
-
-        self._logger.log(self.time_index, agent.bot_pos, raw, self.world)
+        self._logger.log(self.sim.time_index, agent.bot_pos, raw, self.world)
         self._phys_ms_acc += (time.perf_counter() - _t0) * 1000
 
         self.sig_tick_values.emit({k: raw.get(k, getattr(agent.brain, k, 0))

@@ -15,6 +15,8 @@ import time
 import numpy as np
 from PySide6.QtCore import QObject, Signal
 
+from lateral import half_names
+
 
 def _build_sensor_data(brain, sensors):
     """Build a sensor-data dict suitable for SimNetHost.send_sensors().
@@ -25,10 +27,9 @@ def _build_sensor_data(brain, sensors):
     for s in sensors:
         arr = np.atleast_1d(getattr(brain, s.name, []))
         data[s.name] = arr.tolist()
-        if getattr(s, 'lateralized', False):
-            for suffix in ('_L', '_R'):
-                h = np.atleast_1d(getattr(brain, s.name + suffix, []))
-                data[s.name + suffix] = h.tolist()
+        if s.is_lateralized():   # camera halves and joint-pair halves alike
+            for half in half_names(s.name):
+                data[half] = np.atleast_1d(getattr(brain, half, [])).tolist()
     return data
 
 
@@ -48,8 +49,8 @@ class NetworkController(QObject):
 
         self._net_host       = None   # type: SimNetHost | None
         self._net_client     = None   # type: SimNetClient | None
-        self._net_frame_rate = 50     # target Hz for sensor sends to clients
-        self._net_disconnect_timeout = 2.0   # seconds idle before a stale client is pruned
+        self.frame_rate         = 50    # target Hz for sensor sends to clients
+        self.disconnect_timeout = 2.0   # seconds idle before a stale client is pruned
         self._net_send_times: dict = {}  # slot_idx → last wall-clock send time
         self._net_send_dts:   dict = {}  # slot_idx → accumulated sim dt since last send
 
@@ -84,6 +85,11 @@ class NetworkController(QObject):
 
     def agent_for_slot(self, slot_idx):
         return self._slot_to_agent_id.get(slot_idx)
+
+    def assign_slot(self, slot_idx, agent_id):
+        """Record that remote slot *slot_idx* drives agent *agent_id*."""
+        self._slot_to_agent_id[slot_idx] = agent_id
+        self._agent_id_to_slot[agent_id] = slot_idx
 
     def forget_agent(self, agent_id):
         """Drop agent_id's slot mapping, if any. Wired as AgentRegistry's
@@ -147,7 +153,7 @@ class NetworkController(QObject):
         the caller's sim_cfg.dt — this class doesn't own sim_cfg.
         """
         now = time.monotonic()
-        interval = 1.0 / max(1, self._net_frame_rate)
+        interval = 1.0 / max(1, self.frame_rate)
         self._net_send_dts[slot_idx] = (
             self._net_send_dts.get(slot_idx, 0.0) + dt
         )

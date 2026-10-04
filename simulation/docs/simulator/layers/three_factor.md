@@ -4,13 +4,17 @@ Reward-gated Hebbian learning. Weight changes require the simultaneous coinciden
 
 ## Learning rule
 
-$$\Delta W_{ji} = \alpha_{\text{eff}} \cdot r \cdot V_j \cdot s_{i,\text{prev}}$$
+$$\Delta W_{ji} = \alpha_{\text{eff}} \cdot r \cdot V_j \cdot s_i$$
 
 | Term | Role |
 |---|---|
 | `r` | Reward signal from the designated neuromodulator — gates all plasticity |
 | `V_j` | Postsynaptic activity of neuron j — selects *which* neuron learns |
-| `s_prev` | Presynaptic activity on the previous tick — selects *which* inputs |
+| `s_i` | Presynaptic activity on the same tick (the input that produced `V_j`) — selects *which* inputs |
+
+Like every layer, V goes through the shared pipeline first — bias, noise (`noise_std` / `noise_tau`, see [Noise](leaky.md#noise)), output mode, leaky filter — so noise on V also reaches the weight update.
+
+Learning rates are **per tick at the default time step dt = 0.01 s** and scale with dt, so learning per second is the same at any dt (see [Noise](leaky.md#noise) for why the default dt is the reference).
 
 ## Passive forgetting
 

@@ -9,13 +9,14 @@ Models calcium-like sustained (working-memory) activity. A fast membrane variabl
 | `n` | Number of neurons; default 2 |
 | `tau_rise` | Fast membrane rise time constant (s); default 0.05 |
 | `tau_decay` | Fast membrane decay time constant (s); defaults to `tau_rise` |
-| `tau_hold` | Plateau charging/draining time constant (s); default 2.0 |
+| `tau_hold` | Plateau charging/draining time constant (s); default 2.0; 0 or blank = no plateau (s follows the drive instantly) |
 | `theta` | Threshold for charging plateau; default 0.0 |
 | `w_s` | Gain of plateau variable on output; default 1.0 |
 | `drain` | Rate at which sustained inhibition erodes plateau (0 = pure latch); default 1.0 |
 | `bias` | Constant added to input; default 0.0 |
 | `activation` | Output nonlinearity; default `relu` |
 | `scale` | Output multiplier; default 1.0 |
+| `noise_std` / `noise_tau` | Noise on the input, as in every layer — see [Noise](leaky.md#noise); default 0.0 |
 
 ## Dynamics
 

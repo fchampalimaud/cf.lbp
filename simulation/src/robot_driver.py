@@ -35,7 +35,6 @@ import threading
 import time
 import numpy as np
 
-from sensors import CameraSensor
 
 
 # ── OSC helpers (no external dependency) ──────────────────────────────────────
@@ -404,19 +403,15 @@ class CameraThread(threading.Thread):
             return
 
         for sensor in self._sensors:
-            mode = getattr(sensor, 'mode', 'gray')
             w, h = sensor.width, sensor.height
             try:
                 resized = img.resize((w, h), Image.BILINEAR)
-                if mode == 'rgb':
+                l_end, r_start = sensor._half_bounds()
+                if sensor.in_ch == 3:
                     arr = np.array(resized.convert('RGB'), dtype=np.float32) / 255.0  # (H,W,3)
                     sensor._last_frame  = arr
                     sensor._robot_value = arr.transpose(2, 0, 1).reshape(-1)  # CHW flat
                     if getattr(sensor, 'lateralized', False):
-                        mid     = w // 2
-                        overlap = getattr(sensor, 'overlap', 0)
-                        l_end   = int(np.clip(mid + overlap, 0, w))
-                        r_start = int(np.clip(mid - overlap, 0, w))
                         sensor._left_output  = arr[:, :l_end,   :].transpose(2,0,1).reshape(-1).astype(np.float32)
                         sensor._right_output = arr[:, r_start:, :].transpose(2,0,1).reshape(-1).astype(np.float32)
                 else:
@@ -424,10 +419,6 @@ class CameraThread(threading.Thread):
                     sensor._last_frame  = arr
                     sensor._robot_value = arr.reshape(-1)  # row-major flat
                     if getattr(sensor, 'lateralized', False):
-                        mid     = w // 2
-                        overlap = getattr(sensor, 'overlap', 0)
-                        l_end   = int(np.clip(mid + overlap, 0, w))
-                        r_start = int(np.clip(mid - overlap, 0, w))
                         sensor._left_output  = arr[:, :l_end  ].reshape(-1).astype(np.float32)
                         sensor._right_output = arr[:, r_start:].reshape(-1).astype(np.float32)
             except Exception:
@@ -474,7 +465,7 @@ class RobotDriver:
 
         for (host, port), group in groups.items():
             names = [s.name for s in group]
-            is_camera = all(isinstance(s, CameraSensor) for s in group)
+            is_camera = all(s.is_camera for s in group)
             kind = 'CameraThread' if is_camera else 'OscThread'
             print(f'[Robot] starting {kind} for {host}:{port} — sensors: {names}')
             t = CameraThread(host, port, group) if is_camera else OscThread(port, group)

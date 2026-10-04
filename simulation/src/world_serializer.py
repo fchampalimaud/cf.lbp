@@ -7,7 +7,6 @@ arena state independent of any session/brain: gradient patches, objects, walls,
 sky, arena shape, and floor texture.
 """
 
-import glob
 import json
 import os
 
@@ -16,8 +15,9 @@ from app_version import get_app_version
 
 
 def discover_worlds():
-    """Return sorted basenames of all world files in worlds/."""
-    return sorted(os.path.basename(p) for p in glob.glob(os.path.join('worlds', '*.json')))
+    """Sorted names of the world files in both roots' worlds/ (data_paths)."""
+    import data_paths
+    return sorted(name for name, _p in data_paths.files('worlds', '*.json'))
 
 
 def serialize_world_json(world) -> dict:

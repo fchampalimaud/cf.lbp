@@ -17,18 +17,14 @@ from PySide6.QtWidgets import (
     QButtonGroup, QListWidget,
 )
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QFontMetrics
 
 from sim_constants import C, GRADIENT_COLORS, OBJECT_COLORS
 from arena_widget import ArenaWidget
 from sim_widgets import OscilloscopeWidget, ControlPanel
 from world_serializer import discover_worlds
 from texture_manager import discover_textures
-
-try:
-    from sim_engine_mujoco import MuJoCoEngine
-    _MUJOCO_AVAILABLE = True
-except Exception:
-    _MUJOCO_AVAILABLE = False
+import data_paths
 
 
 class _UiBuilderMixin:
@@ -85,6 +81,7 @@ class _UiBuilderMixin:
         self._build_robot_group(tab_robot)
         self._build_network_group(tab_network)
         self._panel.add_stretch()
+        self._panel.compact()
 
         self._status_bar = QStatusBar()
         self.setStatusBar(self._status_bar)
@@ -103,7 +100,7 @@ class _UiBuilderMixin:
         def _set_dock_sizes():
             self.resizeDocks([self._left_dock], [430], Qt.Horizontal)
             self.resizeDocks([self._osc_dock],  [220], Qt.Vertical)
-            if not self._osc_cb.isChecked():
+            if not self._osc_btn.isChecked():
                 self._osc_hidden_height = 220
                 self._osc_dock.setVisible(False)
                 self.resize(self.width(), self.height() - 220)
@@ -115,7 +112,7 @@ class _UiBuilderMixin:
         btn.setStyleSheet(f"""
             QPushButton {{
                 background:{bg}; border:none; border-radius:3px;
-                padding:5px 10px; font-weight:bold; color:{self._text_color(bg)};
+                padding:4px 7px; font-weight:bold; color:{self._text_color(bg)};
             }}
             QPushButton:hover {{ background:{self._darken(bg)}; }}
             QPushButton:disabled {{ background:{C['border']}; color:{C['muted']}; }}
@@ -123,6 +120,75 @@ class _UiBuilderMixin:
         """)
         if checkable:
             btn.setCheckable(True)
+        btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)   # Space / Enter must not press it
+        return btn
+
+    def _show_shortcuts(self):
+        """Open (or raise) the keyboard-shortcuts panel."""
+        from shortcuts import ShortcutsDialog
+        if getattr(self, '_shortcuts_dlg', None) is None:
+            self._shortcuts_dlg = ShortcutsDialog(self)
+        self._shortcuts_dlg.show()
+        self._shortcuts_dlg.raise_()
+        self._shortcuts_dlg.activateWindow()
+
+    # ── Folder pickers: first the root, then its folders ──────────────────────
+
+    def _make_root_combo(self):
+        """'My files' / '🔒 Simulator' — which root a folder picker lists."""
+        combo = QComboBox()
+        combo.addItem("My files", "user")
+        combo.addItem("🔒 Simulator", "builtin")
+        combo.setToolTip("Your own files, or the read-only ones that ship with the simulator")
+        return combo
+
+    @staticmethod
+    def _first_folder_key(kind, root):
+        """Picker key of the first folder of *root* ('user' → the top level)."""
+        if root == 'builtin':
+            dirs = data_paths.builtin_subdirs(kind)
+            return data_paths.BUILTIN + dirs[0] if dirs else data_paths.BUILTIN
+        return ''
+
+    def _fill_folder_picker(self, root_combo, dir_combo, kind, key):
+        """Set root_combo from *key* and list that root's folders in dir_combo.
+        Keys as in data_paths.folder_for: 'builtin:Tutorials', 'Mine', '' (the
+        user's top level). Returns True when the built-in root is shown."""
+        builtin = (key or '').startswith(data_paths.BUILTIN)
+        root_combo.blockSignals(True)
+        root_combo.setCurrentIndex(root_combo.findData('builtin' if builtin else 'user'))
+        root_combo.blockSignals(False)
+        if builtin:
+            entries = [(d, data_paths.BUILTIN + d) for d in data_paths.builtin_subdirs(kind)]
+        else:
+            entries = [("(top level)", "")] + [(d, d) for d in data_paths.user_subdirs(kind)]
+        dir_combo.blockSignals(True)
+        dir_combo.clear()
+        for label, data in entries:
+            dir_combo.addItem(label, data)
+        idx = dir_combo.findData(key)
+        dir_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        dir_combo.blockSignals(False)
+        return builtin
+
+    def _make_toggle(self, text, tooltip=None):
+        """A two-state (checkable) button in the one style every main-window
+        toggle shares: white when off, primary light blue + bold when on.
+        (The gradient / object / sky palette buttons keep their own colours.)"""
+        btn = QPushButton(text)
+        btn.setCheckable(True)
+        btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)   # Space / Enter must not toggle it
+        on = C['primary']
+        btn.setStyleSheet(
+            f"QPushButton {{ background:{C['surface']}; color:{C['dark']};"
+            f" border:2px solid {C['border']}; border-radius:3px; padding:3px 7px; }}"
+            f"QPushButton:hover {{ background:{C['bg']}; }}"
+            f"QPushButton:checked {{ background:{on}; border:2px solid {self._darken(on, 0.75)};"
+            f" font-weight:bold; }}"
+            f"QPushButton:disabled {{ background:{C['bg']}; color:{C['muted']};"
+            f" border:2px solid {C['border']}; }}")
+        if tooltip:
+            btn.setToolTip(tooltip)
         return btn
 
     @staticmethod
@@ -149,6 +215,7 @@ class _UiBuilderMixin:
 
         if hasattr(p_obj, 'get_choices'):
             combo = QComboBox()
+            self._panel.compact_widget(combo)
             choices = choices if choices is not None else p_obj.get_choices()
             combo.addItems([''] + choices)
             if current_val in choices:
@@ -209,85 +276,128 @@ class _UiBuilderMixin:
     # ── Panel builders ────────────────────────────────────────────────────────
 
     def _build_sim_group(self):
-        gb, vl = self._panel.add_group("Simulation")
+        gb, group_vl = self._panel.add_group("Simulation")
 
-        row1 = QWidget(); hl1 = QHBoxLayout(row1); hl1.setContentsMargins(0, 0, 0, 0)
+        # Two columns: options (speed, robot and display toggles) on the left,
+        # Run / Step / Reset stacked in a narrow column on the right.
+        cols = QWidget(); cols_hl = QHBoxLayout(cols); cols_hl.setContentsMargins(0, 0, 0, 0)
+        left = QWidget(); vl = QVBoxLayout(left)
+        vl.setContentsMargins(0, 0, 0, 0); vl.setSpacing(4)
+        right = QWidget(); run_vl = QVBoxLayout(right)
+        run_vl.setContentsMargins(0, 0, 0, 0); run_vl.setSpacing(4)
+        cols_hl.addWidget(left, 1)
+        cols_hl.addWidget(right, 0)
+        group_vl.addWidget(cols)
+
         self._btn_run_stop = self._make_btn("▶ Run",   C['success'])
         self._btn_step     = self._make_btn("⏭ Step", C['surface'])
         self._btn_reset    = self._make_btn("↺ Reset", C['surface'])
+        self._btn_run_stop.setToolTip(
+            "Run / Pause the simulation (Ctrl+Space).\n"
+            "Pause freezes everything where it is; Run continues from there.")
+        self._btn_step.setToolTip(
+            "Advance exactly one physics tick (Ctrl+→) — frame-by-frame inspection while paused.")
+        self._btn_reset.setToolTip(
+            "Stop and put the robots back at their start position and heading (Ctrl+R).\n"
+            "Brain state is cleared; the world (patches, objects) is kept.")
         for b in [self._btn_run_stop, self._btn_step, self._btn_reset]:
-            hl1.addWidget(b)
-        vl.addWidget(row1)
+            b.setMinimumSize(88, 30)
+            run_vl.addWidget(b)
+        run_vl.addStretch()
+
+        # "?" right after the group title: opens the keyboard & mouse panel (also F1).
+        btn_help = QPushButton("?", gb)
+        btn_help.setFixedSize(16, 16)
+        btn_help.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        btn_help.setToolTip("Keyboard and mouse (F1)")
+        btn_help.setStyleSheet(
+            f"QPushButton {{ background:{C['surface']}; color:{C['dark']}; font-weight:bold;"
+            f" border:1px solid {C['border']}; border-radius:8px; padding:0; font-size:8pt; }}"
+            f"QPushButton:hover {{ background:{C['primary']}; }}")
+        btn_help.clicked.connect(self._show_shortcuts)
+        title_w = QFontMetrics(gb.font()).horizontalAdvance(gb.title())
+        btn_help.move(8 + title_w + 10, 0)   # QGroupBox title starts 8 px in (sim_widgets)
+        btn_help.raise_()
         self._btn_run_stop.clicked.connect(self._on_run_stop)
         self._btn_step.clicked.connect(lambda: self._sim_ctrl.step())
         self._btn_reset.clicked.connect(self._reset)
 
+        def row_label(text):
+            # Left column of the options: what each row is about, aligned.
+            lbl = QLabel(text)
+            lbl.setFixedWidth(78)
+            lbl.setStyleSheet(f"color:{C['dark']};font-weight:bold;")   # like "Gradients:"
+            return lbl
+
         row2 = QWidget(); hl2 = QHBoxLayout(row2); hl2.setContentsMargins(0, 0, 0, 0)
+        hl2.addWidget(row_label("Time"))
         hl2.addWidget(QLabel("Speed ×"))
         self._speed_spin = QSpinBox()
         self._speed_spin.setMinimum(1); self._speed_spin.setMaximum(500)
-        self._speed_spin.setValue(1)
+        self._speed_spin.setValue(200)
         self._speed_spin.valueChanged.connect(lambda v: self._sim_ctrl.set_speed_mult(v))
+        self._speed_tip = (   # also restored when Real time is switched off
+            "Speed ×: physics ticks run per display frame.\n"
+            "Higher = faster than real time. The physics step (dt) is unchanged, so results\n"
+            "are the same — the screen just updates less often per simulated second.")
+        self._speed_spin.setToolTip(self._speed_tip)
         hl2.addWidget(self._speed_spin)
         self._rt_cb = QCheckBox("Real time")
-        self._rt_cb.setToolTip("Run only as many physics ticks per frame as wall-clock time demands")
+        self._rt_cb.setToolTip(
+            "Real time: run only as many ticks per frame as the wall clock demands,\n"
+            "so one simulated second takes one real second. Overrides Speed × while on.")
         self._rt_cb.toggled.connect(self._on_rt_mode_toggled)
         hl2.addWidget(self._rt_cb)
-        btn_clear = self._make_btn("✕ Clear World", C['muted'])
-        btn_clear.clicked.connect(self._clear_world)
-        hl2.addWidget(btn_clear)
+        hl2.addStretch()
         vl.addWidget(row2)
 
+        # Robot row: what drives / holds the robot.
         row3 = QWidget(); rl3 = QHBoxLayout(row3); rl3.setContentsMargins(0, 0, 0, 0)
-        self._fixate_cb = QCheckBox("Fixate")
-        self._fixate_cb.setToolTip("Freeze robot position (physics still runs)")
-        self._fixate_cb.setChecked(bool(self.sim_cfg.fixate_robot))
-        self._fixate_cb.stateChanged.connect(
-            lambda s: setattr(self.sim_cfg, 'fixate_robot', 1.0 if s else 0.0))
-        rl3.addWidget(self._fixate_cb)
-        self._stim_cb = QCheckBox("Show stimulus")
-        self._stim_cb.setChecked(bool(self.sim_cfg.toggle_stim))
-        self._stim_cb.stateChanged.connect(self._on_toggle_stim)
-        rl3.addWidget(self._stim_cb)
-        self._osc_cb = QCheckBox("Oscilloscope")
-        self._osc_cb.setChecked(False)
-        self._osc_cb.stateChanged.connect(self._on_toggle_osc)
-        rl3.addWidget(self._osc_cb)
-        self._robot_cb = QCheckBox("Real Robot")
-        self._robot_cb.setToolTip(
-            "Replace sim physics with live robot I/O.\n"
+        rl3.addWidget(row_label("Options"))
+        self._fixate_btn = self._make_toggle(
+            "📌 Fixate",
+            "Fixate: hold the robot in place.\n"
+            "Sensors, brain and motor commands keep running — move patches around it\n"
+            "to probe how the sensors and the network respond.")
+        self._fixate_btn.setChecked(bool(self.sim_cfg.fixate_robot))
+        self._fixate_btn.toggled.connect(
+            lambda on: setattr(self.sim_cfg, 'fixate_robot', 1.0 if on else 0.0))
+        rl3.addWidget(self._fixate_btn)
+        manual_btn = self._make_toggle(
+            "⌨ Manual",
+            "Manual: drive the robot with the keyboard — W / S forward / back, A / D turn, Space stop.\n"
+            "The brain keeps running (watch it in the network window and oscilloscope);\n"
+            "while on, those keys don't pick world tools.")
+        manual_btn.clicked.connect(self._toggle_manual_mode)
+        rl3.addWidget(manual_btn)
+        self._manual_btn = manual_btn
+        self._robot_btn = self._make_toggle(
+            "🤖 Robot",
+            "Robot: drive the real robot instead of the simulated body.\n"
+            "Sensor readings come from the robot and motor commands go to it over the network (OSC/UDP).\n"
             "Each sensor's robot_address field specifies its host:port connection.\n"
             "Motor commands are sent as OSC to the motor layer's robot_address.")
-        self._robot_cb.stateChanged.connect(self._on_robot_mode_toggle)
-        rl3.addWidget(self._robot_cb)
+        self._robot_btn.toggled.connect(self._on_robot_mode_toggle)
+        rl3.addWidget(self._robot_btn)
         rl3.addStretch()
         vl.addWidget(row3)
 
+        # Display row
         row4 = QWidget(); rl4 = QHBoxLayout(row4); rl4.setContentsMargins(0, 0, 0, 0)
-        move_btn = QPushButton("↖ Move")
-        move_btn.setCheckable(True)
-        move_btn.setToolTip("Drag gradients, objects, or the robot to a new position")
-        move_btn.setStyleSheet(
-            f"QPushButton {{ background:{C['surface']}; border:2px solid {C['border']};"
-            f" border-radius:3px; padding: 6px 12px; }}"
-            f"QPushButton:checked {{ border:2px solid {C['primary']};"
-            f" background:#1a3a5c; font-weight:bold; }}")
-        move_btn.clicked.connect(self._set_move_mode)
-        rl4.addWidget(move_btn)
-        self._move_btn = move_btn
-
-        manual_btn = QPushButton("⌨ Manual")
-        manual_btn.setCheckable(True)
-        manual_btn.setToolTip(
-            "Manual control (WASD = steer, Space = stop).\nBrain simulation keeps running.")
-        manual_btn.setStyleSheet(
-            f"QPushButton {{ background:{C['surface']}; border:2px solid {C['border']};"
-            f" border-radius:3px; padding: 6px 12px; }}"
-            f"QPushButton:checked {{ border:2px solid {C['warning']};"
-            f" background:#3a2a00; font-weight:bold; }}")
-        manual_btn.clicked.connect(self._toggle_manual_mode)
-        rl4.addWidget(manual_btn)
-        self._manual_btn = manual_btn
+        rl4.addWidget(row_label("Visualization"))
+        self._hide_stim_btn = self._make_toggle(
+            "Hide stim",
+            "Hide stim: switch the gradient patches off.\n"
+            "They disappear from the arena and gradient sensors read zero; the patches are\n"
+            "kept and come back when you switch this off.")
+        self._hide_stim_btn.setChecked(not self.sim_cfg.toggle_stim)
+        self._hide_stim_btn.toggled.connect(lambda hide: self._on_toggle_stim(not hide))
+        rl4.addWidget(self._hide_stim_btn)
+        self._osc_btn = self._make_toggle(
+            "Osc", "Osc: show / hide the oscilloscope dock — live traces of the brain's plots()\n"
+                   "and of any node added from the network window (right-click → Add to oscilloscope).")
+        self._osc_btn.toggled.connect(self._on_toggle_osc)
+        rl4.addWidget(self._osc_btn)
         rl4.addStretch()
         vl.addWidget(row4)
 
@@ -303,7 +413,7 @@ class _UiBuilderMixin:
         gb, vl = self._panel.add_group("Physics", panel_vl)
         self._phys_widgets = {}
         phys_params = ['dt', 'motor_gain', 'body_radius', 'arena_scale',
-                       'sense_radius', 'sensor_angle', 'init_x', 'init_y']
+                       'sense_radius', 'init_x', 'init_y']
         meta = self.sim_cfg.get_param_metadata()
         for k in phys_params:
             if k not in meta:
@@ -363,9 +473,12 @@ class _UiBuilderMixin:
         self._net_host_fr_spin.setValue(50)
         self._net_host_fr_spin.setSuffix(" Hz")
         self._net_host_fr_spin.valueChanged.connect(
-            lambda v: setattr(self._sim_ctrl, '_net_frame_rate', v)
+            lambda v: setattr(self._sim_ctrl.network, 'frame_rate', v)
         )
         fr_hl.addWidget(self._net_host_fr_spin)
+        fr_hl.addStretch()
+        hvl.addWidget(fr_row)
+        fr_row = QWidget(); fr_hl = QHBoxLayout(fr_row); fr_hl.setContentsMargins(0, 0, 0, 0)
         fr_hl.addWidget(QLabel("Timeout:"))
         self._net_host_timeout_spin = QDoubleSpinBox()
         self._net_host_timeout_spin.setRange(0.5, 30.0)
@@ -377,7 +490,7 @@ class _UiBuilderMixin:
             "Clients heartbeat every 2s — very low values may prune a client\n"
             "on a single missed/delayed heartbeat.")
         self._net_host_timeout_spin.valueChanged.connect(
-            lambda v: setattr(self._sim_ctrl, '_net_disconnect_timeout', v)
+            lambda v: setattr(self._sim_ctrl.network, 'disconnect_timeout', v)
         )
         fr_hl.addWidget(self._net_host_timeout_spin)
         fr_hl.addStretch()
@@ -437,67 +550,7 @@ class _UiBuilderMixin:
         if panel_vl is not None:
             panel_vl.addStretch()
 
-    # ── Robot tab ────────────────────────────────────────────────────────────
-
-    def _build_robot_group(self, panel_vl=None):
-        target = panel_vl or self._panel._layout
-
-        # Status chip — one compact line
-        status_row = QWidget()
-        sl = QHBoxLayout(status_row)
-        sl.setContentsMargins(2, 2, 2, 2)
-        self._robot_status_lbl = QLabel("● Offline")
-        self._robot_status_lbl.setStyleSheet("color: gray; font-weight: bold;")
-        sl.addWidget(self._robot_status_lbl)
-        sl.addStretch()
-        target.addWidget(status_row)
-
-        # Dynamic rows container
-        self._robot_rows_widget = QWidget()
-        self._robot_rows_vl = QVBoxLayout(self._robot_rows_widget)
-        self._robot_rows_vl.setContentsMargins(2, 0, 2, 0)
-        self._robot_rows_vl.setSpacing(1)
-        target.addWidget(self._robot_rows_widget)
-
-        target.addStretch()   # keep rows packed at the top
-
-        self._robot_hz_labels: dict = {}        # osc_path → QLabel  (sensors)
-        self._robot_motor_hz_labels: dict = {}  # osc_path → QLabel  (motors)
-
-        self._robot_tab_timer = QTimer(self)
-        self._robot_tab_timer.setInterval(1000)
-        self._robot_tab_timer.timeout.connect(self._update_robot_hz)
-        self._robot_tab_timer.start()
-
-    def _add_robot_row(self, kind: str, name: str, path: str) -> QLabel:
-        """One compact row: [S/M] name  path  Hz. Returns the Hz QLabel."""
-        row = QWidget()
-        hl = QHBoxLayout(row)
-        hl.setContentsMargins(0, 0, 0, 0)
-        hl.setSpacing(4)
-
-        kind_lbl = QLabel(kind)
-        kind_lbl.setFixedWidth(12)
-        kind_lbl.setStyleSheet(
-            "color: #888;" if kind == 'S' else "color: #55a;")
-        hl.addWidget(kind_lbl)
-
-        name_lbl = QLabel(name)
-        name_lbl.setFixedWidth(80)
-        hl.addWidget(name_lbl)
-
-        path_lbl = QLabel(path)
-        path_lbl.setStyleSheet("color: #666;")
-        hl.addWidget(path_lbl)
-
-        hl.addStretch()
-
-        hz_lbl = QLabel("-- Hz")
-        hz_lbl.setFixedWidth(50)
-        hl.addWidget(hz_lbl)
-
-        self._robot_rows_vl.addWidget(row)
-        return hz_lbl
+    # _build_robot_group / _add_robot_row → sim_app_robot._RobotMixin
 
     def _build_world_group(self, panel_vl=None):
         gb, vl = self._panel.add_group("World", panel_vl)
@@ -533,35 +586,23 @@ class _UiBuilderMixin:
         self._trail_len_spin.setSingleStep(50); self._trail_len_spin.setValue(500)
         self._trail_len_spin.valueChanged.connect(self._on_trail_len_change)
         tl.addWidget(self._trail_len_spin)
+        tl.addStretch()
         vl.addWidget(trail_row)
 
-        mujoco_row = QWidget(); ml = QHBoxLayout(mujoco_row); ml.setContentsMargins(0, 0, 0, 0)
-        self._mujoco_cb = QCheckBox("3D (MuJoCo)")
-        self._mujoco_cb.setToolTip(
-            "Enable MuJoCo 3D engine.\nCamera sensors render a real 3D perspective image.\n"
-            "Physics (collision, gradients) stays 2D.\nWorld edits reload the MuJoCo model.")
-        self._mujoco_cb.setEnabled(_MUJOCO_AVAILABLE)
-        if not _MUJOCO_AVAILABLE:
-            self._mujoco_cb.setToolTip("mujoco package not installed (pip install mujoco)")
-        self._mujoco_cb.stateChanged.connect(self._on_mujoco_toggle)
-        ml.addWidget(self._mujoco_cb)
+        ml = tl   # Show 3D / Top view share the trail row
         self._mujoco_viewer_btn = QPushButton("Show 3D")
         self._mujoco_viewer_btn.setFixedHeight(22)
         self._mujoco_viewer_btn.setEnabled(False)
         self._mujoco_viewer_btn.setToolTip("Open the MuJoCo 3D viewer window")
-        self._mujoco_viewer_btn.clicked.connect(lambda: self._sim_ctrl.show_mujoco_viewer())
+        self._mujoco_viewer_btn.clicked.connect(lambda: self._sim_ctrl.mujoco.show_viewer())
         ml.addWidget(self._mujoco_viewer_btn)
-        self._view_3d_btn = QPushButton("Top view")
-        self._view_3d_btn.setFixedHeight(22)
-        self._view_3d_btn.setCheckable(True)
-        self._view_3d_btn.setEnabled(False)
-        self._view_3d_btn.setToolTip(
+        self._view_3d_btn = self._make_toggle(
+            "Top view",
             "Show MuJoCo overhead (top-down) render in the arena.\n"
             "Object editing still works — switch back to 2D to see gradients.")
+        self._view_3d_btn.setEnabled(False)
         self._view_3d_btn.clicked.connect(self._on_view_3d_toggle)
         ml.addWidget(self._view_3d_btn)
-        ml.addStretch()
-        vl.addWidget(mujoco_row)
 
         arena_row = QWidget(); al = QHBoxLayout(arena_row); al.setContentsMargins(0, 0, 0, 0)
         al.addWidget(QLabel("Arena:"))
@@ -570,6 +611,15 @@ class _UiBuilderMixin:
         self._arena_square_rb.setChecked(True)
         self._arena_square_rb.toggled.connect(self._on_arena_type_change)
         al.addWidget(self._arena_square_rb); al.addWidget(self._arena_round_rb)
+        al.addStretch()
+        self._move_btn = self._make_toggle(
+            "↖ Move", "Drag gradients, objects, or a robot to a new position")
+        self._move_btn.clicked.connect(self._set_move_mode)
+        al.addWidget(self._move_btn)
+        btn_clear = self._make_btn("✕ Clear World", C['muted'])
+        btn_clear.setToolTip("Remove all gradient patches and objects (walls stay)")
+        btn_clear.clicked.connect(self._clear_world)
+        al.addWidget(btn_clear)
         vl.addWidget(arena_row)
 
         grad_row = QWidget(); gl = QHBoxLayout(grad_row); gl.setContentsMargins(0, 0, 0, 0)
@@ -604,6 +654,7 @@ class _UiBuilderMixin:
             f" background:#3a2a00; font-weight:bold; }}")
         wall_btn.clicked.connect(self._set_wall_mode)
         gl.addWidget(wall_btn)
+        gl.addStretch()
         self._wall_btn = wall_btn
         vl.addWidget(grad_row)
 
@@ -627,12 +678,6 @@ class _UiBuilderMixin:
             f"border:2px solid {C['border']};border-radius:3px;font-weight:bold;")
         self._obj_picker_btn.clicked.connect(self._pick_object_color)
         ol.addWidget(self._obj_picker_btn)
-        self._obj_texture_combo = QComboBox()
-        self._obj_texture_combo.addItems(["(none)"] + discover_textures())
-        self._obj_texture_combo.setToolTip("Texture applied to new objects/walls (MuJoCo view only)")
-        self._obj_texture_combo.setFixedWidth(90)
-        self._obj_texture_combo.currentTextChanged.connect(self._set_object_texture)
-        ol.addWidget(self._obj_texture_combo)
         self._obj_wall_btn = QPushButton("Wall")
         self._obj_wall_btn.setFixedHeight(26); self._obj_wall_btn.setCheckable(True)
         self._obj_wall_btn.setStyleSheet(
@@ -651,7 +696,17 @@ class _UiBuilderMixin:
             f"border:2px solid #000;border-radius:3px;font-weight:bold;}}")
         self._poly_ext_btn.clicked.connect(self._toggle_poly_external)
         ol.addWidget(self._poly_ext_btn)
+        ol.addStretch()
         vl.addWidget(obj_row)
+
+        tex_row = QWidget(); txl = QHBoxLayout(tex_row); txl.setContentsMargins(0, 0, 0, 0)
+        txl.addWidget(QLabel("Texture:"))
+        self._obj_texture_combo = QComboBox()
+        self._obj_texture_combo.addItems(["(none)"] + discover_textures())
+        self._obj_texture_combo.setToolTip("Texture applied to new objects/walls (MuJoCo view only)")
+        self._obj_texture_combo.currentTextChanged.connect(self._set_object_texture)
+        txl.addWidget(self._obj_texture_combo, 1)
+        vl.addWidget(tex_row)
 
         sky_row = QWidget(); skl = QHBoxLayout(sky_row); skl.setContentsMargins(0, 0, 0, 0)
         sky_lbl = QLabel("Sky:")

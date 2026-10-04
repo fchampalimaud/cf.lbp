@@ -4,3 +4,5 @@ logs/
 data/
 site/
 *.layout
+_update/
+latest_session.json

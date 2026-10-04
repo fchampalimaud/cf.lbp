@@ -20,6 +20,8 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout,
                                 QPushButton, QLabel)
 from PySide6.QtCore import Qt
 
+from lateral import half_names
+
 try:
     import pyqtgraph.opengl as gl
     _GL_OK = True
@@ -173,7 +175,7 @@ class NetView3DWindow(QWidget):
             return
 
         # ── X axis: pipeline container position ─────────────────────────────────────────
-        depth = nvw._compute_container()
+        depth = nvw.layout_engine.compute_container()
 
         # Lateralized layer pairs share the same container
         for l in c.layers:
@@ -206,8 +208,8 @@ class NetView3DWindow(QWidget):
             entry  = dict(container=container, z=z, is_sensor=True,
                           is_image=is_img, aspect=cam_h / cam_w, n=n)
             if s.is_lateralized(c):
-                obj_info[s.name + '_L'] = entry
-                obj_info[s.name + '_R'] = entry
+                for half in half_names(s.name):
+                    obj_info[half] = entry
             else:
                 obj_info[s.name] = entry
 
@@ -266,7 +268,7 @@ class NetView3DWindow(QWidget):
         # where the midline falls.  _positions encodes the actual medio-lateral
         # ordering from the 2D layout.  Override Y for every visible layer so the
         # 3D view faithfully reproduces the left/right structure of the 2D view.
-        _raw_pos = getattr(nvw, '_positions', {})
+        _raw_pos = nvw._lay.positions
         if _raw_pos:
             all_yp = [yp for (_, yp) in _raw_pos.values()]
             y_mid  = (min(all_yp) + max(all_yp)) / 2.0
@@ -342,7 +344,7 @@ class NetView3DWindow(QWidget):
         # (needed for connections stored as conn.src = base sensor name)
         for s in c.sensors:
             if s.is_lateralized(c):
-                kL, kR = s.name + '_L', s.name + '_R'
+                kL, kR = half_names(s.name)
                 if kL in centroids and kR in centroids:
                     centroids[s.name] = (centroids[kL] + centroids[kR]) * 0.5
 
@@ -433,9 +435,8 @@ class NetView3DWindow(QWidget):
             # Resolve source positions; lateralized sensors store as name+'_L'/'_R'.
             src_pts = group_pts.get(conn.src, [])
             if not src_pts:
-                pts_L = group_pts.get(conn.src + '_L', [])
-                pts_R = group_pts.get(conn.src + '_R', [])
-                src_pts = pts_L + pts_R
+                src_L, src_R = half_names(conn.src)
+                src_pts = group_pts.get(src_L, []) + group_pts.get(src_R, [])
 
             tgt_pts = group_pts.get(conn.tgt, [])
             if not src_pts or not tgt_pts:
@@ -443,7 +444,7 @@ class NetView3DWindow(QWidget):
 
             n_src, n_tgt = len(src_pts), len(tgt_pts)
 
-            src_info = obj_info.get(conn.src) or obj_info.get(conn.src + '_L', {})
+            src_info = obj_info.get(conn.src) or obj_info.get(half_names(conn.src)[0], {})
             tgt_info = obj_info.get(conn.tgt, {})
 
             drew_per_neuron = False
@@ -476,9 +477,8 @@ class NetView3DWindow(QWidget):
                 # Centroid fallback (image nodes, large matrices, shape mismatch)
                 if conn.src in centroids:
                     src_cents = [centroids[conn.src]]
-                elif conn.src + '_L' in centroids and conn.src + '_R' in centroids:
-                    src_cents = [centroids[conn.src + '_L'],
-                                 centroids[conn.src + '_R']]
+                elif all(h in centroids for h in half_names(conn.src)):
+                    src_cents = [centroids[h] for h in half_names(conn.src)]
                 else:
                     continue
                 if conn.tgt not in centroids:

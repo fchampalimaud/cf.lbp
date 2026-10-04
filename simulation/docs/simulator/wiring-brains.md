@@ -8,9 +8,9 @@ This tutorial builds those vehicles — plus a third — entirely through the **
 
 ## Getting started
 
-Select **`BrainGUI`** from the [Brain selector](tour.md#brain-selector). This is the brain file that enables the [Network visualizer](tour.md#network-viz)'s graphical interface — it's a `DataBrain`, the only brain that loads its circuit from a saved file instead of code.
+In the Brain tab, switch the group to **[Network](tour.md#brain-mode)** mode (instead of Code brain). The group then runs a circuit loaded from a saved file instead of code — internally the `BrainGUI` module, a `DataBrain`, which no longer appears in the code-brain list.
 
-Click **+ New network** and give it a name. This creates an empty circuit that already contains one node: `motor`, a `MotorLayer` with two outputs (left wheel, right wheel). Everything else below happens inside the visualizer.
+Click **+** beside **Network** and give it a name, then **⬡ Open visualizer**. This creates an empty circuit that already contains one node: `motor`, a `MotorLayer` with two outputs (left wheel, right wheel). Everything else below happens inside the visualizer.
 
 ---
 
@@ -26,7 +26,7 @@ A sensor node feeding the `motor` node is the whole circuit — no summing layer
 
 ## Adding the sensor
 
-Open the Network visualizer and click **Edit** in the toolbar — a palette of sensor and layer chips appears. Drag **GradientSensor** onto the canvas, to the left of `motor`. A dialog opens to name and configure it: set `name` to `light` and leave `n=2` (one ray per side). Confirm to drop the node.
+Open the Network visualizer — the palette of sensor and layer chips is on its left edge. Drag **GradientSensor** onto the canvas, to the left of `motor`. A dialog opens to name and configure it: set `name` to `light` and leave `n=2` (one ray per side). Confirm to drop the node.
 
 ---
 
@@ -98,7 +98,7 @@ Back in the avoidance/attraction network, right-click the `light → motor` conn
 
 `light`'s `scale` is still `60` from before, so it carries straight through — every weight here can stay a clean `±1`.
 
-Right-click `smooth` → **Properties…** to set `tau_rise` and `tau_decay` — try `0.15` for both. `tau_rise`/`tau_decay` are in seconds, applied at the simulation's `dt` (default 20 ms): `tau = 0.15` means the output reaches ~63% of a step input after about eight simulation ticks. Change either value while the brain is running and the response speed changes immediately.
+Right-click `smooth` → **Properties…** to set `tau_rise` and `tau_decay` — try `0.15` for both. `tau_rise`/`tau_decay` are in seconds, applied at the simulation's `dt` (default 10 ms): `tau = 0.15` means the output reaches ~63% of a step input after 0.15 s, about fifteen simulation ticks. Change either value while the brain is running and the response speed changes immediately.
 
 ---
 

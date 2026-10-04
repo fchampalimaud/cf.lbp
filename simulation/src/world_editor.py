@@ -136,9 +136,13 @@ class WorldEditor:
         self._arena.clear_poly_preview()
 
     def _find_drag_item(self, x, y):
-        bot_x, bot_y = self._bot_pos[0], self._bot_pos[1]
-        if np.hypot(x - bot_x, y - bot_y) < self._sim_cfg.body_radius * 1.5:
-            return ('robot', None)
+        # Any robot under the cursor (looked up now: agents are recreated when a
+        # session loads, so a stored position list would go stale).
+        agents = self._get_agents() if self._get_agents else []
+        positions = [a.bot_pos for a in agents] or [self._bot_pos]
+        for pos in positions:
+            if np.hypot(x - pos[0], y - pos[1]) < self._sim_cfg.body_radius * 1.5:
+                return ('robot', pos)
         for p in self._world.patches:
             if p.get('mounted_on') is not None:
                 continue   # mounted patches move with their robot; not independently draggable
@@ -284,8 +288,8 @@ class WorldEditor:
         if self._drag_item[0] is not None and not is_finish:
             kind, item = self._drag_item
             if kind == 'robot':
-                self._bot_pos[0] = x
-                self._bot_pos[1] = y
+                item[0] = x   # item = that robot's bot_pos (MuJoCo is placed from it each step)
+                item[1] = y
             elif kind in ('patch', 'object'):
                 item['x'] = x
                 item['y'] = y

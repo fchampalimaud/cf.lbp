@@ -1,6 +1,10 @@
+import math
 import os
+from types import SimpleNamespace
 import numpy as np
+from lateral import half_names
 from neurons import _activate, DynamicsBase, ACTIVATIONS, OUTPUT_MODES
+from neurons_base import leaky_step, ou_noise_step, transform_modulator_value
 
 SENSOR_DIST = 0.12
 
@@ -16,8 +20,9 @@ class BaseSensor(DynamicsBase):
     The simulator calls sample() each tick and stores the result as brain.<name>.
 
     Shared parameters:
-        tau_rise     : rise time constant. None = no dynamics (pass-through).
-        tau_decay    : decay time constant. Defaults to tau_rise when only one is given.
+        tau_rise     : rise time constant. None = no filtering (pass-through).
+        tau_decay    : decay time constant. None = rise-and-hold (never decays) —
+                       the same rule as layers (neurons_base.leaky_step).
         activation   : 'linear' (default), 'relu', 'sigmoid', or 'tanh'.
         output_mode  : 'none' (default) / 'derivative' / 'integral' — applied to the
                        raw (post-noise) reading BEFORE the leaky filter/activation
@@ -95,32 +100,16 @@ class BaseSensor(DynamicsBase):
         return out
 
     def _transform_modulator_value(self, key, mode, value, dt):
-        """Apply a modulator response mode to a raw scalar reading from the mod bus.
-
-        See `LayerBase._transform_modulator_value` (neurons_base.py) for the
-        full contract — this is the sensor-side twin, kept independent of
-        this sensor's own `_prev_output`/`_integral` (its own output_mode
-        state) and of every other modulator row.
-        """
+        """Modulator response mode (absolute / derivative / integral) for one
+        subscription row — the same transform_modulator_value layers use."""
         if self._mod_row_state is None:
             self._mod_row_state = {}
-        if mode == 'derivative':
-            state = self._mod_row_state.setdefault(key, {'prev': value})
-            prev = state['prev']
-            state['prev'] = value
-            return (value - prev) / max(float(dt), 1e-9)
-        if mode == 'integral':
-            state = self._mod_row_state.setdefault(key, {'integral': 0.0})
-            state['integral'] += value * dt
-            return state['integral']
-        return value
+        return transform_modulator_value(self._mod_row_state, key, mode, value, dt)
 
     def _apply_noise(self, raw, dt):
-        """Add noise to raw. White noise (fresh independent sample each tick)
-        if noise_tau == 0; otherwise an Ornstein-Uhlenbeck process with that
-        correlation time — numpy equivalent of DynamicsBase._apply_noise
-        (neurons_base.py), which sensors can't use directly since it's torch-
-        based and depends on _init_dynamics_buffers, a layer-only call."""
+        """Add noise to raw: white noise if noise_tau == 0, otherwise
+        Ornstein-Uhlenbeck noise with that correlation time (ou_noise_step, the
+        same as layers). Sensor state is numpy, allocated on first use."""
         noise_std = getattr(self, 'noise_std', 0.0)
         if not noise_std:
             return raw
@@ -128,19 +117,27 @@ class BaseSensor(DynamicsBase):
         if noise_tau and noise_tau > 0:
             if self._noise_buf is None or self._noise_buf.shape != np.shape(raw):
                 self._noise_buf = np.zeros_like(raw, dtype=float)
-            self._noise_buf = self._noise_buf + (
-                -self._noise_buf / noise_tau + noise_std * np.random.randn(*np.shape(raw))
-            ) * dt
+            self._noise_buf = ou_noise_step(self._noise_buf, noise_std, noise_tau, dt)
             return raw + self._noise_buf
         return raw + np.random.randn(*np.shape(raw)) * noise_std
 
     def _ray_angles(self):
-        """Fan of n ray angles centred at self.center_angle ± self.angle_spread/2."""
-        if self.n == 1:
-            return np.array([getattr(self, 'center_angle', 0.0)])
+        """Fan of n ray angles centred at self.center_angle ± self.angle_spread/2.
+        Cached per (n, angle_spread, center_angle) — read every step, changed
+        only by edits. Callers must not modify the returned array."""
         spread = getattr(self, 'angle_spread', 0.0)
         centre = getattr(self, 'center_angle', 0.0)
-        return np.linspace(centre + spread / 2, centre - spread / 2, self.n)
+        key = (self.n, spread, centre)
+        cached = self.__dict__.get('_ray_angles_cache')
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        if self.n == 1:
+            angles = np.array([centre])
+        else:
+            angles = np.linspace(centre + spread / 2, centre - spread / 2, self.n)
+        angles.flags.writeable = False
+        self._ray_angles_cache = (key, angles)
+        return angles
 
     def _process(self, raw, sim_cfg):
         """Apply bias, optional noise, output_mode, asymmetric leaky dynamics,
@@ -158,15 +155,13 @@ class BaseSensor(DynamicsBase):
         if not self._noise_applied_in_sample:
             raw = self._apply_noise(raw, sim_cfg.dt)
         raw = self._apply_output_mode(raw, sim_cfg.dt)
+        # Same rule as layers (leaky_step): tau_rise unset = no filtering;
+        # tau_decay unset = rise-and-hold.
         tr = getattr(self, 'tau_rise', None)
-        td = getattr(self, 'tau_decay', None)
-        if tr is not None or td is not None:
-            if tr is None: tr = td
-            if td is None: td = tr
-            if self._x is None:
+        if tr:
+            if self._x is None or self._x.shape != np.shape(raw):
                 self._x = np.zeros_like(raw, dtype=float)
-            tau = np.where(raw > self._x, tr, td)
-            self._x += (raw - self._x) / tau * sim_cfg.dt
+            self._x = leaky_step(self._x, raw, tr, getattr(self, 'tau_decay', None), sim_cfg.dt)
             out = self._x.copy()
         else:
             out = raw
@@ -181,8 +176,8 @@ class BaseSensor(DynamicsBase):
         return [
             ('noise_std',     float, 0.0,      'Gaussian noise σ added each tick (0 = off)'),
             ('noise_tau',     float, 0.0,      'OU correlation time (0 = white noise)'),
-            ('tau_rise',      float, '',        'rise τ in seconds (empty = passthrough)'),
-            ('tau_decay',     float, '',        'decay τ in seconds (empty = passthrough)'),
+            ('tau_rise',      float, '',        'rise τ in seconds (0 / empty = passthrough)'),
+            ('tau_decay',     float, '',        'decay τ in seconds (0 / empty = rise-and-hold, never decays)'),
             ('activation',    str,   'linear',  'nonlinearity applied after dynamics',
              ACTIVATIONS),
             ('output_mode',   str,   'none',    'output transform: none / derivative (dV/dt) / integral (∫V dt)',
@@ -222,6 +217,34 @@ class BaseSensor(DynamicsBase):
         mg0 = getattr(b0, 'mirror_group', None)
         mg1 = getattr(b1, 'mirror_group', None)
         return bool(mg0 and mg0 == mg1)
+
+    # ── Capabilities ───────────────────────────────────────────────────────────
+    # Declared by each sensor class; the step, MuJoCo engine and editor ask these
+    # instead of checking for concrete classes. See rules/network_elements.md.
+
+    is_camera          = False  # renders a 2-D image (MuJoCo-owned; has width/height/in_ch)
+    needs_other_agents = False  # sample() takes other_agents (other robots as obstacles)
+
+    @property
+    def uses_mujoco_contacts(self):
+        """True when MuJoCo's contact array provides this sensor's reading."""
+        return False
+
+    def resolve_refs(self, circuit):
+        """Re-link references into the circuit after it changes (joints, layers).
+        Default: nothing to link."""
+
+    def publish_halves(self, brain):
+        """Write <name>_L / <name>_R onto *brain* for a lateralized sensor (camera
+        halves, or the two bodies of a mirrored joint pair) once they've been
+        computed (_left_output / _right_output)."""
+        left  = getattr(self, '_left_output', None)
+        right = getattr(self, '_right_output', None)
+        if left is None or right is None or not self.is_lateralized():
+            return
+        name_L, name_R = half_names(self.name)
+        setattr(brain, name_L, left)
+        setattr(brain, name_R, right)
 
     # ── Visualization / serialization protocol ─────────────────────────────────
 
@@ -336,11 +359,11 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
             ('center_angle',  float, 0.0,             'center angle in degrees'),
             ('dist',          float, 0.12,             'placement distance'),
             ('color_channel', str,   '',               'R, G, B or empty for all'),
-            ('gradient',      str,   '',               'label A–F or empty for all'),
+            ('gradient',      str,   'A',              'label A–F or empty for all'),
             ('scale',         float, 1.0,      'output scale'),
             ('bias',          float, 0.0,      'constant offset added after scale'),
-            ('tau_rise',      float, '',       'rise τ (empty = passthrough)'),
-            ('tau_decay',     float, '',       'decay τ (empty = passthrough)'),
+            ('tau_rise',      float, '',       'rise τ (0 / empty = passthrough)'),
+            ('tau_decay',     float, '',       'decay τ (0 / empty = rise-and-hold, never decays)'),
             ('activation',    str,   'linear', 'output activation', ACTIVATIONS),
             ('output_mode',   str,   'none',   'none / derivative / integral', OUTPUT_MODES),
         ]
@@ -349,9 +372,9 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
         ch   = self._CHANNEL_IDX.get(self.color_channel)
         vals = []
         for a in self._ray_angles():
-            sa = theta + a
-            sx = x + self.dist * np.cos(sa)
-            sy = y + self.dist * np.sin(sa)
+            sa = theta + float(a)
+            sx = x + self.dist * math.cos(sa)
+            sy = y + self.dist * math.sin(sa)
             vals.append(world.get_signal(sx, sy, sa, ch, label=self.gradient))
         return self._process(np.array(vals), sim_cfg)
 
@@ -435,8 +458,8 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
             ('color_channel', str,   '',               'R, G, B or empty for all'),
             ('scale',         float, 1.0,              'output scale'),
             ('bias',          float, 0.0,      'constant offset added after scale'),
-            ('tau_rise',      float, '',       'rise τ (empty = passthrough)'),
-            ('tau_decay',     float, '',       'decay τ (empty = passthrough)'),
+            ('tau_rise',      float, '',       'rise τ (0 / empty = passthrough)'),
+            ('tau_decay',     float, '',       'decay τ (0 / empty = rise-and-hold, never decays)'),
             ('activation',    str,   'linear', 'output activation', ACTIVATIONS),
             ('output_mode',   str,   'none',   'none / derivative / integral', OUTPUT_MODES),
         ]
@@ -527,6 +550,14 @@ In multi-agent sessions, sectors also fire on contact with other agents' bodies 
     _ACTIVE_COLOR = '#FF6633'  # kept for backward compatibility
     viz_type      = 'arc'
     _noise_applied_in_sample = True  # noise is hit-gated in sample(); don't double-apply in _process()
+    needs_other_agents = True   # capability (see BaseSensor): other robots are obstacles
+
+    @property
+    def uses_mujoco_contacts(self):
+        """Root-mounted sensors get dedicated per-sector MuJoCo geometry and read
+        MuJoCo's contact array (MuJoCoEngine._build_xml / sample_collision_sensors).
+        Sensors on a child body (e.g. whisker joint pairs) use the analytic check."""
+        return getattr(self, 'body_ids', None) in (None, ['root'])
 
     def __init__(self, n=4, angle_spread=90.0, arc_angle=45.0,
                  radius=1.2, scale=1.0, bias=0.0, noise_std=0.0, noise_tau=0.0, tau_rise=None,
@@ -564,8 +595,8 @@ In multi-agent sessions, sectors also fire on contact with other agents' bodies 
             ('scale',         float, 1.0,      'output scale'),
             ('bias',          float, 0.0,      'constant offset added after scale'),
             ('noise_std',      float, 0.0,      'Gaussian noise std added on collision (zero otherwise)'),
-            ('tau_rise',      float, '',       'rise τ (empty = passthrough)'),
-            ('tau_decay',     float, '',       'decay τ (empty = passthrough)'),
+            ('tau_rise',      float, '',       'rise τ (0 / empty = passthrough)'),
+            ('tau_decay',     float, '',       'decay τ (0 / empty = rise-and-hold, never decays)'),
             ('activation',    str,   'linear', 'output activation', ACTIVATIONS),
             ('output_mode',   str,   'none',   'none / derivative / integral', OUTPUT_MODES),
         ]
@@ -714,6 +745,7 @@ In multi-agent sessions, rays also hit other agents' bodies (treated as circles 
     viz_type    = 'ray'
     _viz_dashed = True
     _viz_lw     = 1.2
+    needs_other_agents = True   # capability (see BaseSensor): other robots are obstacles
 
     def __init__(self, n=5, angle_spread=90.0, max_range=1.0, scale=1.0, bias=0.0,
                  tau_rise=None, tau_decay=None, activation='linear',
@@ -740,8 +772,8 @@ In multi-agent sessions, rays also hit other agents' bodies (treated as circles 
             ('max_range',     float, 1.0,      'maximum detection range'),
             ('scale',         float, 1.0,      'output scale'),
             ('bias',          float, 0.0,      'constant offset added after scale'),
-            ('tau_rise',      float, '',       'rise τ (empty = passthrough)'),
-            ('tau_decay',     float, '',       'decay τ (empty = passthrough)'),
+            ('tau_rise',      float, '',       'rise τ (0 / empty = passthrough)'),
+            ('tau_decay',     float, '',       'decay τ (0 / empty = rise-and-hold, never decays)'),
             ('activation',    str,   'linear', 'output activation', ACTIVATIONS),
             ('output_mode',   str,   'none',   'none / derivative / integral', OUTPUT_MODES),
         ]
@@ -944,8 +976,13 @@ $$\\tau = \\begin{cases}\\tau_{rise} & s_{\\text{target}} > s \\\\ \\tau_{decay}
         # filter below runs — not the filtered state — so derivative/integral
         # track the true stimulus, not this sensor's own filter lag.
         target = float(self._apply_output_mode(np.array([target]), sim_cfg.dt)[0])
-        tau = self.tau_rise if target > self._state else self.tau_decay
-        self._state += (target - self._state) / tau * sim_cfg.dt
+        # Hunger/satiety state: the shared leaky filter (same tau rules as every
+        # sensor and layer), clipped to [0, max_val].
+        if self.tau_rise:
+            self._state = float(leaky_step(np.float64(self._state), target,
+                                           self.tau_rise, self.tau_decay, sim_cfg.dt))
+        else:
+            self._state = target
         self._state  = float(np.clip(self._state, 0.0, self.max_val))
         return np.array([self._state + self.bias])
 
@@ -1032,8 +1069,8 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
             ('use_velocity',   bool,  False,    'read angular velocity instead of angle'),
             ('scale',          float, 1.0,      'output multiplier'),
             ('bias',           float, 0.0,      'constant offset added after scale'),
-            ('tau_rise',       float, '',       'rise τ (empty = passthrough)'),
-            ('tau_decay',      float, '',       'decay τ (empty = passthrough)'),
+            ('tau_rise',       float, '',       'rise τ (0 / empty = passthrough)'),
+            ('tau_decay',      float, '',       'decay τ (0 / empty = rise-and-hold, never decays)'),
             ('activation',     str,   'linear', 'output activation', ACTIVATIONS),
             ('output_mode',    str,   'none',   'none / derivative / integral', OUTPUT_MODES),
         ]
@@ -1044,6 +1081,23 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
         self._integral = None
         self._noise_buf = None
         self._mod_row_state = {}
+
+    def resolve_refs(self, circuit):
+        """Link to the joints whose motor_layer_name is joint_id (sorted by
+        motor_output_idx), or — when there are none — read that layer's output
+        directly, so motor output can be sensed without physical bodies."""
+        if not self.joint_id:
+            return
+        group = sorted((jt for jt in circuit.joints if jt.motor_layer_name == self.joint_id),
+                       key=lambda j: j.motor_output_idx)
+        self._joint_refs = group
+        self._layer_ref  = None
+        if group:
+            self.n = len(group)
+        else:
+            lyr = next((l for l in circuit.layers if l.name == self.joint_id), None)
+            self._layer_ref = lyr
+            self.n = (lyr.n or 1) if lyr is not None else 1
 
     def sample(self, x, y, theta, world, sim_cfg) -> np.ndarray:
         if self._joint_refs:
@@ -1131,8 +1185,8 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
             ('n',            int,   1,         'number of neurons'),
             ('scale',        float, 1.0,       'output scale'),
             ('bias',         float, 0.0,       'constant offset added after scale'),
-            ('tau_rise',     float, '',        'rise τ (empty = passthrough)'),
-            ('tau_decay',    float, '',        'decay τ (empty = passthrough)'),
+            ('tau_rise',     float, '',        'rise τ (0 / empty = passthrough)'),
+            ('tau_decay',    float, '',        'decay τ (0 / empty = rise-and-hold, never decays)'),
             ('activation',   str,   'linear',  'output activation', ACTIVATIONS),
             ('output_mode',  str,   'none',    'none / derivative / integral', OUTPUT_MODES),
         ]
@@ -1289,8 +1343,8 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
             ('scale',          float, 1.0,      'output multiplier'),
             ('bias',           float, 0.0,      'constant offset added after scale'),
             ('phase',          float, 0.0,      'phase offset (rad) — aligns neuron 0 to field direction'),
-            ('tau_rise',       float, '',       'rise τ (empty = passthrough)'),
-            ('tau_decay',      float, '',       'decay τ (empty = passthrough)'),
+            ('tau_rise',       float, '',       'rise τ (0 / empty = passthrough)'),
+            ('tau_decay',      float, '',       'decay τ (0 / empty = rise-and-hold, never decays)'),
             ('activation',     str,   'relu',   'output activation', ACTIVATIONS),
             ('noise_std',      float, 0.0,      'noise amplitude'),
             ('noise_tau',      float, 0.0,      'OU correlation time (0 = white noise)'),
@@ -1390,8 +1444,8 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
     def param_defs(cls):
         return [
             ('n',              int,   8,        'number of neurons around the bump'),
-            ('tau_rise',       float, '',       'rise τ (empty = passthrough)'),
-            ('tau_decay',      float, '',       'decay τ (empty = passthrough)'),
+            ('tau_rise',       float, '',       'rise τ (0 / empty = passthrough)'),
+            ('tau_decay',      float, '',       'decay τ (0 / empty = rise-and-hold, never decays)'),
             ('activation',     str,   'relu',   'output activation', ACTIVATIONS),
             ('scale',          float, 1.0,      'output multiplier'),
             ('bias',           float, 0.0,      'constant offset added after scale'),
@@ -1505,8 +1559,8 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
     def param_defs(cls):
         return [
             ('key',            str,   'R',      'keyboard key that drives this sensor (held = 1)'),
-            ('tau_rise',       float, '',       'rise τ (empty = passthrough)'),
-            ('tau_decay',      float, '',       'decay τ (empty = passthrough)'),
+            ('tau_rise',       float, '',       'rise τ (0 / empty = passthrough)'),
+            ('tau_decay',      float, '',       'decay τ (0 / empty = rise-and-hold, never decays)'),
             ('activation',     str,   'linear', 'output activation', ACTIVATIONS),
             ('scale',          float, 1.0,      'output multiplier'),
             ('bias',           float, 0.0,      'constant offset added after scale'),
@@ -1533,8 +1587,10 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
 
 class CameraSensor(BaseSensor):
     """
-    Base class for simulated cameras. Casts `width` rays in a configurable FOV
-    and returns the colour of the nearest hit per ray.
+    Base class for simulated cameras. MuJoCo renders a `width × height`
+    perspective image from the robot's pose (MuJoCoEngine.render_cameras) at
+    `fps` frames per simulated second (0 = free-running, as fast as the app
+    renders); between frames the brain keeps the last output.
 
     Subclasses fix the output format:
         GrayCameraSensor  — luminance, in_ch=1
@@ -1547,6 +1603,12 @@ class CameraSensor(BaseSensor):
     in_ch         = 1       # overridden by subclasses; used by FilterStackDialog
     mode          = 'gray'  # overridden by subclasses; kept for backward-compat checks
     is_image_node = True
+    is_camera     = True    # capability (see BaseSensor)
+
+    def half_width(self, side):
+        """Pixel width of the 'L' or 'R' half of a lateralized frame (± overlap)."""
+        l_end, r_start = self._half_bounds()
+        return l_end if side == 'L' else self.width - r_start
 
     def n_per_side(self):
         return 1
@@ -1574,12 +1636,13 @@ class CameraSensor(BaseSensor):
             yield self.name, data
 
     def __init__(self, width=64, height=48, fov=90.0, center_angle=0.0,
-                 vertical_angle=0.0, max_range=10.0, lateralized=False, overlap=0,
+                 vertical_angle=0.0, max_range=10.0, fps=60.0, lateralized=False, overlap=0,
                  output_mode='none', noise_std=0.0, noise_tau=0.0, tau_rise=None, tau_decay=None,
                  name='camera', group=None, body_id='root', robot_address='',
                  **_ignored):
         self.width          = width
         self.height         = max(1, height)
+        self.fps            = max(0.0, float(fps))
         self.fov            = np.radians(fov)
         self.center_angle   = np.radians(center_angle)
         self.vertical_angle = np.radians(vertical_angle)
@@ -1599,6 +1662,8 @@ class CameraSensor(BaseSensor):
         self._right_output  = None
         self._x             = None
         self._viz_color     = None
+        self._frame_idx     = None   # fps > 0: index of the last rendered frame
+        self._last_render_t = None   # sim time of the last rendered frame
 
     @classmethod
     def param_defs(cls):
@@ -1609,155 +1674,57 @@ class CameraSensor(BaseSensor):
             ('center_angle',   float, 0.0,   'center offset from heading (degrees)'),
             ('vertical_angle', float, 0.0,   'vertical tilt in degrees (positive = tilt down)'),
             ('max_range',      float, 10.0,  'max ray length (world units)'),
+            ('fps',            float, 60.0,  'frames per simulated second (0 = as fast as possible)'),
             ('lateralized',    bool,  False, 'split output into left/right halves ({name}_L, {name}_R)'),
             ('overlap',        int,   0,     'pixels past midline included in each half (negative = gap)'),
             ('noise_std',      float, 0.0,   'Gaussian noise σ added to pixel values each tick (0 = off)'),
-            ('tau_rise',       float, '',    'rise τ in seconds per pixel (empty = passthrough)'),
-            ('tau_decay',      float, '',    'decay τ in seconds per pixel (empty = passthrough)'),
+            ('tau_rise',       float, '',    'rise τ in seconds per pixel (0 / empty = passthrough)'),
+            ('tau_decay',      float, '',    'decay τ in seconds per pixel (0 / empty = rise-and-hold, never decays)'),
             ('output_mode',    str,   'none', 'none / derivative / integral', OUTPUT_MODES),
         ]
 
     # ------------------------------------------------------------------
-    # Vectorised raycasting — all width rays cast in parallel via numpy.
+    # Frames are rendered by MuJoCo (MuJoCoEngine.render_cameras), never
+    # sampled analytically.
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _cast_objects_v(x, y, angles, objects):
-        """(width,) distances and (width,3) colors for nearest circular object."""
-        n   = len(angles)
-        rdx = np.cos(angles)
-        rdy = np.sin(angles)
-        min_d   = np.full(n, np.inf, dtype=np.float32)
-        min_col = np.zeros((n, 3), dtype=np.float32)
-        for obj in objects:
-            ox    = obj['x'] - x
-            oy    = obj['y'] - y
-            proj  = ox * rdx + oy * rdy
-            perp2 = ox*ox + oy*oy - proj*proj
-            r2    = obj['r'] ** 2
-            valid = (proj > 0) & (perp2 < r2)
-            hit_d = np.where(valid, proj - np.sqrt(np.maximum(0.0, r2 - perp2)), np.inf)
-            closer = valid & (hit_d >= 0.0) & (hit_d < min_d)
-            min_d   = np.where(closer, hit_d, min_d)
-            col     = np.array(obj.get('color', [1.0, 0.0, 0.0])[:3], dtype=np.float32)
-            min_col = np.where(closer[:, np.newaxis], col, min_col)
-        return min_d, min_col
+    def frame_due(self, t) -> bool:
+        """True if a new frame should be rendered at sim time t.
+        fps > 0: once per 1/fps seconds of simulated time.
+        fps == 0: free-running — whenever sim time has advanced since the last frame."""
+        if self.fps > 0:
+            return int(np.floor(t * self.fps + 1e-9)) != self._frame_idx
+        return self._last_render_t is None or t > self._last_render_t
 
-    @staticmethod
-    def _cast_walls_v(x, y, angles, walls):
-        """(width,) distances and (width,3) colors for nearest polygon wall."""
-        n   = len(angles)
-        rdx = np.cos(angles)
-        rdy = np.sin(angles)
-        min_t   = np.full(n, np.inf, dtype=np.float32)
-        min_col = np.zeros((n, 3), dtype=np.float32)
-        for wall in walls:
-            pts = wall['points']
-            col = np.array(wall.get('color', [0.5, 0.5, 0.5])[:3], dtype=np.float32)
-            for i in range(len(pts)):
-                ax, ay = pts[i]
-                bx, by = pts[(i + 1) % len(pts)]
-                sx_ = bx - ax
-                sy_ = by - ay
-                wx  = ax - x
-                wy  = ay - y
-                denom = rdx * sy_ - rdy * sx_
-                safe  = np.abs(denom) > 1e-9
-                inv   = np.where(safe, 1.0 / np.where(safe, denom, 1.0), 0.0)
-                t = (wx * sy_ - wy * sx_) * inv
-                s = (wx * rdy - wy * rdx) * inv
-                hit = safe & (t > 1e-6) & (s >= 0.0) & (s <= 1.0) & (t < min_t)
-                min_t   = np.where(hit, t, min_t)
-                min_col = np.where(hit[:, np.newaxis], col, min_col)
-        return min_t, min_col
+    def process_frame(self, rgb_frame, t, sim_dt) -> np.ndarray:
+        """Turn a rendered (H, W, 3) frame into this sensor's output at sim time t.
+        Caches _last_frame and the lateralized halves; noise / output_mode /
+        tau dynamics run once per frame, with dt = sim time since the previous frame."""
+        dt = (t - self._last_render_t
+              if self._last_render_t is not None and t > self._last_render_t else sim_dt)
+        self._last_render_t = t
+        if self.fps > 0:
+            self._frame_idx = int(np.floor(t * self.fps + 1e-9))
+        out = self._frame_output(np.asarray(rgb_frame, dtype=np.float32))
+        return self._process(out, SimpleNamespace(dt=dt))
 
-    @staticmethod
-    def _cast_arena_sq_v(x, y, angles, limit):
-        """(width,) distances to the square-arena boundary."""
-        dx    = np.cos(angles)
-        dy    = np.sin(angles)
-        dists = np.full(len(angles), limit * 2, dtype=np.float32)
-        for w in (-limit, limit):
-            with np.errstate(divide='ignore', invalid='ignore'):
-                t = np.where(np.abs(dx) > 1e-9, (w - x) / dx, np.inf)
-            valid = (t > 0) & (np.abs(y + t * dy) <= limit)
-            dists = np.where(valid & (t < dists), t, dists)
-            with np.errstate(divide='ignore', invalid='ignore'):
-                t = np.where(np.abs(dy) > 1e-9, (w - y) / dy, np.inf)
-            valid = (t > 0) & (np.abs(x + t * dx) <= limit)
-            dists = np.where(valid & (t < dists), t, dists)
-        return dists
+    def _half_bounds(self):
+        """(l_end, r_start) column bounds of the left/right halves (± overlap)."""
+        mid     = self.width // 2
+        l_end   = int(np.clip(mid + self.overlap, 0, self.width))
+        r_start = int(np.clip(mid - self.overlap, 0, self.width))
+        return l_end, r_start
 
-    @staticmethod
-    def _cast_arena_round_v(x, y, angles, R):
-        """(width,) distances to the circular-arena boundary."""
-        dx   = np.cos(angles)
-        dy   = np.sin(angles)
-        b    = x * dx + y * dy
-        c    = x*x + y*y - R*R
-        disc = b*b - c
-        t    = np.where(disc >= 0, -b + np.sqrt(np.maximum(0.0, disc)), R * 2)
-        return np.where(t > 0, t, np.float32(R * 2))
+    def _frame_output(self, rgb_frame) -> np.ndarray:
+        raise NotImplementedError
 
-    # ------------------------------------------------------------------
-
-    def _raycast(self, x, y, theta, world, sim_cfg):
-        """Run all rays; return ((width,3) RGB pixels, (width,) distances)."""
-        limit  = sim_cfg.arena_scale
-        angles = np.linspace(
-            theta + self.center_angle + self.fov / 2,
-            theta + self.center_angle - self.fov / 2,
-            self.width,
-        )
-        d_obj,  c_obj  = self._cast_objects_v(x, y, angles, world.objects)
-        d_wall, c_wall = self._cast_walls_v(x, y, angles, getattr(world, 'walls', []))
-        if getattr(world, 'arena_round', False):
-            d_arena = self._cast_arena_round_v(x, y, angles, limit)
-        else:
-            d_arena = self._cast_arena_sq_v(x, y, angles, limit)
-
-        best_d   = np.minimum(np.minimum(d_obj, d_wall), d_arena)
-        in_range = best_d < self.max_range
-        use_obj   = in_range & (d_obj <= d_wall) & (d_obj <= d_arena)
-        use_wall  = in_range & ~use_obj & (d_wall <= d_arena)
-        use_arena = in_range & ~use_obj & ~use_wall
-
-        pixels = np.zeros((self.width, 3), dtype=np.float32)
-        pixels = np.where(use_obj[:, np.newaxis],   np.clip(c_obj,  0.0, 1.0), pixels)
-        pixels = np.where(use_wall[:, np.newaxis],  np.clip(c_wall, 0.0, 1.0), pixels)
-        pixels = np.where(use_arena[:, np.newaxis], 1.0,                       pixels)
-        return pixels, best_d
-
-    def _build_frame(self, pixels, best_d):
-        """Tile to (H, W, 3), clipping each row's range by vertical_angle.
-
-        Effective max range per row = max_range * cos(row_vert_angle):
-          - top row    → less steep → farther (larger range)
-          - bottom row → more steep → closer  (smaller range)
-        At vertical_angle=0 all rows are identical (no perspective effect).
-        """
-        vert = self.vertical_angle
-        if vert <= 0.0:
-            return np.tile(pixels[np.newaxis, :, :], (self.height, 1, 1))
-        # Per-row vertical angle: assume square pixels so vertical FOV ∝ aspect ratio.
-        aspect   = self.height / max(self.width, 1)
-        vfov     = self.fov * aspect                     # vertical FOV (radians)
-        row_t    = np.linspace(-0.5, 0.5, self.height)  # top=-0.5 (far), bottom=+0.5 (near)
-        row_vert = vert + row_t * vfov                   # per-row tilt below horizontal
-        # Rows above horizontal → full range; rows below → cos-scaled range
-        row_max  = np.where(
-            row_vert <= 0,
-            self.max_range,
-            self.max_range * np.cos(np.clip(row_vert, 0.0, np.pi / 2))
-        )  # (H,)
-        # Mask out pixels beyond each row's effective range
-        out_mask = best_d[np.newaxis, :] >= row_max[:, np.newaxis]  # (H, W)
-        frame    = np.tile(pixels[np.newaxis, :, :], (self.height, 1, 1)).astype(np.float32)
-        frame[out_mask] = 0.0
-        return frame
+    def reset(self):
+        super().reset()
+        self._frame_idx     = None
+        self._last_render_t = None
 
     def sample(self, x, y, theta, world, sim_cfg) -> np.ndarray:
-        raise NotImplementedError
+        raise NotImplementedError('camera frames are rendered by MuJoCoEngine.render_cameras')
 
 
 class GrayCameraSensor(CameraSensor):
@@ -1766,7 +1733,9 @@ class GrayCameraSensor(CameraSensor):
     help_text = """\
 ## GrayCameraSensor — grayscale camera
 
-Raycasts `width × height` pixels across the field of view and returns luminance.
+MuJoCo renders a `width × height` perspective image from the robot's pose and the sensor returns its luminance.
+
+**Frame rate:** a new frame is rendered `fps` times per simulated second, independent of simulation speed; `fps = 0` renders as fast as the app can (once per display update), without holding up the other sensors. Between frames the brain keeps seeing the last output.
 
 **Per-pixel luminance** (for ray `i`):
 
@@ -1778,13 +1747,13 @@ $$\\text{pixel}_i = \\frac{R_i + G_i + B_i}{3}$$
 
 $$\\text{sensor\\_L} \\in \\mathbb{R}^{H \\times (W/2 + \\text{overlap})}, \\quad \\text{sensor\\_R} \\in \\mathbb{R}^{H \\times (W/2 + \\text{overlap})}$$
 
-**Not lateralized** (`lateralized=False`, default): the plain `output` read by other layers is only the frame's **centre row** — a `(W,)` vector, *not* the full `(H, W)` image. The complete `(H, W)` frame is still computed every tick and cached in `_last_frame` for the visualizer thumbnail, but only its centre row reaches the network — set `lateralized=True` if a downstream layer needs the full image.
+**Not lateralized** (`lateralized=False`, default): the plain `output` read by other layers is only the frame's **centre row** — a `(W,)` vector, *not* the full `(H, W)` image. The complete `(H, W)` frame is still rendered every frame and cached in `_last_frame` for the visualizer thumbnail, but only its centre row reaches the network — set `lateralized=True` if a downstream layer needs the full image.
 
 Each half connects to its own `Conv2dLayer` (`_L` / `_R` pair).
 
-**Order of operations** (per tick):
-1. raycast `width` rays across the FOV; each ray returns the colour of the nearest hit (object / wall / arena boundary), or black if nothing within `max_range`
-2. tile the ray colours into `height` rows (`vertical_angle` masks rows beyond a row-dependent, cosine-scaled range to black)
+**Order of operations** (per frame):
+1. MuJoCo renders the camera view (`fov`, `center_angle`, `vertical_angle`) from the robot's current pose
+2. the image is reduced to `height` rows (each row taken from the centre of its band)
 3. `pixel = (R + G + B) / 3` per pixel → grayscale `(H, W)` frame `r`, cached as `_last_frame`
 4. if `lateralized`: split `r` at the midline (± `overlap`) into `sensor_L`/`sensor_R` — these are the **raw pixel values**, bypassing steps 5-7 below entirely (no noise or dynamics applied)
 5. otherwise: take `r`'s **centre row only** (shape `(W,)`) as `u`
@@ -1792,25 +1761,20 @@ Each half connects to its own `Conv2dLayer` (`_L` / `_R` pair).
 7. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
 8. per-pixel `output = leaky(u)` (if `tau_rise`/`tau_decay` set; else `output = u`) — this sensor's `bias`/`scale`/`activation` aren't exposed as parameters and are fixed at `0` / `1` / `linear`, so they have no effect
 
-- `vertical_angle` — camera tilt in degrees. Positive = tilted down toward ground, negative = tilted up. Each image row sees a different ground distance: bottom rows see closer, top rows see farther. At 90° the camera looks straight down and the image goes black.
+- `vertical_angle` — camera tilt in degrees. Positive = tilted down toward ground, negative = tilted up. At 90° the camera looks straight down at the floor.
 """
 
     in_ch = 1
     mode  = 'gray'
 
-    def sample(self, x, y, theta, world, sim_cfg) -> np.ndarray:
-        pixels, best_d = self._raycast(x, y, theta, world, sim_cfg)
-        rgb_frame      = self._build_frame(pixels, best_d)         # (H, W, 3)
-        frame          = np.mean(rgb_frame, axis=-1)               # (H, W) luminance
+    def _frame_output(self, rgb_frame) -> np.ndarray:
+        frame = np.mean(rgb_frame, axis=-1)                        # (H, W) luminance
         self._last_frame = frame
         if self.lateralized:
-            mid     = self.width // 2
-            l_end   = int(np.clip(mid + self.overlap, 0, self.width))
-            r_start = int(np.clip(mid - self.overlap, 0, self.width))
+            l_end, r_start = self._half_bounds()
             self._left_output  = frame[:, :l_end  ].reshape(-1).astype(np.float32)
             self._right_output = frame[:, r_start:].reshape(-1).astype(np.float32)
-        out = frame[self.height // 2].astype(np.float32)           # (W,) centre row
-        return self._process(out, sim_cfg)
+        return frame[frame.shape[0] // 2].astype(np.float32)       # (W,) centre row
 
 
 class RGBCameraSensor(CameraSensor):
@@ -1819,7 +1783,7 @@ class RGBCameraSensor(CameraSensor):
     help_text = """\
 ## RGBCameraSensor — colour camera
 
-Raycasts `width × height` pixels across the field of view and returns RGB colour (same raycasting as `GrayCameraSensor`, all 3 channels retained).
+MuJoCo renders a `width × height` perspective image from the robot's pose and the sensor returns its RGB colour (same rendering and `fps` frame rate as `GrayCameraSensor`, all 3 channels retained).
 
 **Output shape (channels-first / CHW):**
 
@@ -1833,34 +1797,30 @@ Connect to a `Conv2dLayer` with `in_ch=3` (set automatically from camera mode).
 
 Unlike `GrayCameraSensor`, the plain (`lateralized=False`) `output` here is already the **full** frame — see step 4 below — not just a centre row.
 
-**Order of operations** (per tick):
-1. raycast `width` rays across the FOV (same geometry as `GrayCameraSensor`); each ray returns the RGB colour of the nearest hit, or black if nothing within `max_range`
-2. tile into `height` rows (`vertical_angle` masks far rows to black), giving frame `r` (H × W × 3), cached as `_last_frame`
+**Order of operations** (per frame):
+1. MuJoCo renders the camera view from the robot's current pose (same as `GrayCameraSensor`)
+2. the image is reduced to `height` rows, giving frame `r` (H × W × 3), cached as `_last_frame`
 3. if `lateralized`: split `r` at the midline (± `overlap`) into `sensor_L`/`sensor_R`, transposed to CHW — these are the **raw pixel values**, bypassing steps 5-7 below entirely (no noise or dynamics applied)
 4. otherwise: flatten the **full** frame to CHW as `u` (all rows and channels — not a centre-row subset)
 5. add noise to `u` (if `noise_std > 0`)
 6. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
 7. per-pixel `output = leaky(u)` (if `tau_rise`/`tau_decay` set; else `output = u`) — this sensor's `bias`/`scale`/`activation` aren't exposed as parameters and are fixed at `0` / `1` / `linear`, so they have no effect
 
-- `vertical_angle` — camera tilt in degrees. Positive = tilted down toward ground, negative = tilted up. Each image row sees a different ground distance: bottom rows see closer, top rows see farther. At 90° the camera looks straight down and the image goes black.
+- `vertical_angle` — camera tilt in degrees. Positive = tilted down toward ground, negative = tilted up. At 90° the camera looks straight down at the floor.
 """
 
     in_ch = 3
     mode  = 'rgb'
 
-    def sample(self, x, y, theta, world, sim_cfg) -> np.ndarray:
-        pixels, best_d = self._raycast(x, y, theta, world, sim_cfg)
-        frame  = self._build_frame(pixels, best_d)                        # (H, W, 3)
+    def _frame_output(self, rgb_frame) -> np.ndarray:
+        frame = rgb_frame                                                 # (H, W, 3)
         self._last_frame = frame
         if self.lateralized:
-            mid     = self.width // 2
-            l_end   = int(np.clip(mid + self.overlap, 0, self.width))
-            r_start = int(np.clip(mid - self.overlap, 0, self.width))
+            l_end, r_start = self._half_bounds()
             # CHW so _conv_forward receives planar channels, not HWC-interleaved.
             self._left_output  = frame[:, :l_end,   :].transpose(2, 0, 1).reshape(-1).astype(np.float32)
             self._right_output = frame[:, r_start:, :].transpose(2, 0, 1).reshape(-1).astype(np.float32)
-        out = frame.transpose(2, 0, 1).reshape(-1).astype(np.float32)    # CHW (3*H*W,)
-        return self._process(out, sim_cfg)
+        return frame.transpose(2, 0, 1).reshape(-1).astype(np.float32)   # CHW (3*H*W,)
 
 
 # Registry — single source of truth for all sensor types.

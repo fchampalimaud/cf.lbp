@@ -58,5 +58,12 @@ class NetworkVizContext:
     def sync_body_after_removal(self, poses, bodies):
         self._app._arena.update_child_bodies(poses, bodies, self._app.sim_cfg)
 
+    def sync_bodies(self):
+        """Redraw the robot's child bodies in the arena from the current circuit."""
+        from rigid_body import world_poses
+        c = self._app.circuit
+        poses = world_poses(self._app.bot_pos, c.bodies, c.joints)
+        self._app._arena.update_child_bodies(poses, c.bodies, self._app.sim_cfg)
+
     def notify_closed(self):
         self._app._net_viz = None

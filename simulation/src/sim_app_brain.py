@@ -2,17 +2,18 @@ import os
 import time
 import numpy as np
 from PySide6.QtWidgets import (
-    QWidget, QHBoxLayout, QLabel, QPushButton, QComboBox,
+    QWidget, QHBoxLayout, QVBoxLayout, QLabel, QComboBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QMessageBox,
+    QMessageBox, QButtonGroup,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 
 from sim_constants import C
-from circuit_model import CircuitModel, Connection
-from rigid_body import RigidBody, world_poses as _rb_world_poses
+from rigid_body import world_poses as _rb_world_poses
 from brain_base import DataBrain
 from neurons import MotorLayer
+from neurons_base import fast_taus, fast_tau_warning
+import data_paths
 from network_viz import NetworkVisualizerWindow
 from network_viz_context import NetworkVizContext
 
@@ -62,9 +63,29 @@ class _BrainMixin:
         self._agent_table.itemChanged.connect(self._on_agent_name_changed)
         vl.addWidget(self._agent_table)
 
-        row1 = QWidget(); hl1 = QHBoxLayout(row1); hl1.setContentsMargins(0, 0, 0, 0)
+        # Mode: the selected group runs either a code brain (a brains/*.py
+        # class) or a network (a networks/*.json circuit, run by the
+        # network brain module). Derived from the group's module, so old
+        # sessions need nothing special.
+        mode_row = QWidget(); mhl = QHBoxLayout(mode_row); mhl.setContentsMargins(0, 0, 0, 0)
+        self._mode_code_btn = self._make_toggle(
+            "Code brain", "Run a brain written in Python (brains/*.py)")
+        self._mode_net_btn = self._make_toggle(
+            "Network", "Run a circuit designed in the network visualizer (networks/*.json)")
+        self._brain_mode_group = QButtonGroup(self)
+        self._brain_mode_group.setExclusive(True)
+        for b in (self._mode_net_btn, self._mode_code_btn):
+            self._brain_mode_group.addButton(b)
+            mhl.addWidget(b)
+        self._mode_code_btn.clicked.connect(lambda: self._set_brain_mode('code'))
+        self._mode_net_btn.clicked.connect(lambda: self._set_brain_mode('network'))
+        vl.addWidget(mode_row)
+
+        # Code brain: class + reload + scaffold
+        self._code_row = QWidget(); hl1 = QHBoxLayout(self._code_row)
+        hl1.setContentsMargins(0, 0, 0, 0)
         self._brain_combo = QComboBox()
-        self._brain_combo.addItems(self.brain_files)
+        self._brain_combo.addItems(self._code_brain_files())
         self._brain_combo.currentTextChanged.connect(self.load_brain)
         btn_reload = self._make_btn("↺", C['warning'])
         btn_reload.setFixedWidth(28)
@@ -77,7 +98,45 @@ class _BrainMixin:
         hl1.addWidget(self._brain_combo)
         hl1.addWidget(btn_reload)
         hl1.addWidget(btn_new_brain)
-        vl.addWidget(row1)
+        vl.addWidget(self._code_row)
+
+        # Network: project + file + open visualizer
+        self._net_panel = QWidget(); nvl = QVBoxLayout(self._net_panel)
+        nvl.setContentsMargins(0, 0, 0, 0); nvl.setSpacing(4)
+        proj_row = QWidget(); phl = QHBoxLayout(proj_row); phl.setContentsMargins(0, 0, 0, 0)
+        phl.addWidget(QLabel("Project"))
+        self._net_root_combo = self._make_root_combo()
+        self._net_root_combo.currentIndexChanged.connect(
+            lambda _i: self._on_net_project_chosen(
+                self._first_folder_key('networks', self._net_root_combo.currentData())))
+        phl.addWidget(self._net_root_combo)
+        self._net_project_combo = QComboBox()
+        self._net_project_combo.currentIndexChanged.connect(
+            lambda _i: self._on_net_project_chosen(self._net_project_combo.currentData() or ''))
+        phl.addWidget(self._net_project_combo, 1)
+        self._btn_new_proj = self._make_btn("+", C['primary'])
+        self._btn_new_proj.setFixedWidth(28)
+        self._btn_new_proj.setToolTip("Create a new project folder in your files")
+        self._btn_new_proj.clicked.connect(self._new_network_project)
+        phl.addWidget(self._btn_new_proj)
+        nvl.addWidget(proj_row)
+        file_row = QWidget(); fhl = QHBoxLayout(file_row); fhl.setContentsMargins(0, 0, 0, 0)
+        fhl.addWidget(QLabel("Network"))
+        self._net_file_combo = QComboBox()
+        self._net_file_combo.currentTextChanged.connect(self._on_net_file_chosen)
+        fhl.addWidget(self._net_file_combo, 1)
+        btn_new_net = self._make_btn("+", C['primary'])
+        btn_new_net.setFixedWidth(28)
+        btn_new_net.setToolTip("Create a new network file (motor layer only)")
+        btn_new_net.clicked.connect(self._new_network_from_sidebar)
+        fhl.addWidget(btn_new_net)
+        nvl.addWidget(file_row)
+        btn_open_viz = self._make_btn("⬡ Open visualizer", C['primary'])
+        btn_open_viz.setToolTip("Open the network visualizer for the selected group")
+        btn_open_viz.clicked.connect(self._open_network_viz)
+        nvl.addWidget(btn_open_viz)
+        vl.addWidget(self._net_panel)
+
         self._brain_params_group, self._brain_params_layout = \
             self._panel.add_group("Brain Parameters", panel_vl)
 
@@ -86,12 +145,135 @@ class _BrainMixin:
     def _refresh_brain_list(self):
         current = self._brain_combo.currentText()
         self.brain_files = self.brain_mgr.discover_brains()
+        self.network_brain_modules = self.brain_mgr.network_brain_modules
+        code = self._code_brain_files()
         self._brain_combo.blockSignals(True)
         self._brain_combo.clear()
-        self._brain_combo.addItems(self.brain_files)
-        if current in self.brain_files:
+        self._brain_combo.addItems(code)
+        if current in code:
             self._brain_combo.setCurrentText(current)
         self._brain_combo.blockSignals(False)
+
+    # ── Code brain / Network mode ─────────────────────────────────────────────
+
+    def _code_brain_files(self):
+        """Brain modules written in Python — the network brain module is not
+        offered here; it is what Network mode runs."""
+        return [m for m in self.brain_files
+                if m not in getattr(self, 'network_brain_modules', ())]
+
+    def _network_module(self):
+        """The module that runs a JSON circuit (BrainGUI), or None."""
+        mods = sorted(getattr(self, 'network_brain_modules', ()))
+        return 'BrainGUI' if 'BrainGUI' in mods else (mods[0] if mods else None)
+
+    def _selected_group(self):
+        reg = self._sim_ctrl.registry
+        gid = reg.group_of_agent(reg.selected_id)
+        return reg.get_group(gid) if gid is not None else None
+
+    def _is_network_module(self, module):
+        return bool(module) and module in getattr(self, 'network_brain_modules', ())
+
+    def _set_brain_mode(self, mode):
+        """Switch the selected group between running a code brain and a network."""
+        group = self._selected_group()
+        current = group.module if group is not None else None
+        if mode == 'network':
+            if self._is_network_module(current):
+                return
+            net_mod = self._network_module()
+            if net_mod is None:
+                QMessageBox.warning(self, "Network", "No network brain module found in brains/.")
+                self._refresh_brain_mode_ui()
+                return
+            self.load_brain(net_mod)
+        else:
+            if current and not self._is_network_module(current):
+                return
+            code = self._code_brain_files()
+            target = (group.last_code_module if group is not None else None) \
+                or self._brain_combo.currentText() or (code[0] if code else None)
+            if target:
+                self.load_brain(target)
+
+    def _refresh_brain_mode_ui(self):
+        """Show the selected group's mode: toggle state, and the code row or the
+        network panel (with its project / file lists)."""
+        group = self._selected_group()
+        is_net = self._is_network_module(group.module if group is not None else None)
+        self._mode_net_btn.setChecked(is_net)
+        self._mode_code_btn.setChecked(not is_net)
+        self._code_row.setVisible(not is_net)
+        self._net_panel.setVisible(is_net)
+        if is_net:
+            self._refresh_network_panel()
+        self._update_net_viz_title()
+
+    def _refresh_network_panel(self):
+        """Project / file lists for the selected group's network brain."""
+        brain = self.brain
+        key = self._net_project_key(getattr(brain, 'network_project', '') or '')
+        current = getattr(brain, 'network_file', '') or ''
+        # Root (My files / 🔒 Simulator), then that root's projects.
+        builtin = self._fill_folder_picker(self._net_root_combo, self._net_project_combo, 'networks', key)
+        self._btn_new_proj.setEnabled(not builtin)   # the simulator's projects are read-only
+        folder = data_paths.folder_for('networks', key)
+        files = sorted(f for f in os.listdir(folder) if f.endswith('.json')) \
+            if folder.is_dir() else []
+        combo = self._net_file_combo
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItems([''] + files)
+        combo.setCurrentText(current if current in files else '')
+        combo.blockSignals(False)
+
+    @staticmethod
+    def _net_project_key(project):
+        """Picker key for a stored network_project: older sessions store a
+        built-in project by its plain name ('Tutorials'); the picker shows it
+        as the built-in entry unless the user has a folder of that name."""
+        if (project and not project.startswith(data_paths.BUILTIN)
+                and project not in data_paths.user_subdirs('networks')
+                and project in data_paths.builtin_subdirs('networks')):
+            return data_paths.BUILTIN + project
+        return project
+
+    def _on_net_project_chosen(self, project):
+        if self.brain is None or not hasattr(self.brain, 'network_project'):
+            return
+        self.brain.network_project = project
+        self.brain.network_file = ''
+        self._refresh_network_panel()
+
+    def _on_net_file_chosen(self, net_name):
+        if self.brain is None or not hasattr(self.brain, 'network_file'):
+            return
+        self.brain.network_file = net_name
+        if net_name:
+            self._load_data_brain_network(net_name)
+        self._refresh_agent_list()
+        self._update_net_viz_title()
+
+    def _open_network_viz(self):
+        if self._net_viz:
+            self._net_viz.raise_()
+            self._net_viz.activateWindow()
+        else:
+            self._toggle_network_viz()
+
+    def _update_net_viz_title(self):
+        """Visualizer title names the group and what it runs (one visualizer,
+        following the selected group)."""
+        if not self._net_viz:
+            return
+        group = self._selected_group()
+        name = group.name if group is not None else ''
+        if self._is_network_module(group.module if group is not None else None):
+            what = getattr(self.brain, 'network_file', '') or '(no network file)'
+        else:
+            what = (group.module if group is not None else '') or ''
+        self._net_viz.setWindowTitle(f"Network — {name}: {what}" if name else "Network")
 
     def _new_brain(self):
         from PySide6.QtWidgets import QInputDialog
@@ -102,7 +284,8 @@ class _BrainMixin:
         class_name = name if name.startswith('Brain') else f"Brain{name[0].upper()}{name[1:]}"
         path = self.brain_mgr.create_brain_file(class_name)
         if path is None:
-            print(f"Already exists: brains/{class_name}.py")
+            QMessageBox.information(self, 'New Brain',
+                                    f"A brain named {class_name} already exists (yours or built-in).")
             return
         self._refresh_brain_list()
         if class_name in self.brain_files:
@@ -118,10 +301,10 @@ class _BrainMixin:
         if not ok or not name.strip():
             return
         name = name.strip()
-        os.makedirs(os.path.join('networks', name), exist_ok=True)
+        data_paths.user_path('networks', name).mkdir(parents=True, exist_ok=True)
         self.brain.network_project = name
         self.brain.network_file = ''
-        self._rebuild_brain_params()
+        self._refresh_network_panel()
 
     def _new_network_from_sidebar(self):
         from PySide6.QtWidgets import QInputDialog
@@ -132,9 +315,14 @@ class _BrainMixin:
         name = name.strip()
         if not name.endswith('.json'):
             name += '.json'
-        project = getattr(self.brain, 'network_project', '')
-        net_dir = os.path.join('networks', project) if project else 'networks'
-        os.makedirs(net_dir, exist_ok=True)
+        # New networks always go to the user's folder; a built-in project is
+        # mirrored there by name.
+        project = getattr(self.brain, 'network_project', '') or ''
+        if project.startswith(data_paths.BUILTIN):
+            project = project[len(data_paths.BUILTIN):]
+            self.brain.network_project = project
+        net_dir = data_paths.user_path('networks', project)
+        net_dir.mkdir(parents=True, exist_ok=True)
         motor = MotorLayer(activation='linear', name='motor', n=2, layer=4)
         path  = os.path.join(net_dir, name)
         try:
@@ -144,15 +332,20 @@ class _BrainMixin:
             return
         self.brain.network_file = name
         self._load_data_brain_network(name)
-        self._rebuild_brain_params()
+        self._refresh_network_panel()
+        self._refresh_agent_list()
+        self._update_net_viz_title()
 
     def _load_data_brain_network(self, net_name: str):
-        project = getattr(self.brain, 'network_project', '')
-        full_name = os.path.join(project, net_name) if project else net_name
-        hidden, disabled, container_labels, container_notes, conn_params, freshness_issues = \
-            self.brain_mgr.load_network_into_circuit(self.brain, full_name)
-        if hidden is None:
-            return
+        net_info = self.brain_mgr.load_data_network(self.brain, net_name)
+        if net_info is not None:
+            self._apply_loaded_network(net_info)
+
+    def _apply_loaded_network(self, net_info):
+        """UI half of loading a DataBrain network (the model half is
+        BrainManager.load_data_network): visualizer state, channels, arena,
+        robot reconnect, freshness prompt, group sync."""
+        full_name, hidden, disabled, container_labels, container_notes, conn_params, freshness_issues = net_info
         self._connection_params = conn_params
         self._hidden_containers       = hidden
         self._disabled_containers     = disabled
@@ -180,21 +373,39 @@ class _BrainMixin:
         poses = _rb_world_poses(self.bot_pos, self.circuit.bodies, self.circuit.joints)
         self._arena.update_child_bodies(poses, self.circuit.bodies, self.sim_cfg)
         if freshness_issues and not getattr(self, '_syncing_group', False):
-            self._prompt_network_update(full_name, freshness_issues)
+            # Ask once loading has finished (not mid-load), about this very
+            # circuit — the selected group may have changed by then.
+            saved = (self.circuit, self._hidden_containers, self._disabled_containers,
+                     self._container_labels, self._connection_params, self._container_notes)
+            QTimer.singleShot(0, lambda: self._prompt_network_update(
+                full_name, freshness_issues, saved))
         if not getattr(self, '_syncing_group', False):
             self._sync_group_network()
+        self._report_fast_taus()
+
+    def _report_fast_taus(self):
+        """Status-bar alert if any agent's circuit has a tau shorter than dt
+        (TODO 1.1 — only reported; the integration is left as it is)."""
+        dt = self.sim_cfg.dt
+        hits = []
+        for agent in self._sim_ctrl.registry.agents:
+            c = agent.circuit
+            hits += fast_taus(list(c.sensors) + list(c.layers), dt)
+        msg = fast_tau_warning(sorted(set(hits)), dt)
+        if msg:
+            self._status_bar.showMessage(msg, 20000)
 
     def _sync_group_network(self):
         """Push network_file + network_project from the current agent to every
         other agent in its group so all siblings share the same network structure."""
-        sel_id = self._sim_ctrl._selected_id
-        group_id = self._sim_ctrl.group_of_agent(sel_id)
+        sel_id = self._sim_ctrl.registry.selected_id
+        group_id = self._sim_ctrl.registry.group_of_agent(sel_id)
         if group_id is None:
             return
-        group = self._sim_ctrl.get_group(group_id)
+        group = self._sim_ctrl.registry.get_group(group_id)
         if not group.module or len(group.member_ids) <= 1:
             return
-        src_brain = self._sim_ctrl._agent_by_id(sel_id).brain
+        src_brain = self._sim_ctrl.registry.agent_by_id(sel_id).brain
         if src_brain is None:
             return
         net_params = {k: getattr(src_brain, k)
@@ -207,19 +418,21 @@ class _BrainMixin:
             for agent_id in group.member_ids:
                 if agent_id == sel_id:
                     continue
-                self._sim_ctrl.select_agent(agent_id)
+                self._sim_ctrl.registry.select_agent(agent_id)
                 self.load_brain(group.module, external_params=net_params)
         finally:
             self._syncing_group = False
-        self._sim_ctrl.select_agent(sel_id)
-        self._arena.select_robot(self._sim_ctrl.index_of_agent(sel_id))
+        self._sim_ctrl.registry.select_agent(sel_id)   # the arena highlight follows
         self._rebuild_brain_params()
         self._rebuild_channels()
         if self._net_viz:
             self._net_viz.build()
 
-    def _prompt_network_update(self, net_name: str, issues: list):
-        """Show a dialog reporting stale params and offer to resave with current defaults."""
+    def _prompt_network_update(self, net_name: str, issues: list, saved):
+        """Show a dialog reporting stale params and offer to resave with current
+        defaults. saved = (circuit, hidden, disabled, labels, conn_params, notes)
+        captured when the network was loaded."""
+        circuit, hidden, disabled, labels, conn_params, notes = saved
         lines = ['This network file has components with new parameters since it was last saved.',
                  'New parameters will use their default values until the file is updated.\n']
         for item in issues:
@@ -234,21 +447,28 @@ class _BrainMixin:
         )
         if reply == QMessageBox.StandardButton.Save:
             from brain_serializer import save_network_file
-            path = os.path.join('networks', net_name)
+            path = data_paths.resolve('networks', net_name)
+            if path is None or data_paths.is_builtin(path):
+                QMessageBox.information(
+                    self, 'Built-in network',
+                    'This network ships with the simulator and is read-only. Use Save in '
+                    'the network window to keep your own up-to-date copy.')
+                return
             try:
                 save_network_file(
                     path,
-                    self.circuit.sensors,
-                    self.circuit.layers,
-                    self.circuit.connections,
-                    self._hidden_containers,
-                    self._disabled_containers,
-                    self._container_labels,
-                    self.circuit.bodies,
-                    self.circuit.joints,
-                    self._connection_params,
-                    container_notes=self._container_notes,
+                    circuit.sensors,
+                    circuit.layers,
+                    circuit.connections,
+                    hidden,
+                    disabled,
+                    labels,
+                    circuit.bodies,
+                    circuit.joints,
+                    conn_params,
+                    container_notes=notes,
                 )
+                self._status_bar.showMessage(f"✓ Network updated: {path}", 5000)
             except Exception as e:
                 QMessageBox.critical(self, 'Save failed', str(e))
 
@@ -260,71 +480,32 @@ class _BrainMixin:
         if not name:
             return
 
-        self._brain_combo.blockSignals(True)
-        self._brain_combo.setCurrentText(name)
-        self._brain_combo.blockSignals(False)
+        if not self._is_network_module(name):
+            self._brain_combo.blockSignals(True)
+            self._brain_combo.setCurrentText(name)
+            self._brain_combo.blockSignals(False)
 
-        group_id = self._sim_ctrl.group_of_agent(self._sim_ctrl._selected_id)
-        if group_id is not None:
-            self._sim_ctrl.get_group(group_id).module = name
+        group = self._selected_group()
+        if group is not None:
+            group.module = name
+            if not self._is_network_module(name):
+                group.last_code_module = name
 
-        brain, loaded_json = self.brain_mgr.load_brain_logic(name)
+        # Model half (shared with headless runs): instantiate + wire the circuit.
+        brain, loaded_json, net_info = self.brain_mgr.install_brain(name, external_params)
         if not brain:
             return
-        self._sim_ctrl.brain = brain
+        self._sim_ctrl.registry.brain = brain
+        if net_info is not None:
+            self._apply_loaded_network(net_info)
 
-        cls = brain.__class__
-        if isinstance(brain, DataBrain):
-            self.circuit.sensors     = []
-            self.circuit.connections = []
-            self.circuit.layers      = []
-            self.circuit.joints      = []
-            self.circuit.bodies      = (self.circuit.bodies[:1] if self.circuit.bodies
-                                        else [RigidBody('root', 'root', self.sim_cfg.body_radius)])
-            net = getattr(brain, 'network_file', '')
-            if net:
-                self._load_data_brain_network(net)
-        else:
-            self.circuit.joints = []
-            self.circuit.bodies = (self.circuit.bodies[:1] if self.circuit.bodies
-                                   else [RigidBody('root', 'root', self.sim_cfg.body_radius)])
-            self.circuit.sensors     = list(getattr(cls, 'sensors',     []))
-            self.circuit.layers      = list(getattr(cls, 'layers',      []))
-            raw_conns = list(getattr(cls, 'connections', []))
-            self.circuit.connections = [
-                c if isinstance(c, Connection) else Connection(*c)
-                for c in raw_conns
-            ]
-            for layer in self.circuit.layers:
-                setattr(brain, layer.name, layer)
-                layer.reset()
-
-        if self._net_viz:
-            self._net_viz.build()
-        brain.setup()
-
-        if external_params:
-            for k, v in external_params.items():
-                setattr(brain, k, v)
-            if isinstance(brain, DataBrain) and not self.circuit.layers:
-                net = getattr(brain, 'network_file', '')
-                if net:
-                    self._load_data_brain_network(net)
-
-        self._sim_ctrl.trail_xy.clear()
+        self._sim_ctrl.registry.trail_xy.clear()
         self._rebuild_brain_params()
         self._rebuild_channels()
 
         if "multipliers" in loaded_json:
             self._osc_ctrl.apply_multipliers_from_json(loaded_json["multipliers"])
 
-        self.brain_mgr.rebuild_joint_motor_layers()
-        if brain.__dict__.get('layers') is not None:
-            brain.layers = self.circuit.layers
-            for layer in self.circuit.layers:
-                if getattr(layer, '_is_joint_motor', False):
-                    setattr(brain, layer.name, layer)
-        self.brain_mgr.resolve_joint_sensor_refs()
         if self._net_viz:
             self._net_viz.build()
         self._refresh_agent_list()
@@ -375,7 +556,7 @@ class _BrainMixin:
         sig = self._mujoco_collision_sensor_signature()
         if sig != getattr(self, '_mujoco_collision_sig', None):
             self._mujoco_collision_sig = sig
-            self._sim_ctrl.rebuild_mujoco(self.world, self.sim_cfg)
+            self._sim_ctrl.mujoco.rebuild()
         if hasattr(self, '_arena'):
             self._arena.setup_sensors(self.circuit.sensors, self._osc_ctrl.channel_colors)
 
@@ -383,7 +564,7 @@ class _BrainMixin:
         self._osc_ctrl.toggle_layer(name)
         self._rebuild_channels()
         if self._net_viz:
-            self._net_viz._redraw_nodes()
+            self._net_viz.renderer.redraw_nodes()
 
     # ── Network visualizer ────────────────────────────────────────────────────
 
@@ -399,6 +580,7 @@ class _BrainMixin:
             self._net_viz._container_labels    = self._container_labels
             self._net_viz._container_notes     = self._container_notes
             self._net_viz.show()
+            self._update_net_viz_title()
 
     # ── Brain params UI ───────────────────────────────────────────────────────
 
@@ -409,46 +591,16 @@ class _BrainMixin:
                 item.widget().deleteLater()
         if not self.brain:
             return
+        self._refresh_brain_mode_ui()
         is_data_brain = isinstance(self.brain, DataBrain)
         for k, p_obj in self.brain.get_param_metadata().items():
+            if is_data_brain and k in ('network_project', 'network_file'):
+                continue   # shown in the Network panel at the top of the Brain tab
             cv = getattr(self.brain, k)
-            if is_data_brain and k == 'network_project':
-                def on_change_proj(v, key=k):
-                    setattr(self.brain, key, v)
-                    self.brain.network_file = ''
-                    self._rebuild_brain_params()
-                proj_combo = self._make_param_row(
-                    self._brain_params_layout, k, p_obj, cv, on_change_proj, desc=p_obj.desc)
-                btn_new_proj = QPushButton("+")
-                btn_new_proj.setFixedWidth(24)
-                btn_new_proj.setToolTip("Create new project directory")
-                btn_new_proj.clicked.connect(self._new_network_project)
-                proj_combo.parent().layout().addWidget(btn_new_proj)
-            elif is_data_brain and k == 'network_file':
-                def on_change(v, key=k):
-                    setattr(self.brain, key, v)
-                    if v:
-                        self._load_data_brain_network(v)
-                project = getattr(self.brain, 'network_project', '')
-                net_dir = os.path.join('networks', project) if project else 'networks'
-                file_choices = sorted(f for f in os.listdir(net_dir) if f.endswith('.json')) \
-                               if os.path.isdir(net_dir) else []
-                combo = self._make_param_row(
-                    self._brain_params_layout, k, p_obj, cv, on_change,
-                    desc=p_obj.desc, choices=file_choices)
-                btn_new = QPushButton("+")
-                btn_new.setFixedWidth(24); btn_new.setToolTip("Create new network file")
-                btn_new.clicked.connect(self._new_network_from_sidebar)
-                combo.parent().layout().addWidget(btn_new)
-                btn_net_viz = QPushButton("⬡")
-                btn_net_viz.setFixedWidth(28); btn_net_viz.setToolTip("Open network visualizer")
-                btn_net_viz.clicked.connect(self._toggle_network_viz)
-                combo.parent().layout().addWidget(btn_net_viz)
-            else:
-                def on_change(v, key=k):
-                    setattr(self.brain, key, v)
-                self._make_param_row(
-                    self._brain_params_layout, k, p_obj, cv, on_change, desc=p_obj.desc)
+            def on_change(v, key=k):
+                setattr(self.brain, key, v)
+            self._make_param_row(
+                self._brain_params_layout, k, p_obj, cv, on_change, desc=p_obj.desc)
         btn_reset = self._make_btn("↺ Reset Defaults", C['border'])
         btn_reset.clicked.connect(self._reset_brain_params)
         self._brain_params_layout.addWidget(btn_reset)

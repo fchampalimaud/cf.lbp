@@ -29,7 +29,7 @@ class CircleObject(BaseTask):
         }
         world.objects.append(self._obj)
 
-    def tick(self, world, bot_pos, sim_cfg, dt):
+    def tick(self, world, bot_positions, sim_cfg, dt):
         self._t  += dt
         orbit_r   = sim_cfg.arena_scale * self.ORBIT_FRACTION
         angle     = 2.0 * np.pi * self._t / self.PERIOD

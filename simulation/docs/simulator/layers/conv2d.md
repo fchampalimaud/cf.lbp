@@ -13,11 +13,12 @@
 | `pool` | `global_avg`, `global_max`, or `none`; default `global_avg` |
 | `activation` | Nonlinearity on feature maps before pooling; default `relu` |
 | `tau_rise` | Leaky dynamics rise τ on pooled output (0 = off); default 0.0 |
-| `tau_decay` | Leaky dynamics decay τ; blank/None = no decay, holds value |
+| `tau_decay` | Leaky dynamics decay τ; 0 or blank = no decay, holds value |
 | `tau_a` | Adaptation time constant (0 = off); default 0.0 |
 | `beta` | Adaptation strength (0 = off); default 0.0 |
 | `bias` | Constant added to each pooled output; default 0.0 |
 | `scale` | Output multiplier; default 1.0 |
+| `noise_std` / `noise_tau` | Noise on the pooled responses, as in every layer — see [Noise](leaky.md#noise); default 0.0 |
 | `lateralized` | Create mirrored _L / _R pair for split-camera input; default False |
 
 ## Forward pass

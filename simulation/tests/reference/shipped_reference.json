@@ -1,0 +1,592 @@
+{
+ "configs/Demos/VectorBasedHomingSession.json": {
+  "hash": "679b67c80a86d5e0",
+  "poses": [
+   [
+    -0.7783786417959617,
+    0.0065645251397510734,
+    0.08760868661550367
+   ]
+  ]
+ },
+ "configs/Tutorials/T02 - DistanceSession.json": {
+  "hash": "d8bb3bcb75bac0dc",
+  "poses": [
+   [
+    -0.6921239199482057,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "configs/Tutorials/T03 - ColisionSession.json": {
+  "hash": "f6a668711c9d0fe7",
+  "poses": [
+   [
+    -0.722910704661098,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "configs/Tutorials/T04 - MatsuokaSession.json": {
+  "hash": "0becf76ef734ca6c",
+  "poses": [
+   [
+    -0.7233833663626313,
+    -6.598164326060887e-06,
+    6.2827458484985605
+   ]
+  ]
+ },
+ "configs/Tutorials/T05 - VisionSession.json": {
+  "hash": "63accc4315c7513e",
+  "poses": [
+   [
+    -0.6607688348402184,
+    -0.00707607031933554,
+    6.21958502117269
+   ]
+  ]
+ },
+ "configs/Tutorials/T06 - FeedingSession.json": {
+  "hash": "3e883e57f6732cc6",
+  "poses": [
+   [
+    -0.6921239199482057,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "configs/Tutorials/T07 - WhiskerSession.json": {
+  "hash": "34747656be4f8d9b",
+  "poses": [
+   [
+    -0.6921239199482057,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "configs/Tutorials/T08 - MultiAgentMultiSession.json": {
+  "hash": "fde9603368249d58",
+  "poses": [
+   [
+    -0.8398370496798745,
+    0.00026040595104891606,
+    0.006216399331005616
+   ],
+   [
+    -0.35740266200601173,
+    0.0002594076342837487,
+    0.007123419616571126
+   ],
+   [
+    0.23046516352612134,
+    0.019536264929779633,
+    0.1682870532372231
+   ]
+  ]
+ },
+ "networks/Default/BrainARS.json": {
+  "hash": "37bd7ecc72046eb9",
+  "poses": [
+   [
+    0.2445983457890456,
+    0.01981518384379176,
+    0.2664697720912142
+   ]
+  ]
+ },
+ "networks/Default/BrainPrediction.json": {
+  "hash": "a35b2ec8119f8ed6",
+  "poses": [
+   [
+    0.006157521601036005,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "networks/Default/Braitenberg1.json": {
+  "hash": "20c926061eb7b456",
+  "poses": [
+   [
+    0.0,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "networks/Default/Building a ring attractor.json": {
+  "hash": "ba833ea1f9f8d51f",
+  "poses": [
+   [
+    0.0,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "networks/Default/BumperBrain.json": {
+  "hash": "637d466bc179dabd",
+  "poses": [
+   [
+    0.2924822632476607,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "networks/Default/BumperReaction.json": {
+  "hash": "bf1ecd4ee43dc3d0",
+  "poses": [
+   [
+    0.27708929533890236,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "networks/Default/CameraBrain.json": {
+  "hash": "397b15af7633bc8f",
+  "poses": [
+   [
+    0.27708929533890236,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "networks/Default/FeedingBrain.json": {
+  "hash": "7ec7a193f8351c3e",
+  "poses": [
+   [
+    0.27708929533890236,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "networks/Default/LearningBrain.json": {
+  "hash": "eb0c95f553099d0c",
+  "poses": [
+   [
+    0.27708929533890236,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "networks/Default/MinimalRingAttractor.json": {
+  "hash": "006ed5b0db0e7871",
+  "poses": [
+   [
+    0.0,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "networks/Default/MinimumBrain.json": {
+  "hash": "4ac391b4fb49602d",
+  "poses": [
+   [
+    0.27708929533890236,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "networks/Default/MyBrain.json": {
+  "hash": "fe89138ea217f287",
+  "poses": [
+   [
+    0.30787608005179984,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "networks/Default/RingAttractorBrain.json": {
+  "hash": "95ca78aec82a16bb",
+  "poses": [
+   [
+    0.001637468917094281,
+    2.484134870919766e-06,
+    0.0034606319042481816
+   ]
+  ]
+ },
+ "networks/Default/RingAttractorTut1.json": {
+  "hash": "ad762d559f825998",
+  "poses": [
+   [
+    0.0,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "networks/Default/WhiskerBrain.json": {
+  "hash": "5192516d379c4cd0",
+  "poses": [
+   [
+    0.30787608005179984,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "networks/Demos/VectorBasedHomingBrain.json": {
+  "hash": "7fd659c78dc01a5f",
+  "poses": [
+   [
+    0.22174516443693604,
+    0.003353002994639556,
+    0.04490577743017578
+   ]
+  ]
+ },
+ "networks/Tutorials/T01 - AttractionBrain.json": {
+  "hash": "4214fb8c3d75e41e",
+  "poses": [
+   [
+    0.0,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "networks/Tutorials/T01 - AvoidanceBrain.json": {
+  "hash": "b20e24d331794113",
+  "poses": [
+   [
+    0.0,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "networks/Tutorials/T02 - DistanceBrain.json": {
+  "hash": "851b55dbf0938baa",
+  "poses": [
+   [
+    0.30787608005179984,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "networks/Tutorials/T03 - CollisionBrain.json": {
+  "hash": "c04d6ec17dfbfb36",
+  "poses": [
+   [
+    0.27708929533890236,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "networks/Tutorials/T04 - MatsuokaBrain.json": {
+  "hash": "ee5ade0162584e2d",
+  "poses": [
+   [
+    0.27661663716145163,
+    -3.299082284296568e-06,
+    6.282965577839076
+   ]
+  ]
+ },
+ "networks/Tutorials/T05 - VisionBrain.json": {
+  "hash": "ca60c62b370e1cae",
+  "poses": [
+   [
+    0.30787608005179984,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "networks/Tutorials/T06 - FeedingBrain.json": {
+  "hash": "b46e350b7a6b1e50",
+  "poses": [
+   [
+    0.30787608005179984,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "networks/Tutorials/T07 - WhiskerBrain.json": {
+  "hash": "bf41ce6de6cc6653",
+  "poses": [
+   [
+    0.30787608005179984,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "networks/Tutorials/T08 - DistanceAndGradientBrain.json": {
+  "hash": "ac9d376be8643bfc",
+  "poses": [
+   [
+    0.30787608005179984,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "networks/Tutorials/T08 - GradientBrain.json": {
+  "hash": "4afdc95ae0b0f5be",
+  "poses": [
+   [
+    0.4310265120725191,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "private/configs/TemporalIntegration.json": {
+  "hash": "fe8e295c0e2deeb2",
+  "poses": [
+   [
+    0.9645941640966705,
+    -2.001679081002642,
+    6.233883438718495
+   ]
+  ]
+ },
+ "private/configs/brain_BrainTemporalBraitenberg.json.json": {
+  "hash": "a6e33e75dec3b423",
+  "poses": [
+   [
+    -1.4917115249145827,
+    -0.10365677635178223,
+    0.2811904386469219
+   ]
+  ]
+ },
+ "private/configs/brain_BraitenbergGradientAndDistance.json": {
+  "hash": "391c4be63ea42b28",
+  "poses": [
+   [
+    -2.093002257870883,
+    -0.4507899567691391,
+    6.2830309076704545
+   ]
+  ]
+ },
+ "private/configs/experiment_1.json": {
+  "hash": "aa2aa7fc1e1d5535",
+  "poses": [
+   [
+    0.0,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "private/configs/latest_configs.json": {
+  "hash": "745e1b5b45fa8443",
+  "poses": [
+   [
+    -0.7783786417959617,
+    0.0065645251397510734,
+    0.08760868661550367
+   ]
+  ]
+ },
+ "private/configs/session_config.json": {
+  "hash": "7007c998709cbdbb",
+  "poses": [
+   [
+    -1.4917115249145827,
+    -0.10365677635178223,
+    0.2811904386469219
+   ]
+  ]
+ },
+ "private/networks/RingNavigationModels/Goulard2023.json": {
+  "hash": "a55e003e99303c33",
+  "poses": [
+   [
+    0.0,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "private/networks/RingNavigationModels/InsectBasedNavigationModel.json": {
+  "hash": "f816ece8fc3c6492",
+  "poses": [
+   [
+    0.0,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "private/networks/RingNavigationModels/LeMoel2019.json": {
+  "hash": "d443c7170b4e5e1e",
+  "poses": [
+   [
+    0.22174516443693604,
+    0.003353002994639556,
+    0.04490577743017578
+   ]
+  ]
+ },
+ "private/networks/RingNavigationModels/LeMoel2019_GoalLearning.json": {
+  "hash": "159a6cbe61756364",
+  "poses": [
+   [
+    0.22174516443693604,
+    0.003353002994639556,
+    0.04490577743017578
+   ]
+  ]
+ },
+ "private/networks/RingNavigationModels/SnapshotLearning.json": {
+  "hash": "320fe67ade858e4d",
+  "poses": [
+   [
+    0.0,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "private/networks/RingNavigationModels/Stone2017&Westeinde2024.json": {
+  "hash": "5148d680643f9cb9",
+  "poses": [
+   [
+    0.22174516443693604,
+    0.003353002994639556,
+    0.04490577743017578
+   ]
+  ]
+ },
+ "private/networks/RingNavigationModels/Stone2017.json": {
+  "hash": "5296c72563be695e",
+  "poses": [
+   [
+    0.05402029715066054,
+    1.8803885062914193e-11,
+    1.174454040724944e-09
+   ]
+  ]
+ },
+ "private/networks/RingNavigationModels/Westeinde2024.json": {
+  "hash": "bea7f900a3d3a816",
+  "poses": [
+   [
+    0.0,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "private/networks/RobotBrains/CollisionResponse.json": {
+  "hash": "dc57d198c545fda2",
+  "poses": [
+   [
+    0.27682567423645044,
+    -2.8466620908299522e-06,
+    6.282993740366129
+   ]
+  ]
+ },
+ "private/networks/RobotBrains/DistanceCollisionResponse.json": {
+  "hash": "4eb75fa2bc3bfee0",
+  "poses": [
+   [
+    0.3877482208324427,
+    -9.96122043653447e-07,
+    6.283054869671302
+   ]
+  ]
+ },
+ "private/networks/RobotBrains/ManualControl.json": {
+  "hash": "39d58b01f155f25e",
+  "poses": [
+   [
+    0.0,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "private/networks/Temp/ManualBump.json": {
+  "hash": "62d22ea9f2c56f7c",
+  "poses": [
+   [
+    0.0,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "private/networks/Temp/MyBraitenberg.json": {
+  "hash": "68e70e636c821cd5",
+  "poses": [
+   [
+    0.18472564803108013,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "private/networks/Temp/MyTestNet.json": {
+  "hash": "4baa7559f455e358",
+  "poses": [
+   [
+    0.0,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "private/networks/Temp/OpticFlow.json": {
+  "hash": "9251e9990bea5d94",
+  "poses": [
+   [
+    0.0,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "private/networks/Temp/Temp1.json": {
+  "hash": "0b3d58d39b2448b1",
+  "poses": [
+   [
+    0.0,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "private/networks/Temp/Vision.json": {
+  "hash": "8714e96285a4a944",
+  "poses": [
+   [
+    0.0,
+    0.0,
+    0.0
+   ]
+  ]
+ },
+ "private/networks/Temp/Visual.json": {
+  "hash": "a7204139f6229a31",
+  "poses": [
+   [
+    0.0,
+    0.0,
+    0.0
+   ]
+  ]
+ }
+}

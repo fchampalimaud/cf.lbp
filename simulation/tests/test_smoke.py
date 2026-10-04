@@ -292,12 +292,12 @@ def test_learning_layer_drives_plasticity_row_gates_on_threshold():
     brain.src         = src   # network_runner reads connection sources via getattr(brain, conn.src)
 
     dan.output = torch.tensor([0.2])   # below threshold 0.5
-    step_network(brain, dt=0.1)
+    step_network(brain, dt=0.01)       # default dt: learning rate applies as-is
     assert conn.W[0, 0] == pytest.approx(0.0)
 
     dan.output = torch.tensor([0.9])   # above threshold 0.5
-    step_network(brain, dt=0.1)
-    assert conn.W[0, 0] == pytest.approx(0.9)   # alpha_pos=1.0 * (0.9 - 0) * s_prev(1.0)
+    step_network(brain, dt=0.01)
+    assert conn.W[0, 0] == pytest.approx(0.9)   # alpha_pos=1.0 * (0.9 - 0) * s(1.0)
 
 
 def test_learning_layer_reward_modulator_backcompat_default_is_none():
@@ -334,12 +334,7 @@ def test_learning_layer_reward_modulator_explicit_value_still_works():
     brain.src         = src   # network_runner reads connection sources via getattr(brain, conn.src)
 
     dan.output = torch.tensor([0.7])
-    step_network(brain, dt=0.1)   # first tick: warms up _src_prev (LearningLayerBase.step_td
-                                   # uses the PREVIOUS tick's presynaptic value, empty on tick 1 —
-                                   # ΔW is always 0 on a layer's very first step_td call regardless
-                                   # of reward, see LearningLayerBase.step_td's src_prev lookup)
-    assert conn.W[0, 0] == pytest.approx(0.0)
-    step_network(brain, dt=0.1)   # second tick: now sees src_prev=1.0 from tick 1
+    step_network(brain, dt=0.01)   # DeltaLayer credits this tick's input (s = 1.0)
     assert conn.W[0, 0] == pytest.approx(0.7)   # no threshold on the legacy path — always applied
 
 
@@ -427,13 +422,14 @@ def test_snapshot_layer_outgoing_weights_frozen_between_triggers():
 
 
 def test_connection_kind_classifies_teach_before_td():
-    """_connection_kind must return TEACH for the src==teach_source connection
+    """connection_kind must return TEACH for the src==teach_source connection
     into a SnapshotLayer, and TD for that same layer's other (gate) incoming
     connection — TEACH is checked with higher priority than TD since a
-    SnapshotLayer is itself a LearningLayerBase. _connection_kind only reads
+    SnapshotLayer is itself a LearningLayerBase. connection_kind only reads
     class-level _CK_*/_DENSE_THRESHOLD constants, so a real Qt widget (and
     pytest-qt) isn't needed — __new__ skips __init__ entirely."""
     from network_viz import NetworkVisualizerWindow
+    from network_viz_layout import LayoutEngine
     from neurons import ConstantLayer, SnapshotLayer
 
     cpu4 = ConstantLayer(name='cpu4', value=[0.0, 0.0, 0.0], n=3)
@@ -441,8 +437,9 @@ def test_connection_kind_classifies_teach_before_td():
     mem  = SnapshotLayer(name='mem', n=1, teach_source='cpu4')
 
     win = NetworkVisualizerWindow.__new__(NetworkVisualizerWindow)
-    teach_kind = win._connection_kind(cpu4, mem, np.ones((1, 3)), 3, 1)
-    gate_kind  = win._connection_kind(gate, mem, np.ones((1, 1)), 1, 1)
+    engine = LayoutEngine(win)
+    teach_kind = engine.connection_kind(cpu4, mem, np.ones((1, 3)), 3, 1)
+    gate_kind  = engine.connection_kind(gate, mem, np.ones((1, 1)), 1, 1)
     assert teach_kind == win._CK_TEACH
     assert gate_kind == win._CK_TD
 
@@ -694,7 +691,7 @@ def test_collision_sensor_vectorized_matches_reference_loop():
 
 def test_distance_sensor_detects_other_agent():
     """other_agents (circles for other agents' bodies, built per-tick by
-    sim_controller._tick / MuJoCoEngine.tick_physics_batch) must be treated as
+    sim_engine.step_agents) must be treated as
     obstacles exactly like world.objects — inter-agent distance sensing."""
     from sensors import DistanceSensor
     from world import World
@@ -903,7 +900,7 @@ def test_sensor_from_dict_backward_compat_differential():
 
 def test_layer_to_dict_persists_auto_injected_output_mode():
     """AdaptiveLayer doesn't list output_mode in its own param_defs() — it's
-    only reachable via network_viz_dialogs.py's _layer_dialog, which
+    only reachable via NetworkDialogs.layer_dialog (network_viz_dialogs.py), which
     auto-injects any DynamicsBase._dynamics_param_defs() entry a layer's own
     param_defs() omits. _layer_to_dict must persist it too via the same
     merge, or a value set through that auto-injected dialog field would
@@ -1022,7 +1019,7 @@ def test_activation_panel_pin_and_update(qtbot):
     # without needing the top-level window itself to be shown.
     assert win._activation_panel.isVisibleTo(win)
 
-    win._update_activation_panel()
+    win.renderer.update_activation_panel()
     entry = win._activation_pinned['l1']
     assert list(entry._bars.opts['height']) == pytest.approx([0.3, -0.7])
 
@@ -1081,7 +1078,7 @@ def test_side_view_drag_preserves_sensor_z(qtbot):
     win.build()
     # Dropped below competitor (z=0 < 1) -> legitimately subsumed; connections
     # through it are hidden. This is correct given where it was actually placed.
-    assert 's_L' not in win._active_names
+    assert 's_L' not in win._lay.active_names
 
     # Same-column drag (still dv=0) raising z to 1, tying with the competitor.
     sv.refresh()
@@ -1092,8 +1089,8 @@ def test_side_view_drag_preserves_sensor_z(qtbot):
     assert sensor.z == 1   # used to stay frozen; same-column branch never touched sensor.z
 
     win.build()
-    assert 's_L' in win._active_names and 's_R' in win._active_names
-    assert not win._subsumed_by
+    assert 's_L' in win._lay.active_names and 's_R' in win._lay.active_names
+    assert not win._lay.subsumed_by
 
 
 @pytest.mark.skipif(not _HAS_PYTEST_QT, reason='pytest-qt not installed')
@@ -1134,7 +1131,7 @@ def test_paste_selection_bumps_connections_identity(qtbot):
     QApplication.clipboard().setText(json.dumps(
         {'layers': data['layers'], 'connections': data['connections']}))
     before_id = id(circuit.connections)
-    win._paste_selection()
+    win.editing.paste_selection()
 
     assert len(circuit.connections) == 1
     assert id(circuit.connections) != before_id
@@ -1200,7 +1197,8 @@ def test_session_mount_survives_agent_id_remint_on_reload():
 
     class _FakeSimCtrl:
         def __init__(self, agents):
-            self._agents = agents
+            from types import SimpleNamespace
+            self.registry = SimpleNamespace(agents=agents)
 
     class Host(_SessionMixin):
         pass
@@ -1242,7 +1240,8 @@ def test_session_mount_dropped_when_agent_no_longer_exists():
 
     class _FakeSimCtrl:
         def __init__(self, agents):
-            self._agents = agents
+            from types import SimpleNamespace
+            self.registry = SimpleNamespace(agents=agents)
 
     class Host(_SessionMixin):
         pass
@@ -1259,6 +1258,9 @@ def test_session_mount_dropped_when_agent_no_longer_exists():
     assert 'mounted_on' not in host.world.patches[0]
 
 
+@pytest.mark.skipif(
+    __import__('importlib').util.find_spec('mujoco') is None,
+    reason='mujoco not installed')
 def test_mounted_gradient_snaps_to_agent_immediately_on_reset():
     """A gradient patch mounted on an agent must already reflect that agent's
     reset position the instant reset() returns, not just after the first tick.
@@ -1281,6 +1283,7 @@ def test_mounted_gradient_snaps_to_agent_immediately_on_reset():
     class _FakeArena:
         def setup_sensors(self, *a, **k): pass
         def sync_agents(self, *a, **k): pass
+        def sync_robot_items(self, *a, **k): pass
 
     class _FakeOscCtrl:
         channels = []
@@ -1312,9 +1315,11 @@ def test_mounted_gradient_snaps_to_agent_immediately_on_reset():
     agent.brain = _TestBrain()
     agent.brain.sensors, agent.brain.layers, agent.brain.connections = [], [], []
     agent.circuit = circuit
-    ctrl.brain = agent.brain
+    ctrl.registry.brain = agent.brain
 
     world.patches.append({'x': 0.0, 'y': 0.0, 'r': 0.3, 'mounted_on': agent.id})
+    ok, err = ctrl.mujoco.start()   # MuJoCo moves the agents
+    assert ok, err
 
     for _ in range(5):   # drive the agent away from spawn
         ctrl._tick()
@@ -1429,7 +1434,7 @@ def test_log_collision_sensor_routing_reports_correct_path(capsys):
     __import__('importlib').util.find_spec('mujoco') is None,
     reason='mujoco not installed')
 def test_mujoco_collision_sensor_fires_on_contact_not_before():
-    """A MuJoCo-eligible CollisionSensor sampled through MuJoCoEngine.tick_physics
+    """A MuJoCo-eligible CollisionSensor sampled through sim_engine.step_agents
     must fire exactly at its own configured lookahead distance: a literal touch
     sensor (radius=1.0) fires only on actual penetration, while a lookahead
     sensor (radius=1.2, the default) fires strictly earlier — matching the
@@ -1441,7 +1446,10 @@ def test_mujoco_collision_sensor_fires_on_contact_not_before():
     Performance): see _scratch/measure_collision_backends.py for the
     benchmark that motivated this (~65x cheaper than the analytic check,
     since MuJoCo already computes contacts every tick for physics)."""
+    from types import SimpleNamespace
     from sim_engine_mujoco import MuJoCoEngine
+    from sim_engine import step_agents
+    from circuit_model import CircuitModel
     from sensors import CollisionSensor
     from world import World
     from brain_base import BaseBrain
@@ -1488,7 +1496,9 @@ def test_mujoco_collision_sensor_fires_on_contact_not_before():
     ]
     for x, expect_touch, expect_lookahead in cases:
         engine.reset([[x, 0.0, 0.0]])
-        engine.tick_physics([x, 0.0, 0.0], brain, [touch, lookahead], world, cfg)
+        agent = SimpleNamespace(bot_pos=[x, 0.0, 0.0], brain=brain,
+                                circuit=CircuitModel(sensors=[touch, lookahead]))
+        step_agents([agent], world, cfg, engine, 0.0)
         assert hit('touch') == expect_touch, f'x={x}: touch expected {expect_touch}, got {brain.touch}'
         assert hit('lookahead') == expect_lookahead, f'x={x}: lookahead expected {expect_lookahead}, got {brain.lookahead}'
 
@@ -1496,12 +1506,14 @@ def test_mujoco_collision_sensor_fires_on_contact_not_before():
 @pytest.mark.skipif(
     __import__('importlib').util.find_spec('mujoco') is None,
     reason='mujoco not installed')
-def test_mujoco_tick_physics_batch_distance_sensor_sees_other_agent():
-    """tick_physics_batch's other_agents wiring (built once per tick as a
-    pre-tick position snapshot, sliced to exclude self) must reach each
-    agent's DistanceSensor — the exact call site sim_controller._tick uses
-    for the MuJoCo multi-agent path."""
+def test_step_agents_distance_sensor_sees_other_agent():
+    """step_agents' other_agents wiring (built once per step as a pre-step
+    position snapshot, sliced to exclude self) must reach each agent's
+    DistanceSensor — the exact call site sim_controller._tick uses."""
+    from types import SimpleNamespace
     from sim_engine_mujoco import MuJoCoEngine
+    from sim_engine import step_agents
+    from circuit_model import CircuitModel
     from sensors import DistanceSensor
     from world import World
     from brain_base import BaseBrain
@@ -1534,11 +1546,11 @@ def test_mujoco_tick_physics_batch_distance_sensor_sees_other_agent():
     engine = MuJoCoEngine(world, cfg, n_agents=2, agent_sensors=[[], []])
     engine.reset([[0.0, 0.0, 0.0], [0.5, 0.0, np.pi]])   # facing each other, 0.5 apart
 
-    agent_list = [
-        ([0.0, 0.0, 0.0], brain0, [dist0], None),
-        ([0.5, 0.0, np.pi], brain1, [dist1], None),
+    agents = [
+        SimpleNamespace(bot_pos=[0.0, 0.0, 0.0], brain=brain0, circuit=CircuitModel(sensors=[dist0])),
+        SimpleNamespace(bot_pos=[0.5, 0.0, np.pi], brain=brain1, circuit=CircuitModel(sensors=[dist1])),
     ]
-    engine.tick_physics_batch(agent_list, world, cfg)
+    step_agents(agents, world, cfg, engine, 0.0)
 
     expected_d = 0.5 - cfg.body_radius   # gap between the two body circles
     expected_out = 1.0 - expected_d / dist0.max_range
@@ -1556,7 +1568,10 @@ def test_mujoco_collision_matches_analytic_randomized():
     Regression test for the CollisionSensor MuJoCo redesign (TODO.md
     Performance) — see the conversation history / _scratch/ for the earlier,
     less accurate bearing-only design this replaced."""
+    from types import SimpleNamespace
     from sim_engine_mujoco import MuJoCoEngine
+    from sim_engine import step_agents
+    from circuit_model import CircuitModel
     from sensors import CollisionSensor
     from world import World
     from brain_base import BaseBrain
@@ -1608,7 +1623,8 @@ def test_mujoco_collision_matches_analytic_randomized():
         brain.touch = np.zeros(n)
         engine = MuJoCoEngine(world, cfg, n_agents=1, agent_sensors=[[sensor]])
         engine.reset([[x, y, theta]])
-        engine.tick_physics([x, y, theta], brain, [sensor], world, cfg)
+        agent = SimpleNamespace(bot_pos=[x, y, theta], brain=brain, circuit=CircuitModel(sensors=[sensor]))
+        step_agents([agent], world, cfg, engine, 0.0)
 
         if not np.array_equal(analytic, brain.touch):
             mismatches += 1
@@ -1617,3 +1633,912 @@ def test_mujoco_collision_matches_analytic_randomized():
     # exact detection-boundary cases (discretization) and wall contacts (MuJoCo's
     # walls have real thickness; the analytic path idealizes them as thin lines).
     assert mismatches / n_trials < 0.10, f'{mismatches}/{n_trials} mismatches — regression?'
+
+
+# ── Simulation step (sense → think → motors → act) ───────────────────────────
+
+class _FakeEngine:
+    """Stand-in for MuJoCoEngine: records calls, owns cameras, moves nothing."""
+    def __init__(self):
+        self.calls = []
+        self.commands = None
+
+    @staticmethod
+    def owns_sensor(sensor):
+        from sensors import CameraSensor
+        return isinstance(sensor, CameraSensor)
+
+    def sample_collision_sensors(self, brain, sensors, sim_cfg, agent_idx=0):
+        self.calls.append('contacts')
+
+    def render_cameras(self, brain, cam_sensors, agent_idx, t, sim_dt):
+        if cam_sensors:
+            self.calls.append(('cameras', [s.name for s in cam_sensors], t))
+
+    def move_agents(self, bot_positions, commands, sim_cfg):
+        self.calls.append('move')
+        self.commands = commands
+
+
+@pytest.mark.skipif(
+    __import__('importlib').util.find_spec('mujoco') is None,
+    reason='mujoco not installed')
+def test_engines_satisfy_engine_protocol():
+    """MuJoCoEngine and the test stand-in both provide everything step_agents
+    needs (sim_engine.Engine) — keeps the stand-in from drifting."""
+    from sim_engine import Engine
+    from sim_engine_mujoco import MuJoCoEngine
+    assert issubclass(MuJoCoEngine, Engine)
+    assert isinstance(_FakeEngine(), Engine)
+
+
+class _StepCfg:
+    arena_scale  = 5.0
+    body_radius  = 0.15
+    dt           = 0.01
+    motor_gain   = 1.0
+    fixate_robot = 0.0
+    toggle_stim  = False
+
+
+def test_step_agents_senses_everything_before_the_brain_runs():
+    """All sensing (2-D fields, MuJoCo contacts, due cameras) happens before
+    brain.loop, and movement happens after it — so the brain never sees a
+    contact one step late."""
+    from types import SimpleNamespace
+    from sim_engine import step_agents
+    from circuit_model import CircuitModel
+    from world import World
+    from brain_base import BaseBrain
+
+    engine = _FakeEngine()
+
+    class _Brain(BaseBrain):
+        def loop(self, dt):
+            engine.calls.append('think')
+            return 10.0, 20.0
+
+    agent = SimpleNamespace(bot_pos=[0.0, 0.0, 0.0], brain=_Brain(), circuit=CircuitModel())
+    raws = step_agents([agent], World(_StepCfg()), _StepCfg(), engine, 0.0)
+
+    assert engine.calls == ['contacts', 'think', 'move']
+    assert engine.commands == [(10.0, 20.0)]
+    assert raws[0]['mL'] == 10.0 and raws[0]['mR'] == 20.0
+
+
+def test_step_agents_keyboard_command_replaces_wheels_and_shows_in_motor_layer():
+    """A keyboard/network command is the wheel command for that agent; the
+    brain still runs, and the command is written into the motor layer so the
+    visualizer/oscilloscope show what drives the robot (rules/motor_commands.md)."""
+    from types import SimpleNamespace
+    from sim_engine import step_agents
+    from circuit_model import CircuitModel
+    from neurons import MotorLayer
+    from world import World
+    from brain_base import BaseBrain
+
+    ran = []
+
+    class _Brain(BaseBrain):
+        def loop(self, dt):
+            ran.append(dt)
+            return 5.0, 5.0
+
+    motor = MotorLayer(n=2, name='motor')
+    motor.output = torch.zeros(2)
+    agent = SimpleNamespace(bot_pos=[0.0, 0.0, 0.0], brain=_Brain(),
+                            circuit=CircuitModel(layers=[motor]))
+    engine = _FakeEngine()
+    raws = step_agents([agent], World(_StepCfg()), _StepCfg(), engine, 0.0,
+                       motor_for=lambda a: (30.0, -30.0))
+
+    assert ran, 'brain must run even when another motor source drives'
+    assert engine.commands == [(30.0, -30.0)]
+    assert raws[0]['mL'] == 30.0 and raws[0]['mR'] == -30.0
+    assert motor.output.tolist() == [30.0, -30.0]
+
+
+def test_camera_fps_schedule_runs_on_sim_time():
+    """fps > 0: one frame per 1/fps simulated seconds, regardless of step size.
+    fps == 0: free-running — due whenever sim time advanced since the last frame."""
+    from sensors import GrayCameraSensor
+
+    cam = GrayCameraSensor(width=4, height=2, fps=10.0, name='cam')
+    frame = np.zeros((2, 4, 3), dtype=np.float32)
+    rendered = []
+    for k in range(25):                      # 0.00 … 0.24 s at dt = 0.01
+        t = k * 0.01
+        if cam.frame_due(t):
+            cam.process_frame(frame, t, 0.01)
+            rendered.append(round(t, 2))
+    assert rendered == [0.0, 0.1, 0.2]
+
+    free = GrayCameraSensor(width=4, height=2, fps=0.0, name='cam0')
+    assert free.frame_due(0.0)
+    free.process_frame(frame, 0.0, 0.01)
+    assert not free.frame_due(0.0)           # no sim time passed
+    assert free.frame_due(0.05)
+
+    cam.reset()
+    assert cam.frame_due(0.0)                # reset restarts the schedule
+
+
+def test_camera_process_frame_output_formats():
+    """Gray: non-lateralized output is the centre row; RGB: full CHW frame.
+    Lateralized halves are raw pixels in the same layout."""
+    from sensors import GrayCameraSensor, RGBCameraSensor
+
+    H, W = 3, 4
+    rgb = np.zeros((H, W, 3), dtype=np.float32)
+    rgb[1, :, :] = 0.9                       # bright centre row
+    rgb[:, :, 0] += 0.05                     # distinguish channels
+
+    gray = GrayCameraSensor(width=W, height=H, name='g')
+    out = gray.process_frame(rgb, 0.0, 0.01)
+    assert out.shape == (W,)
+    np.testing.assert_allclose(out, rgb[1].mean(axis=-1), atol=1e-6)
+
+    col = RGBCameraSensor(width=W, height=H, lateralized=True, name='c')
+    out = col.process_frame(rgb, 0.0, 0.01)
+    np.testing.assert_allclose(out, rgb.transpose(2, 0, 1).reshape(-1), atol=1e-6)
+    np.testing.assert_allclose(col._left_output,
+                               rgb[:, :W // 2, :].transpose(2, 0, 1).reshape(-1), atol=1e-6)
+
+
+def test_robot_mode_runs_brain_loop_and_sends_its_command():
+    """Robot mode uses the same think/motors code as the simulator: the
+    brain's loop() runs (so code-only brains work), and the wheel command it
+    returns is sent to every motor layer's robot_address. The keyboard takes
+    priority and is written back into the motor layer."""
+    from robot_mode_controller import RobotModeController
+    from circuit_model import CircuitModel
+    from neurons import MotorLayer
+    from brain_base import BaseBrain
+
+    class _CodeOnlyBrain(BaseBrain):
+        def loop(self, dt):
+            self.calls = getattr(self, 'calls', 0) + 1
+            return 12.0, -7.0
+
+    class _Osc:
+        channels = ['mL', 'mR']
+        _osc_items = {'mL', 'mR'}
+
+    motor = MotorLayer(n=2, name='motor', robot_address='10.0.0.2:2390/wheels')
+    motor.output = torch.zeros(2)
+    circuit = CircuitModel(layers=[motor])
+    brain = _CodeOnlyBrain()
+    keyboard = [None]
+    rm = RobotModeController(_StepCfg(), lambda: keyboard[0])
+
+    values = rm.tick(circuit, brain, _Osc())
+    assert brain.calls == 1
+    assert values == {'mL': 12.0, 'mR': -7.0}
+    assert rm.get_motor_commands(circuit, brain) == [('10.0.0.2', 2390, '/wheels', 12.0, -7.0)]
+
+    keyboard[0] = (40.0, 40.0)
+    rm.tick(circuit, brain, _Osc())
+    assert brain.calls == 2, 'brain still runs while the keyboard drives'
+    assert rm.get_motor_commands(circuit, brain) == [('10.0.0.2', 2390, '/wheels', 40.0, 40.0)]
+    assert motor.output.tolist() == [40.0, 40.0]
+
+
+def test_simulation_step_ticks_task_once_with_all_agents():
+    """Simulation.step ticks the task once per step and gives it every agent's
+    position, not only the selected agent's."""
+    from simulation import Simulation
+    from agent_registry import AgentRegistry
+    from circuit_model import CircuitModel
+    from brain_manager import BrainManager
+    from world import World
+    from brain_base import BaseBrain
+
+    class _Brain(BaseBrain):
+        def loop(self, dt):
+            return 0.0, 0.0
+
+    cfg = _StepCfg()
+    cfg.init_x = cfg.init_y = 0.0
+    c0, c1 = CircuitModel(), CircuitModel()
+    registry = AgentRegistry(cfg, c0, BrainManager(c0, cfg))
+    registry.add_agent(c1, BrainManager(c1, cfg))
+    for a in registry.agents:
+        a.brain = _Brain()
+
+    seen = []
+
+    class _Task:
+        def tick(self, world, bot_positions, sim_cfg, dt):
+            seen.append([list(p) for p in bot_positions])
+
+    sim = Simulation(World(cfg), cfg, registry)
+    sim.engine = _FakeEngine()
+    sim.task = _Task()
+    sim.step()
+    sim.step()
+    assert len(seen) == 2
+    assert all(len(positions) == 2 for positions in seen)
+
+
+@pytest.mark.skipif(
+    __import__('importlib').util.find_spec('mujoco') is None,
+    reason='mujoco not installed')
+def test_headless_session_loads_all_agents_and_runs():
+    """session_loader.build_simulation builds every agent group of a saved
+    session without the GUI, and the result can be stepped."""
+    from session_loader import build_simulation
+
+    cwd = os.getcwd()
+    os.chdir(_SIM2D)   # session paths (brains/, networks/) are relative to simulation/2d
+    try:
+        sim = build_simulation(os.path.join('configs', 'Tutorials', 'T08 - MultiAgentMultiSession.json'))
+        start = [list(a.bot_pos) for a in sim.agents]
+        for _ in range(50):
+            raws = sim.step()
+        assert len(sim.agents) == 3 and len(raws) == 3
+        assert all(a.brain is not None for a in sim.agents)
+        assert any(a.bot_pos[:2] != s[:2] for a, s in zip(sim.agents, start))
+        assert sim.sim_time == pytest.approx(50 * sim.sim_cfg.dt)
+        sim.close()
+    finally:
+        os.chdir(cwd)
+
+
+# ── Circuit editor (edit transactions / undo) ────────────────────────────────
+
+def _editor_fixture():
+    from types import SimpleNamespace
+    from circuit_model import CircuitModel, Connection
+    from circuit_editor import CircuitEditor
+    from neurons import LeakyLayer
+    from sensors import GradientSensor
+    from brain_base import BaseBrain
+
+    class _Brain(BaseBrain):
+        def loop(self, dt):
+            self.step_network(dt)
+            return 0.0, 0.0
+
+    light = GradientSensor(name='light', n=2)
+    l1 = LeakyLayer(name='l1', n=2, tau_rise=0.1, tau_decay=0.1)
+    circuit = CircuitModel(sensors=[light], layers=[l1],
+                           connections=[Connection('light', 'l1', np.eye(2))])
+    meta = SimpleNamespace(_hidden_containers=set(), _disabled_containers=set(),
+                           _container_labels={}, _container_notes={}, _weight_params={})
+    brain = _Brain()
+    editor = CircuitEditor(circuit, brain, meta=meta)
+    editor.sync_brain()
+    return editor, circuit, brain, meta
+
+
+def test_editor_undo_restores_state_from_before_the_edit():
+    """The snapshot is taken when the transaction begins, so changes made
+    early in an edit (here: weight params, then the weights) are all undone."""
+    from dataclasses import replace
+    editor, circuit, brain, meta = _editor_fixture()
+    with editor.edit():
+        meta._weight_params[('light', 'l1')] = {'pattern': 'uniform'}
+        circuit.connections = [replace(circuit.connections[0], W=2 * np.eye(2))]
+    assert editor.can_undo()
+    assert editor.undo()
+    assert meta._weight_params == {}
+    np.testing.assert_allclose(circuit.connections[0].W, np.eye(2))
+    assert not editor.can_undo()
+
+
+def test_editor_no_change_records_no_undo_step_and_nesting_is_one_step():
+    from neurons import LeakyLayer
+    editor, circuit, brain, meta = _editor_fixture()
+    with editor.edit():
+        pass                                   # e.g. a cancelled dialog
+    assert not editor.can_undo()
+    with editor.edit():
+        circuit.layers.append(LeakyLayer(name='l2', n=1))
+        with editor.edit():                    # nested call joins the outer edit
+            circuit.layers.append(LeakyLayer(name='l3', n=1))
+    assert len(circuit.history.undo_stack) == 1
+    editor.undo()
+    assert [l.name for l in circuit.layers] == ['l1']
+
+
+def test_editor_undo_restores_bodies_and_joints():
+    from rigid_body import RigidBody, Joint
+    editor, circuit, brain, meta = _editor_fixture()
+    circuit.bodies = [RigidBody('root', 'root', 0.15)]
+    with editor.edit():
+        circuit.bodies.append(RigidBody('arm', 'arm', 0.05))
+        circuit.joints.append(Joint(parent_id='root', child_id='arm', attach_dist=0.2,
+                                    attach_angle=0.0, angle_min=-1.0, angle_max=1.0,
+                                    motor_layer_name='arm', motor_output_idx=0))
+    editor.undo()
+    assert [b.id for b in circuit.bodies] == ['root']
+    assert circuit.joints == []
+
+
+def test_editor_syncs_brain_after_add_and_rename():
+    """After an edit the brain sees every layer by name (renamed and added
+    layers too, stale names removed), and step_network rebuilds its caches
+    even when a layer was appended to the same list in place."""
+    from neurons import LeakyLayer
+    from circuit_model import Connection
+    editor, circuit, brain, meta = _editor_fixture()
+    brain.light = np.array([1.0, 0.5])
+    brain.loop(0.01)                                       # warm the caches
+    with editor.edit():
+        circuit.layers[0].name = 'renamed'
+        circuit.connections[0].tgt = 'renamed'
+        circuit.layers.append(LeakyLayer(name='added', n=2, tau_rise=0.1, tau_decay=0.1))
+        circuit.connections.append(Connection('renamed', 'added', np.eye(2)))
+    assert 'l1' not in brain.__dict__
+    assert brain.renamed is circuit.layers[0] and brain.added is circuit.layers[1]
+    for _ in range(5):
+        brain.loop(0.01)                                   # used to raise KeyError
+    assert float(np.asarray(brain.added.output).sum()) > 0
+
+
+def test_editor_history_is_per_circuit_bounded_and_clearable():
+    from circuit_editor import CircuitEditor, clear_history, MAX_UNDO
+    from neurons import LeakyLayer
+    editor, circuit, brain, meta = _editor_fixture()
+    for i in range(MAX_UNDO + 5):
+        with editor.edit():
+            circuit.layers.append(LeakyLayer(name=f'x{i}', n=1))
+    assert len(circuit.history.undo_stack) == MAX_UNDO
+    # A fresh editor on the same circuit sees the same history (e.g. window reopened).
+    assert CircuitEditor(circuit, brain, meta=meta).can_undo()
+    clear_history(circuit)
+    assert not editor.can_undo()
+
+
+@pytest.mark.skipif(not _HAS_PYTEST_QT, reason='pytest-qt not installed')
+def test_network_window_remove_layer_undo_keeps_brain_runnable(qtbot):
+    """Through the real network window: removing a layer and undoing it
+    restores the circuit, re-syncs the brain, enables/disables the Undo
+    button, and the brain keeps running after each edit."""
+    from network_viz import NetworkVisualizerWindow
+    from neurons import LeakyLayer
+    from circuit_model import Connection
+
+    editor, circuit, brain, meta = _editor_fixture()
+    circuit.layers.append(LeakyLayer(name='l2', n=2, tau_rise=0.1, tau_decay=0.1))
+    circuit.connections.append(Connection('l1', 'l2', np.eye(2)))
+    gui = _FakeGui(circuit)
+    gui.brain = brain
+    editor.sync_brain()
+    brain.light = np.array([1.0, 0.5])
+
+    win = NetworkVisualizerWindow(gui)
+    qtbot.addWidget(win)
+    win.build()
+    assert not win._btn_undo.isEnabled()
+
+    win.editing.sel.node = 'l2'
+    win.editing.remove_selected_layer()
+    assert [l.name for l in circuit.layers] == ['l1']
+    assert 'l2' not in brain.__dict__ and win._btn_undo.isEnabled()
+    brain.loop(0.01)
+
+    win._undo()
+    assert [l.name for l in circuit.layers] == ['l1', 'l2']
+    assert brain.l2 is circuit.layers[1]
+    assert not win._btn_undo.isEnabled()
+    for _ in range(3):
+        brain.loop(0.01)
+
+
+def _lateral_fixture():
+    """Lateralized camera → conv_L/conv_R pair → shared 'out' layer, plus a
+    plain layer that merely ends in _L."""
+    from circuit_model import CircuitModel, Connection
+    from neurons import LeakyLayer
+    from sensors import GrayCameraSensor
+    cam = GrayCameraSensor(width=8, height=4, lateralized=True, name='cam')
+    conv_L = LeakyLayer(name='conv_L', n=2); conv_L.lateral_pair = 'conv_R'
+    conv_R = LeakyLayer(name='conv_R', n=2); conv_R.lateral_pair = 'conv_L'
+    out = LeakyLayer(name='out', n=2)
+    solo_L = LeakyLayer(name='solo_L', n=2)
+    circuit = CircuitModel(sensors=[cam], layers=[conv_L, conv_R, out, solo_L], connections=[
+        Connection('cam_L', 'conv_L', np.ones((2, 16))),
+        Connection('cam_R', 'conv_R', np.ones((2, 16))),
+        Connection('cam_L', 'out', np.ones((2, 16))),
+        Connection('cam_R', 'out', np.ones((2, 16))),
+        Connection('solo_L', 'out', np.eye(2)),
+        Connection('conv_L', 'out', np.eye(2)),
+    ])
+    return circuit
+
+
+def test_session_brain_entry_code_and_network_formats():
+    """Session files say whether a group runs a code brain or a network; the old
+    form (network brain module + project/file params) still reads the same."""
+    from session_io import brain_to_file, brain_from_file, NETWORK_BRAIN_MODULE
+    net = brain_to_file(NETWORK_BRAIN_MODULE,
+                        {'network_project': 'Tutorials', 'network_file': 'T06 - FeedingBrain.json'})
+    assert net == {'mode': 'network', 'network': 'Tutorials/T06 - FeedingBrain.json'}
+    assert brain_from_file(net) == (NETWORK_BRAIN_MODULE,
+                                    {'network_project': 'Tutorials',
+                                     'network_file': 'T06 - FeedingBrain.json'})
+    old = {'module_name': NETWORK_BRAIN_MODULE,
+           'brain_params': {'network_project': 'Tutorials', 'network_file': 'T06 - FeedingBrain.json'}}
+    assert brain_from_file(old) == brain_from_file(net)
+    code = brain_to_file('BrainARS', {'speed': 50.0})
+    assert code == {'mode': 'code', 'module_name': 'BrainARS', 'brain_params': {'speed': 50.0}}
+    assert brain_from_file(code) == ('BrainARS', {'speed': 50.0})
+    no_project = brain_to_file(NETWORK_BRAIN_MODULE, {'network_project': '', 'network_file': 'a.json'})
+    assert no_project['network'] == 'a.json'
+    assert brain_from_file(no_project)[1] == {'network_project': '', 'network_file': 'a.json'}
+
+
+def test_find_mirror_follows_lateral_pairs_only():
+    from circuit_editor import find_mirror
+    c = _lateral_fixture()
+    assert find_mirror(c, 'cam_L', 'conv_L') == ('cam_R', 'conv_R')    # lat → lat pair
+    assert find_mirror(c, 'cam_L', 'out') == ('cam_R', 'out')          # halves → shared target
+    assert find_mirror(c, 'solo_L', 'out') is None                    # just a name ending in _L
+    assert find_mirror(c, 'conv_L', 'out') is None                    # no mirror wired
+
+
+def test_rename_layer_renames_lateral_pair_and_weight_settings():
+    from types import SimpleNamespace
+    from circuit_editor import rename_layer
+    c = _lateral_fixture()
+    meta = SimpleNamespace(_weight_params={('cam_R', 'conv_R'): {'pattern': 'x'}})
+    conv_L = c.layers[0]
+    renames = rename_layer(c, conv_L, 'edges', meta=meta)   # suffix kept automatically
+    assert renames == {'conv_L': 'edges_L', 'conv_R': 'edges_R'}
+    assert [l.name for l in c.layers[:2]] == ['edges_L', 'edges_R']
+    assert c.layers[0].lateral_pair == 'edges_R' and c.layers[1].lateral_pair == 'edges_L'
+    assert ('cam_R', 'edges_R') in {(x.src, x.tgt) for x in c.connections}
+    assert ('edges_L', 'out') in {(x.src, x.tgt) for x in c.connections}
+    assert meta._weight_params == {('cam_R', 'edges_R'): {'pattern': 'x'}}
+
+
+def test_unpair_layer_turns_pair_back_into_one_layer():
+    """Switching lateralized off: the edited half is kept under the base name,
+    the partner and its connections / weight settings go."""
+    from types import SimpleNamespace
+    from circuit_editor import unpair_layer
+    c = _lateral_fixture()
+    meta = SimpleNamespace(_weight_params={('cam_R', 'conv_R'): {'p': 1}, ('conv_L', 'out'): {'p': 2}})
+    removed, renames = unpair_layer(c, c.layers[0], meta=meta)
+    assert removed == 'conv_R' and renames == {'conv_L': 'conv'}
+    assert [l.name for l in c.layers] == ['conv', 'out', 'solo_L']
+    assert c.layers[0].lateral_pair is None
+    pairs = {(x.src, x.tgt) for x in c.connections}
+    assert ('cam_L', 'conv') in pairs and ('conv', 'out') in pairs
+    assert not any('conv_R' in p for p in pairs)
+    assert meta._weight_params == {('conv', 'out'): {'p': 2}}
+
+
+@pytest.mark.skipif(not _HAS_PYTEST_QT, reason='pytest-qt not installed')
+def test_layer_edit_lateralized_off_removes_partner(qtbot):
+    from network_viz import NetworkVisualizerWindow
+    c = _lateral_fixture()
+    win = NetworkVisualizerWindow(_FakeGui(c))
+    qtbot.addWidget(win)
+    win.build()
+    conv_L = c.layers[0]
+    conv_L.lateralized = True
+    win.dialogs._apply_layer_edit(conv_L, [], {'lateralized': False}, '', 0, None, None, [])
+    assert [l.name for l in c.layers] == ['conv', 'out', 'solo_L']
+    assert not any('conv_R' in (x.src, x.tgt) for x in c.connections)
+
+
+@pytest.mark.skipif(not _HAS_PYTEST_QT, reason='pytest-qt not installed')
+def test_column_renumbering_keeps_hidden_flags_and_set_identity(qtbot):
+    """Hidden / disabled columns follow their layers when columns are
+    renumbered (side-view insert, compaction), and the sets are updated in
+    place — the app holds and saves the same set objects."""
+    from network_viz import NetworkVisualizerWindow
+    c = _lateral_fixture()
+    win = NetworkVisualizerWindow(_FakeGui(c))
+    qtbot.addWidget(win)
+    hidden, disabled = set(), set()            # the app's sets, shared with the window
+    win._hidden_containers, win._disabled_containers = hidden, disabled
+    win.build()
+    out_col = win._lay.node_container_map['out_0']
+    hidden.add(out_col)
+    disabled.add(out_col)
+
+    win._toggle_side_view()
+    sv = win._side_view
+    sv.refresh()
+    solo_col = win._lay.node_container_map['solo_L_0']
+    sv._on_insert_container(solo_col, 0, 0, 0)   # move solo_L into a new column after the first
+    win.build()
+    assert win._hidden_containers is hidden and win._disabled_containers is disabled
+    new_out = win._lay.node_container_map['out_0']
+    assert hidden == {new_out} and disabled == {new_out}
+    sv.close()
+
+
+@pytest.mark.skipif(not _HAS_PYTEST_QT, reason='pytest-qt not installed')
+def test_network_window_delete_connection_removes_mirror_and_column_disable(qtbot):
+    """Deleting cam_L → out also deletes its mirror cam_R → out; disabling one
+    column mutes only that column's layers (it used to mute every layer)."""
+    from network_viz import NetworkVisualizerWindow
+    c = _lateral_fixture()
+    win = NetworkVisualizerWindow(_FakeGui(c))
+    qtbot.addWidget(win)
+    win.build()
+
+    win.editing.sel.edge = ('cam_L', 'out')
+    win.editing.remove_selected_connection()
+    pairs = {(x.src, x.tgt) for x in c.connections}
+    assert ('cam_L', 'out') not in pairs and ('cam_R', 'out') not in pairs
+    assert ('cam_L', 'conv_L') in pairs
+
+    out_container = win._lay.node_container_map['out_0']
+    win._on_container_disable(out_container, True)
+    muted = {l.name for l in c.layers if getattr(l, 'muted', False)}
+    assert 'out' in muted and 'conv_L' not in muted
+
+
+@pytest.mark.skipif(not _HAS_PYTEST_QT, reason='pytest-qt not installed')
+def test_new_layer_type_needs_only_its_own_file(qtbot):
+    """A layer type defined entirely here — declaring its params and nothing
+    else — saves/loads, runs in step_network and renders in the network window
+    without any other module knowing about it (rules/network_elements.md §4)."""
+    from neurons_base import DynamicsBase, LayerBase
+    from circuit_model import CircuitModel, Connection
+    from sensors import GradientSensor
+    from brain_serializer import serialize_network_json, load_network_json
+    from network_runner import step_network
+    from network_viz import NetworkVisualizerWindow
+    from brain_base import BaseBrain
+
+    class TestHalfWaveLayer(DynamicsBase, LayerBase):
+        """Test-only layer: output = gain * relu(input)."""
+        def __init__(self, n=2, gain=2.0, name='halfwave', **kwargs):
+            super().__init__(name=name, **kwargs)
+            self.n    = n
+            self.gain = float(gain)
+            self._init_dynamics_buffers(n)
+            self.output = torch.zeros(n)
+
+        @classmethod
+        def param_defs(cls):
+            return [('n', int, 2, 'neurons'), ('gain', float, 2.0, 'output gain')]
+
+        def step(self, input_vec, dt):
+            self.output = torch.relu(torch.as_tensor(input_vec, dtype=torch.float32)) * self.gain
+            return self.output
+
+        def reset(self):
+            self._reset_dynamics()
+            self.output = torch.zeros(self.n)
+
+    light = GradientSensor(name='light', n=2)
+    hw = TestHalfWaveLayer(name='hw', gain=3.0)
+    circuit = CircuitModel(sensors=[light], layers=[hw],
+                           connections=[Connection('light', 'hw', np.eye(2))])
+
+    # Save → load keeps the type and its own param.
+    data = serialize_network_json(circuit.sensors, circuit.layers, circuit.connections,
+                                  set(), set(), {})
+    _s, layers, *_ = load_network_json(json.loads(json.dumps(data)))
+    assert type(layers[0]) is TestHalfWaveLayer and layers[0].gain == 3.0
+    assert not layers[0].accepts_image and not layers[0].is_image_node   # capability defaults
+
+    # Runs in the forward pass.
+    class _Brain(BaseBrain):
+        def loop(self, dt):
+            return 0.0, 0.0
+    brain = _Brain()
+    brain.sensors, brain.layers, brain.connections = circuit.sensors, circuit.layers, circuit.connections
+    brain.hw = hw
+    brain.light = np.array([0.5, -1.0], dtype=np.float32)
+    step_network(brain, 0.01)
+    np.testing.assert_allclose(hw.output.numpy(), [1.5, 0.0], atol=1e-6)
+
+    # Renders in the network window.
+    win = NetworkVisualizerWindow(_FakeGui(circuit))
+    qtbot.addWidget(win)
+    win.build()
+    assert 'hw_0' in win._lay.positions
+
+
+def test_lateral_helpers():
+    from lateral import (side_of, base_name, mirror_name, half_names, partner_layer,
+                         parent_sensor, is_camera_half, is_body_pair_half, is_lateral_half)
+    c = _lateral_fixture()
+    assert side_of('cam_L') == 'L' and side_of('cam') is None
+    assert base_name('conv_R') == 'conv' and base_name('out') == 'out'
+    assert mirror_name('conv_L') == 'conv_R' and mirror_name('out') is None
+    assert half_names('cam') == ('cam_L', 'cam_R')
+    assert partner_layer(c.layers, c.layers[0]) is c.layers[1]
+    assert partner_layer(c.layers, c.layers[3]) is None            # solo_L has no partner
+    assert parent_sensor(c.sensors, 'cam_R') is c.sensors[0]
+    assert parent_sensor(c.sensors, 'cam') is None
+    assert is_camera_half(c.sensors, 'cam_L') and not is_body_pair_half(c.sensors, 'cam_L')
+    assert is_lateral_half(c, 'conv_L') and not is_lateral_half(c, 'solo_L')
+
+
+def test_load_syncs_every_lateral_pair_param():
+    """On load, an L/R pair's _R side takes the _L side's params — for every
+    pair-capable layer type (Leaky2dLayer used to be skipped)."""
+    from neurons import Leaky2dLayer
+    from brain_serializer import serialize_network_json, load_network_json
+    l = Leaky2dLayer(name='img_L', lateralized=True, tau_rise=0.2, tau_decay=0.3)
+    r = Leaky2dLayer(name='img_R', lateralized=True, tau_rise=0.9, tau_decay=0.9)
+    l.lateral_pair, r.lateral_pair = 'img_R', 'img_L'
+    data = serialize_network_json([], [l, r], [], set(), set(), {})
+    _s, layers, *_ = load_network_json(json.loads(json.dumps(data)))
+    loaded = {x.name: x for x in layers}
+    assert loaded['img_R'].tau_rise == 0.2 and loaded['img_R'].tau_decay == 0.3
+
+
+def test_freshness_check_satisfied_after_resave():
+    """A sensor param whose value is None (GradientSensor.gradient = all labels)
+    is not written to the file — the freshness check must not report it as
+    missing, or the 'Network file outdated' prompt reappears after every save.
+    A genuinely missing param is still reported."""
+    from sensors import GradientSensor
+    from brain_serializer import serialize_network_json, load_network_json, check_network_freshness
+    s = GradientSensor(name='sensor1', n=2)            # gradient=None
+    assert s.gradient is None
+    data = json.loads(json.dumps(serialize_network_json([s], [], [], set(), set(), {})))
+    sensors, layers, *_ = load_network_json(data)
+    assert check_network_freshness(data, sensors, layers) == []
+
+    del data['sensors'][0]['scale']                    # an old file without 'scale'
+    issues = check_network_freshness(data, sensors, layers)
+    assert issues and issues[0]['missing'] == ['scale']
+
+
+def test_sensors_and_layers_share_dynamics():
+    """Sensors and layers use the same leaky filter and tau rules
+    (neurons_base.leaky_step): a sensor and a LeakyLayer fed the same input
+    produce the same output; tau_decay unset = rise-and-hold; tau_rise unset =
+    no filtering (even with tau_decay set)."""
+    from types import SimpleNamespace
+    from sensors import GradientSensor
+    from neurons import LeakyLayer
+    cfg = SimpleNamespace(dt=0.01)
+    inputs = [1.0] * 30 + [0.0] * 30
+
+    def run_sensor(**kw):
+        s = GradientSensor(name='s', n=1, scale=1.0, **kw)
+        return [float(s._process(np.array([u]), cfg)[0]) for u in inputs]
+
+    def run_layer(**kw):
+        l = LeakyLayer(name='l', n=1, activation='linear', **kw)
+        return [float(l.step(torch.tensor([u]), 0.01)[0]) for u in inputs]
+
+    np.testing.assert_allclose(run_sensor(tau_rise=0.05, tau_decay=0.2),
+                               run_layer(tau_rise=0.05, tau_decay=0.2), atol=1e-6)
+    hold = run_sensor(tau_rise=0.05, tau_decay=None)
+    assert hold[-1] == pytest.approx(hold[29]) and hold[29] > 0.9   # rises, then holds
+    np.testing.assert_allclose(hold, run_layer(tau_rise=0.05, tau_decay=None), atol=1e-6)
+    assert run_sensor(tau_rise=None, tau_decay=0.2) == inputs          # no filtering
+
+
+def test_derivative_output_mode_is_zero_on_first_step():
+    """output_mode='derivative' outputs 0 on the first step (no previous
+    value) for layers as for sensors — layers used to spike value/dt."""
+    from types import SimpleNamespace
+    from sensors import GradientSensor
+    from neurons import LeakyLayer
+    l = LeakyLayer(name='l', n=1, tau_rise=0, activation='linear', output_mode='derivative')
+    assert float(l.step(torch.tensor([5.0]), 0.01)[0]) == 0.0
+    assert float(l.step(torch.tensor([6.0]), 0.01)[0]) == pytest.approx(100.0)
+    l.reset()
+    assert float(l.step(torch.tensor([7.0]), 0.01)[0]) == 0.0        # again after reset
+    s = GradientSensor(name='s', n=1, scale=1.0, output_mode='derivative')
+    assert float(s._process(np.array([5.0]), SimpleNamespace(dt=0.01))[0]) == 0.0
+
+
+def test_simulation_runs_without_qt():
+    """The simulation core (Simulation + step) must not import Qt, so it can
+    run headless. Checked in a fresh interpreter so other tests' imports
+    don't hide a regression."""
+    import subprocess
+    code = (
+        "import sys; sys.path[:0] = [%r, %r]\n"
+        "import simulation, sim_engine, agent_registry, session_loader, headless\n"
+        "bad = [m for m in sys.modules if m.startswith(('PySide6', 'pyqtgraph'))]\n"
+        "print('QT:' + ','.join(bad))\n" % (_SRC, _SIM2D)
+    )
+    out = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True, cwd=_SIM2D)
+    assert out.returncode == 0, out.stderr
+    assert 'QT:\n' in out.stdout or out.stdout.strip().endswith('QT:'), out.stdout
+
+
+def test_step_agents_renders_due_cameras_only():
+    """Cameras with fps > 0 render inside the step on their own schedule;
+    fps == 0 cameras are left to the display loop."""
+    from types import SimpleNamespace
+    from sim_engine import step_agents
+    from circuit_model import CircuitModel
+    from sensors import GrayCameraSensor
+    from world import World
+    from brain_base import BaseBrain
+
+    class _Brain(BaseBrain):
+        def loop(self, dt):
+            return 0.0, 0.0
+
+    fixed = GrayCameraSensor(width=4, height=2, fps=50.0, name='fixed')
+    free  = GrayCameraSensor(width=4, height=2, fps=0.0,  name='free')
+    agent = SimpleNamespace(bot_pos=[0.0, 0.0, 0.0], brain=_Brain(),
+                            circuit=CircuitModel(sensors=[fixed, free]))
+    engine = _FakeEngine()
+    step_agents([agent], World(_StepCfg()), _StepCfg(), engine, 0.0)
+    assert ('cameras', ['fixed'], 0.0) in engine.calls
+    assert not any(c[0] == 'cameras' and 'free' in c[1] for c in engine.calls if isinstance(c, tuple))
+
+
+def _one_learning_step(layer_cls, dt, ticks=1, **kw):
+    """W after `ticks` steps of a learning layer fed by a constant input 1.0
+    and a constant reward 0.5 (legacy reward_modulator path)."""
+    from network_runner import step_network
+    from neurons import ConstantLayer
+    from circuit_model import Connection
+    from brain_base import BaseBrain
+    dan = ConstantLayer(name='dan', value=0.5, n=1, neuromodulator_transmitter='dopamine')
+    src = ConstantLayer(name='src', value=1.0, n=1)
+    learn = layer_cls(name='learn', n=1, alpha_pos=0.1, alpha_neg=0.1,
+                      reward_modulator='dopamine', **kw)
+    conn = Connection(src='src', tgt='learn', W=np.zeros((1, 1), dtype=np.float32))
+    brain = BaseBrain()
+    brain.sensors, brain.layers, brain.connections = [], [dan, src, learn], [conn]
+    brain.src = src
+    for _ in range(ticks):
+        dan.output = torch.tensor([0.5])
+        step_network(brain, dt=dt)
+    return float(conn.W[0, 0])
+
+
+def test_learning_rate_scales_with_dt():
+    """Learning rates are per tick at the default dt 0.01 and scale with dt
+    (TODO 1.4): one tick at dt=0.02 learns twice what one tick at 0.01 does,
+    and the default dt applies alpha unchanged."""
+    from neurons import DeltaLayer
+    w_ref = _one_learning_step(DeltaLayer, 0.01)
+    assert w_ref == pytest.approx(0.1 * 0.5)            # alpha · (r − V) · s
+    assert _one_learning_step(DeltaLayer, 0.02) == pytest.approx(2 * w_ref)
+    assert _one_learning_step(DeltaLayer, 0.010000000000000002) == w_ref   # GUI's dt: exact
+
+
+def test_td_credits_previous_input_delta_current():
+    """TD's δ compares V_t with V_{t-1}, so it credits the previous tick's input
+    (nothing on the first tick); Delta / ThreeFactor credit this tick's input
+    (TODO 1.5)."""
+    from neurons import DeltaLayer, TDLayer
+    assert _one_learning_step(TDLayer, 0.01) == 0.0
+    assert _one_learning_step(TDLayer, 0.01, ticks=2) != 0.0
+    assert _one_learning_step(DeltaLayer, 0.01) != 0.0
+
+
+def test_fast_taus_reports_only_taus_shorter_than_dt():
+    """TODO 1.1: taus shorter than dt are reported (never changed); 0 / blank
+    taus are 'off' and not reported."""
+    from neurons import LeakyLayer
+    from neurons_base import fast_taus, fast_tau_warning
+    ok   = LeakyLayer(name='ok', n=1, tau_rise=0.05, tau_decay=0.0)
+    fast = LeakyLayer(name='fast', n=1, tau_rise=0.004, tau_decay=0.02)
+    hits = fast_taus([ok, fast], 0.01)
+    assert hits == [('fast', 'tau_rise', 0.004)]
+    assert fast.tau_rise == 0.004                        # untouched
+    assert 'blow up' in fast_tau_warning(hits, 0.01)     # dt/tau = 2.5 > 2
+    assert fast_tau_warning([], 0.01) == ''
+
+
+def test_mute_keeps_layer_state_and_constant_comes_back():
+    """TODO 2.1: muting zeroes a layer's output without touching its state —
+    an AccumulatorLayer resumes from what it had accumulated, and a
+    ConstantLayer's value is back after unmute."""
+    from network_runner import step_network
+    from neurons import ConstantLayer, AccumulatorLayer
+    from circuit_model import Connection
+    from brain_base import BaseBrain
+    src = ConstantLayer(name='src', value=1.0, n=1)
+    acc = AccumulatorLayer(name='acc', n=1, rate=1.0, zero_center=False)
+    brain = BaseBrain()
+    brain.sensors, brain.layers = [], [src, acc]
+    brain.connections = [Connection(src='src', tgt='acc', W=np.ones((1, 1), dtype=np.float32))]
+    brain.src, brain.acc = src, acc
+    for _ in range(10):
+        step_network(brain, dt=0.01)
+    stored = float(acc.output[0])
+    assert stored == pytest.approx(0.1)
+    acc.muted = True
+    step_network(brain, dt=0.01)
+    assert float(acc.output[0]) == 0.0                     # silent while muted
+    acc.muted = False
+    step_network(brain, dt=0.01)
+    assert float(acc.output[0]) == pytest.approx(stored + 0.01)   # resumed, not restarted
+    src.muted = True
+    step_network(brain, dt=0.01)
+    src.muted = False
+    step_network(brain, dt=0.01)
+    assert float(np.asarray(src.output)[0]) == 1.0         # constant is back
+
+
+def test_learning_layer_bias_integral_and_late_tau_rise():
+    """TODO 2.2 / 2.3: a learning layer adds bias even with tau_rise = 0, runs
+    with output_mode='integral', and keeps working when tau_rise is raised
+    after construction (as the edit dialog does)."""
+    from neurons import DeltaLayer
+    biased = DeltaLayer(name='b', n=1, bias=0.5)
+    biased.reset()
+    assert float(biased.step_td([], 0.01)[0]) == 0.0          # no inputs → silent
+    src = torch.ones(1)
+    W = torch.zeros(1, 1)
+    out = biased.step_td([(src, W, 0, type('C', (), {'W': None})())], 0.01)
+    assert float(out[0]) == pytest.approx(0.5)                 # bias applied at tau_rise = 0
+    integ = DeltaLayer(name='i', n=1, output_mode='integral')
+    integ.reset()
+    integ.step_td([(src, torch.ones(1, 1), 0, type('C', (), {'W': None})())], 0.01)
+    late = DeltaLayer(name='l', n=1)
+    late.tau_rise = 0.05
+    late.reset()
+    late.step_td([(src, torch.ones(1, 1), 0, type('C', (), {'W': None})())], 0.01)
+
+
+def test_modulator_rows_sharing_mode_advance_once_per_tick():
+    """TODO 2.5: a 'pre' and a 'post' row on the same modulator and mode share
+    their derivative state; it must advance once per tick, so both rows see
+    the same (non-zero) derivative."""
+    from network_runner import step_network
+    from neurons import ConstantLayer, LeakyLayer
+    from circuit_model import Connection
+    from brain_base import BaseBrain
+    dan = ConstantLayer(name='dan', value=0.0, n=1, neuromodulator_transmitter='dopamine')
+    src = ConstantLayer(name='src', value=1.0, n=1)
+    seen = []
+    tgt = LeakyLayer(name='tgt', n=1, tau_rise=0.0, activation='linear',
+                     modulators=[('dopamine', 1.0, 'pre', 'derivative'),
+                                 ('dopamine', 1.0, 'post', 'derivative')])
+    orig = tgt._transform_modulator_value
+    tgt._transform_modulator_value = lambda *a: seen.append(orig(*a)) or seen[-1]
+    brain = BaseBrain()
+    brain.sensors, brain.layers = [], [dan, src, tgt]
+    brain.connections = [Connection(src='src', tgt='tgt', W=np.ones((1, 1), dtype=np.float32))]
+    brain.src, brain.tgt = src, tgt
+    for v in (0.0, 0.5):
+        dan.output = np.array([v])
+        step_network(brain, dt=0.01)
+    assert len(seen) == 2                       # one transform per tick, not one per row
+    assert seen[-1] == pytest.approx(50.0)      # (0.5 − 0) / 0.01
+
+
+def test_codegen_keeps_every_non_default_param():
+    """TODO 2.6: init_code_parts (export as a Python brain) round-trips the
+    shared dynamics params for Matsuoka / Pulse / RingAttractor layers."""
+    from neurons import MatsuokaLayer, PulseLayer, RingAttractorLayer
+    extra = dict(activation='tanh', scale=2.0, noise_std=0.1, noise_tau=0.2, x0=0.3, alpha=0.5)
+    for cls, kw in ((MatsuokaLayer, dict(tau_decay=0.4)), (PulseLayer, dict(n=2)),
+                    (RingAttractorLayer, dict(n=8))):
+        layer = cls(name='x', **kw, **extra)
+        code = ', '.join(layer.init_code_parts())
+        rebuilt = cls(**eval(f'dict({code})'))
+        for k in list(extra) + list(kw):
+            assert getattr(rebuilt, k) == getattr(layer, k), (cls.__name__, k)
+
+
+def test_every_dynamics_layer_applies_noise_and_scale():
+    """TODO 2.4: noise and scale come from the shared DynamicsBase pipeline
+    (_input / _filter / _emit), so they work on every layer — including the
+    ones whose step() used to skip them (Pulse / Conv2d / learning noise,
+    RingAttractor scale)."""
+    from neurons import PulseLayer, RingAttractorLayer, Conv2dLayer, DeltaLayer
+
+    def run(layer, steps=5):
+        layer.reset()
+        torch.manual_seed(0)
+        out = None
+        for _ in range(steps):
+            if hasattr(layer, 'step_td'):
+                out = layer.step_td([(torch.ones(2), torch.eye(2), 0, type('C', (), {'W': None})())], 0.01)
+            else:
+                out = layer.step(torch.ones(layer.n), 0.01)
+        return out.clone()
+
+    for cls, kw in ((PulseLayer, dict(n=2)), (Conv2dLayer, dict(n=2)), (DeltaLayer, dict(n=2))):
+        quiet = run(cls(name='q', activation='linear', **kw))
+        noisy = run(cls(name='n', activation='linear', noise_std=0.5, **kw))
+        assert not torch.allclose(quiet, noisy), f'{cls.__name__}: noise_std has no effect'
+    base   = run(RingAttractorLayer(name='r1', n=8, tau_rise=0.05))
+    scaled = run(RingAttractorLayer(name='r2', n=8, tau_rise=0.05, scale=3.0))
+    assert torch.allclose(scaled, 3.0 * base), 'RingAttractorLayer: scale has no effect'

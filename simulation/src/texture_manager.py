@@ -6,17 +6,20 @@ discovered in `brains/` (brain_manager.discover_brains). A texture is referenced
 elsewhere purely by filename (e.g. 'checkerboard.png').
 """
 
-import glob
 import os
 
 
 def discover_textures():
-    """Return sorted basenames of all texture files in textures/."""
-    return sorted(os.path.basename(p) for p in glob.glob(os.path.join('textures', '*.png')))
+    """Sorted names of the texture files in both roots' textures/ (data_paths)."""
+    import data_paths
+    return sorted(name for name, _p in data_paths.files('textures', '*.png'))
 
 
 def texture_path(name):
-    return os.path.join('textures', name)
+    """The texture file for *name*: the user's first, then the built-in one."""
+    import data_paths
+    p = data_paths.resolve('textures', name)
+    return str(p) if p is not None else str(data_paths.app_path('textures', name))
 
 
 def texture_bytes(name):

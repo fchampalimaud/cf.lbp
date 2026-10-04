@@ -8,6 +8,9 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QPen, QBrush, QPainter
 
+from circuit_editor import edit_transaction
+from lateral import half_names
+
 # ── Grid geometry ───────────────────────────────────────────────────────────────
 _CELL_W   = 130   # width of one column slot (px)
 _CELL_H   = 72    # cell height
@@ -321,6 +324,83 @@ class _ContainerNode(QGraphicsRectItem):
 
 # ── Side-view window ───────────────────────────────────────────────────────────
 
+def _collect_cells(c, depth):
+    """Grid cells of the side view. Returns
+    containers:      (container, z) → {display names}
+    container_types: (container, z) → 'sensor' (sensors only) or 'layer'
+    container_spans: (container, z) → widest occupant span."""
+    containers           = defaultdict(set)
+    container_has_layer  = {}
+    container_has_sensor = {}
+    container_spans      = {}
+
+    for s in c.sensors:
+        key = (depth.get(s.name, 0), getattr(s, 'z', 0) or 0)
+        if s.is_lateralized(c):
+            containers[key].update(half_names(s.name))
+        else:
+            containers[key].add(s.name)
+        container_has_sensor[key] = True
+        container_spans[key] = max(container_spans.get(key, 1), getattr(s, 'span', 1))
+
+    for l in c.layers:
+        if l.n is None:
+            continue
+        key = (depth.get(l.name, 1), getattr(l, 'z', 0) or 0)
+        containers[key].add(l.name)
+        container_has_layer[key] = True
+        container_spans[key] = max(container_spans.get(key, 1), getattr(l, 'span', 1))
+
+    def container_types(key):
+        has_s = container_has_sensor.get(key, False)
+        has_l = container_has_layer.get(key, False)
+        if has_s and not has_l:
+            return 'sensor'
+        return 'layer'
+
+    return containers, container_types, container_spans
+
+
+def _span_layout(containers, container_spans, all_containers, z_levels):
+    """Returns (subsumed_cells, dzrow_spans, secondary_containers).
+
+    A cell (container_idx, z_val) is subsumed when a higher-z container exists
+    in that column (directly or via span); subsumed containers are shown dimmed
+    to indicate they are overridden by the higher-z element.
+
+    dzrow_spans[container_idx] = max span of any container that starts at
+    container_idx across all data z-rows, so the drop-zone row mirrors the
+    data-row column layout: a wide container in z=0 becomes a wide drop target.
+    secondary_containers = col_idxes that are consumed (interior of a span) in
+    at least one data row — skipped entirely in the drop-zone row."""
+    max_z_per_container  = {}   # container_idx → highest z_val that "claims" that column
+    dzrow_spans          = {}
+    secondary_containers = set()
+    for z_val in z_levels:
+        ci = 0
+        while ci < len(all_containers):
+            key = (all_containers[ci], z_val)
+            if containers.get(key):
+                sp = max(1, min(container_spans.get(key, 1), len(all_containers) - ci))
+                for j in range(sp):
+                    if z_val > max_z_per_container.get(ci + j, -1):
+                        max_z_per_container[ci + j] = z_val
+                if sp > dzrow_spans.get(ci, 1):
+                    dzrow_spans[ci] = sp
+                for j in range(1, sp):
+                    secondary_containers.add(ci + j)
+                ci += sp
+            else:
+                ci += 1
+
+    subsumed_cells = set()   # (container_idx, z_val) pairs
+    for container_i, mz in max_z_per_container.items():
+        for z_val in z_levels:
+            if z_val < mz:
+                subsumed_cells.add((container_i, z_val))
+    return subsumed_cells, dzrow_spans, secondary_containers
+
+
 class SideViewWindow(QWidget):
     """Side-view network layout: containers on X (processing position), subsumption level on Y.
 
@@ -369,8 +449,7 @@ class SideViewWindow(QWidget):
         except RuntimeError:
             return
 
-        depth = nvw._compute_container()
-
+        depth = nvw.layout_engine.compute_container()
         for l in c.layers:
             pair_name = getattr(l, 'lateral_pair', None)
             if pair_name:
@@ -380,54 +459,7 @@ class SideViewWindow(QWidget):
                     depth[l.name] = d
                     depth[partner.name] = d
 
-        container_labels = getattr(nvw, '_container_labels', {})
-
-        # Build containers: (container, z) → {display names}
-        containers           = defaultdict(set)
-        container_has_layer  = {}
-        container_has_sensor = {}
-
-        for s in c.sensors:
-            container = depth.get(s.name, 0)
-            z  = getattr(s, 'z', 0) or 0
-            if s.is_lateralized(c):
-                containers[(container, z)].add(s.name + '_L')
-                containers[(container, z)].add(s.name + '_R')
-            else:
-                containers[(container, z)].add(s.name)
-            container_has_sensor[(container, z)] = True
-
-        for l in c.layers:
-            if l.n is None:
-                continue
-            container = depth.get(l.name, 1)
-            z  = getattr(l, 'z', 0) or 0
-            containers[(container, z)].add(l.name)
-            container_has_layer[(container, z)] = True
-
-        def _container_type(key):
-            has_s = container_has_sensor.get(key, False)
-            has_l = container_has_layer.get(key, False)
-            if has_s and not has_l:
-                return 'sensor'
-            return 'layer'
-
-        # Span per container
-        container_spans = {}
-        for s in c.sensors:
-            container  = depth.get(s.name, 0)
-            z   = getattr(s, 'z', 0) or 0
-            key = (container, z)
-            container_spans[key] = max(container_spans.get(key, 1),
-                                       getattr(s, 'span', 1))
-        for l in c.layers:
-            if l.n is None:
-                continue
-            container  = depth.get(l.name, 1)
-            z   = getattr(l, 'z', 0) or 0
-            key = (container, z)
-            container_spans[key] = max(container_spans.get(key, 1),
-                                       getattr(l, 'span', 1))
+        containers, container_types, container_spans = _collect_cells(c, depth)
 
         _occupied_containers = sorted({container for container, _ in containers})
         # Fill every integer in the range so the user sees empty slots between
@@ -441,63 +473,28 @@ class SideViewWindow(QWidget):
         self._z_levels     = z_levels
 
         n_rows = len(z_levels) + 1   # +1 for the drop-zone row
+        container_top_z_idx = self._draw_cells(
+            containers, container_types, container_spans, all_containers, z_levels, n_rows)
+        self._draw_axis_labels(containers, all_containers, z_levels, container_top_z_idx,
+                               getattr(nvw, '_container_labels', {}))
 
-        # ── Compute subsumed cells ─────────────────────────────────────────────
-        # A cell (container_idx, z_val) is subsumed when a higher-z container exists
-        # in that column (directly or via span).  Subsumed containers are shown
-        # dimmed to indicate they are overridden by the higher-z element.
-        max_z_per_container = {}   # container_idx → highest z_val that "claims" that column
-        for z_val in z_levels:
-            ci = 0
-            while ci < len(all_containers):
-                container  = all_containers[ci]
-                key = (container, z_val)
-                if containers.get(key):
-                    sp = max(1, min(container_spans.get(key, 1),
-                                    len(all_containers) - ci))
-                    for j in range(sp):
-                        if z_val > max_z_per_container.get(ci + j, -1):
-                            max_z_per_container[ci + j] = z_val
-                    ci += sp
-                else:
-                    ci += 1
+        n_containers_drawn = len(all_containers) + 1
+        w = _PAD_LEFT + n_containers_drawn * _SLOT_W + 8
+        h = _PAD_TOP  + n_rows       * _SLOT_H + 8
+        self._scene.setSceneRect(0, 0, w, h)
 
-        subsumed_cells = set()   # (container_idx, z_val) pairs
-        for container_i, mz in max_z_per_container.items():
-            for z_val in z_levels:
-                if z_val < mz:
-                    subsumed_cells.add((container_i, z_val))
-
-        # ── Compute span layout for the drop-zone row ─────────────────────────
-        # dzrow_spans[container_idx] = max span of any container that starts at container_idx
-        # across all data z-rows.  Used so the drop-zone row mirrors the data-
-        # row column layout: a wide container in z=0 becomes a wide drop target.
-        # secondary_containers = col_idxes that are consumed (interior of a span) in
-        # at least one data row — skipped entirely in the drop-zone row.
-        dzrow_spans    = {}   # container_idx → span
-        secondary_containers = set()
-        for z_val in z_levels:
-            ci = 0
-            while ci < len(all_containers):
-                container  = all_containers[ci]
-                key = (container, z_val)
-                if containers.get(key):
-                    sp = max(1, min(container_spans.get(key, 1),
-                                    len(all_containers) - ci))
-                    if sp > dzrow_spans.get(ci, 1):
-                        dzrow_spans[ci] = sp
-                    for j in range(1, sp):
-                        secondary_containers.add(ci + j)
-                    ci += sp
-                else:
-                    ci += 1
+    def _draw_cells(self, containers, container_types, container_spans, all_containers,
+                    z_levels, n_rows):
+        """One _ContainerNode per grid cell (data rows + the drop-zone row).
+        Returns container → z_idx of its topmost occupied row."""
+        subsumed_cells, dzrow_spans, secondary_containers = _span_layout(
+            containers, container_spans, all_containers, z_levels)
 
         # container → z_idx of the topmost occupied row in that column, so column
         # labels can be drawn inside that container instead of in a separate
         # header strip above the grid.
         container_top_z_idx = {}
 
-        # ── Render data rows ───────────────────────────────────────────────────
         for z_idx in range(n_rows):
             if z_idx < len(z_levels):
                 z_val    = z_levels[z_idx]
@@ -523,7 +520,7 @@ class SideViewWindow(QWidget):
                             container_top_z_idx[container] = z_idx
                         span  = max(1, min(container_spans.get(key, 1),
                                            len(all_containers) - container_idx))
-                        ctype = _container_type(key)
+                        ctype = container_types(key)
                         # Collect names from spanned-over containers (hidden)
                         hidden = set()
                         for j in range(1, span):
@@ -551,8 +548,11 @@ class SideViewWindow(QWidget):
                 # In the drop-zone row advance by span even for empty targets,
                 # so wide drop-targets mirror the data-row column layout.
                 container_idx += span if (not is_empty or is_dzrow) else 1
+        return container_top_z_idx
 
-        # ── Axis labels ────────────────────────────────────────────────────────
+    def _draw_axis_labels(self, containers, all_containers, z_levels, container_top_z_idx,
+                          container_labels):
+        """z=… row labels, and each column's label inside its topmost container."""
         f_lbl = QFont(); f_lbl.setPointSize(8); f_lbl.setBold(True)
 
         for z_idx, z_val in enumerate(z_levels):
@@ -582,20 +582,25 @@ class SideViewWindow(QWidget):
             lbl.setZValue(5)
             self._scene.addItem(lbl)
 
-        n_containers_drawn = len(all_containers) + 1
-        w = _PAD_LEFT + n_containers_drawn * _SLOT_W + 8
-        h = _PAD_TOP  + n_rows       * _SLOT_H + 8
-        self._scene.setSceneRect(0, 0, w, h)
+    # ── Edit transactions (shared with the network window) ─────────────────────
+
+    @property
+    def _editor(self):
+        return self._nvw._editor
+
+    def _on_edit_committed(self):
+        self._nvw._on_edit_committed()
 
     # ── Span setter ────────────────────────────────────────────────────────────
 
+    @edit_transaction
     def _set_container_span(self, container, z_val, new_span, new_container=None):
         """Resize a container. new_container, when given, also moves its start column
         (used when growing/shrinking from the left edge — the span still covers
         [new_container, new_container + new_span - 1], just anchored differently)."""
         nvw   = self._nvw
         c     = nvw.gui.circuit
-        depth = nvw._compute_container()
+        depth = nvw.layout_engine.compute_container()
         target_container = container if new_container is None else max(0, new_container)
         for s in c.sensors:
             if (depth.get(s.name) == container
@@ -611,6 +616,7 @@ class SideViewWindow(QWidget):
 
     # ── Insert handler ────────────────────────────────────────────────────────
 
+    @edit_transaction
     def _on_insert_container(self, old_container, old_z, insert_after_container_idx, new_z_idx):
         """Create a new column slot by shifting existing columns and placing the
         dragged container at the gap position."""
@@ -628,7 +634,7 @@ class SideViewWindow(QWidget):
         new_z = (z_levels[new_z_idx] if new_z_idx < len(z_levels)
                  else (max(z_levels, default=0) + 1))
 
-        depth = nvw._compute_container()
+        depth = nvw.layout_engine.compute_container()
         # Align lateral-pair containers (mirrors _on_container_dropped).
         for _l in c.layers:
             _pn = getattr(_l, 'lateral_pair', None)
@@ -662,9 +668,10 @@ class SideViewWindow(QWidget):
             container = depth.get(s.name, 0) or 0
             s.layer = container + 1 if container >= insert_at_container else container
 
-        # _container_labels is keyed by container identity (occupant name
-        # set), not position, so shifting other containers' positions here
-        # needs no label bookkeeping — nobody's label is affected by this.
+        # Hidden / disabled flags are kept by column number, so they shift with
+        # the columns. _container_labels is keyed by container identity
+        # (occupant name set), not position, so labels need no bookkeeping.
+        nvw.renumber_columns(lambda d: d + 1 if d >= insert_at_container else d)
 
         # Place the moved container at the new slot.
         for l in moved_layers:
@@ -679,6 +686,7 @@ class SideViewWindow(QWidget):
 
     # ── Drop handler ──────────────────────────────────────────────────────────
 
+    @edit_transaction
     def _on_container_dropped(self, old_container, old_z, _old_container_idx, _old_z_idx,
                                new_container_idx, new_z_idx):
         nvw = self._nvw
@@ -699,7 +707,7 @@ class SideViewWindow(QWidget):
             self.refresh()
             return
 
-        depth = nvw._compute_container()
+        depth = nvw.layout_engine.compute_container()
         for l in c.layers:
             pair_name = getattr(l, 'lateral_pair', None)
             if pair_name:

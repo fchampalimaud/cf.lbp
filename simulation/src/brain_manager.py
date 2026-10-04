@@ -6,7 +6,6 @@ synthesis and proprioceptive sensor wiring), network-file loading into the
 circuit, and new-brain file scaffolding.  No Qt, no display logic.
 """
 
-import glob
 import importlib
 import importlib.util
 import json
@@ -17,8 +16,8 @@ import traceback
 import uuid
 
 from neurons import SumLayer, MotorLayer  # SumLayer kept for isinstance checks in migration
+import data_paths
 from rigid_body import RigidBody, Joint
-from sensors import ProprioceptiveSensor
 
 
 # ── Brain file scaffold ───────────────────────────────────────────────────────
@@ -69,8 +68,13 @@ class BrainManager:
     # ── Discovery ─────────────────────────────────────────────────────────────
 
     def discover_brains(self):
+        """Brain module names in both roots' brains/ folders (sorted). Also sets
+        self.network_brain_modules: the ones whose brain is a DataBrain — they
+        run a circuit loaded from networks/*.json instead of code."""
+        from brain_base import DataBrain
         valid_brains = []
-        for f in glob.glob("brains/*.py"):
+        self.network_brain_modules = set()
+        for _name, f in data_paths.files('brains', '*.py'):
             module_name = os.path.splitext(os.path.basename(f))[0]
             try:
                 spec   = importlib.util.spec_from_file_location(module_name, f)
@@ -81,6 +85,8 @@ class BrainManager:
                     if isinstance(attr, type) and attr.__module__ == module_name:
                         if all(hasattr(attr, m) for m in ['setup', 'loop']):
                             valid_brains.append(module_name)
+                            if issubclass(attr, DataBrain):
+                                self.network_brain_modules.add(module_name)
                             break
             except Exception:
                 print(f"[discover] Skipping {module_name}:")
@@ -108,9 +114,9 @@ class BrainManager:
         safe_name = brain.__class__.__name__
         blueprint = brain.get_param_metadata()
 
-        fname       = f"configs/brain_{safe_name}.json"
+        fname       = data_paths.resolve('configs', f"brain_{safe_name}.json")
         loaded_json = {}
-        if os.path.exists(fname):
+        if fname is not None:
             try:
                 with open(fname, "r") as f:
                     loaded_json = json.load(f)
@@ -122,6 +128,85 @@ class BrainManager:
             setattr(brain, k, saved_params.get(k, p_obj.default))
 
         return brain, loaded_json
+
+    def install_brain(self, name, external_params=None):
+        """Instantiate brain module *name* and wire it into self.circuit — the
+        model half of loading a brain, shared by the GUI (sim_app_brain.load_brain)
+        and headless runs (session_loader). No UI.
+
+        external_params : optional {param: value} applied after setup() (e.g. a
+                          session's saved brain params; may set network_file)
+        Returns (brain, loaded_json, net_info): net_info is load_data_network()'s
+        result for a DataBrain's network file, or None. brain is None if the
+        module has no brain class."""
+        from brain_base import DataBrain
+        from circuit_model import Connection
+        from circuit_editor import clear_history
+
+        brain, loaded_json = self.load_brain_logic(name)
+        if not brain:
+            return None, {}, None
+        clear_history(self.circuit)   # undo must not cross into the previous brain
+
+        net_info = None
+        root = (self.circuit.bodies[:1] if self.circuit.bodies
+                else [RigidBody('root', 'root', self.sim_cfg.body_radius)])
+        if isinstance(brain, DataBrain):
+            self.circuit.sensors     = []
+            self.circuit.connections = []
+            self.circuit.layers      = []
+            self.circuit.joints      = []
+            self.circuit.bodies      = root
+            net = getattr(brain, 'network_file', '')
+            if net:
+                net_info = self.load_data_network(brain, net)
+        else:
+            cls = brain.__class__
+            self.circuit.joints      = []
+            self.circuit.bodies      = root
+            self.circuit.sensors     = list(getattr(cls, 'sensors',     []))
+            self.circuit.layers      = list(getattr(cls, 'layers',      []))
+            self.circuit.connections = [
+                c if isinstance(c, Connection) else Connection(*c)
+                for c in getattr(cls, 'connections', [])
+            ]
+            for layer in self.circuit.layers:
+                setattr(brain, layer.name, layer)
+                layer.reset()
+
+        brain.setup()
+
+        if external_params:
+            for k, v in external_params.items():
+                setattr(brain, k, v)
+            if isinstance(brain, DataBrain) and not self.circuit.layers:
+                net = getattr(brain, 'network_file', '')
+                if net:
+                    net_info = self.load_data_network(brain, net)
+
+        brain.layers      = self.circuit.layers
+        brain.sensors     = self.circuit.sensors
+        brain.connections = self.circuit.connections
+        self.resolve_joint_sensor_refs()
+        self.rebuild_joint_motor_layers()
+        brain.layers = self.circuit.layers
+        for layer in self.circuit.layers:
+            if getattr(layer, '_is_joint_motor', False):
+                setattr(brain, layer.name, layer)
+        self.resolve_joint_sensor_refs()
+        return brain, loaded_json, net_info
+
+    def load_data_network(self, brain, net_name):
+        """Load a DataBrain's network file (inside its network_project folder,
+        if set) into the circuit. Returns (full_name, hidden, disabled,
+        container_labels, container_notes, conn_params, freshness_issues) for
+        the caller's UI, or None if the file is missing or unreadable."""
+        project = getattr(brain, 'network_project', '')
+        full_name = os.path.join(project, net_name) if project else net_name
+        result = self.load_network_into_circuit(brain, full_name)
+        if result[0] is None:
+            return None
+        return (full_name,) + tuple(result)
 
     # ── Circuit topology ──────────────────────────────────────────────────────
 
@@ -201,10 +286,12 @@ class BrainManager:
             i += 1
 
     def create_brain_file(self, class_name):
-        """Write a new brain file from the template. Returns the path, or None if it already exists."""
-        file_path = os.path.join('brains', f'{class_name}.py')
-        if os.path.exists(file_path):
+        """Write a new brain file from the template into the user's brains/.
+        Returns the path, or None if a brain of that name exists in either root
+        (Python imports brains by module name, so names must be unique)."""
+        if data_paths.resolve('brains', f'{class_name}.py') is not None:
             return None
+        file_path = data_paths.user_path('brains', f'{class_name}.py')
         with open(file_path, 'w') as f:
             f.write(_BRAIN_TEMPLATE.format(class_name=class_name))
         return file_path
@@ -221,8 +308,8 @@ class BrainManager:
         """
         import json as _json
         from brain_serializer import load_network_json, check_network_freshness
-        path = os.path.join('networks', net_name)
-        if not os.path.exists(path):
+        path = data_paths.resolve('networks', net_name)
+        if path is None:
             return None, None, {}, {}, {}, []
         try:
             with open(path, 'r', encoding='utf-8') as _f:
@@ -234,6 +321,8 @@ class BrainManager:
             return None, None, {}, {}, {}, []
 
         freshness_issues = check_network_freshness(_data, sensors, layers)
+        from circuit_editor import clear_history
+        clear_history(self.circuit)   # undo must not cross into the previous network
 
         self.circuit.sensors     = sensors
         self.circuit.layers      = layers
@@ -260,6 +349,7 @@ class BrainManager:
 
         self.rebuild_joint_motor_layers()
         self._upgrade_motor_layers()
+        self._ensure_wheel_motor_layer()
         # Re-sync brain.layers after rebuild/upgrade so all layer objects are current.
         brain.layers = self.circuit.layers
         for layer in self.circuit.layers:
@@ -267,6 +357,15 @@ class BrainManager:
         self.resolve_joint_sensor_refs()
 
         return hidden, disabled, container_labels, container_notes, conn_params, freshness_issues
+
+    def _ensure_wheel_motor_layer(self):
+        """Every network drives the wheels through a layer named 'motor'
+        (n=2, left / right); add it if the file has none. It can't be
+        removed or renamed in the editor."""
+        if any(l.name == 'motor' for l in self.circuit.layers):
+            return
+        depth = max((getattr(l, 'layer', None) or 0 for l in self.circuit.layers), default=0) + 1
+        self.circuit.layers.append(MotorLayer(activation='linear', name='motor', n=2, layer=depth))
 
     def _upgrade_motor_layers(self):
         """Upgrade any SumLayer that acts as a motor output to MotorLayer.
@@ -293,26 +392,7 @@ class BrainManager:
                 self.circuit.layers[i] = new_lyr
 
     def resolve_joint_sensor_refs(self):
-        """Wire _joint_refs or _layer_ref for ProprioceptiveSensor.
-
-        Prefers physical joints (grouped by motor_layer_name == joint_id).
-        Falls back to reading the named layer directly when no joints match —
-        this lets ProprioceptiveSensor read motor output without physical bodies.
-        """
-        layer_map = {l.name: l for l in self.circuit.layers}
+        """Let every sensor re-link its references into the circuit
+        (BaseSensor.resolve_refs — e.g. ProprioceptiveSensor's joints / layer)."""
         for sensor in self.circuit.sensors:
-            if isinstance(sensor, ProprioceptiveSensor) and sensor.joint_id:
-                group = sorted(
-                    [jt for jt in self.circuit.joints
-                     if jt.motor_layer_name == sensor.joint_id],
-                    key=lambda j: j.motor_output_idx
-                )
-                sensor._joint_refs = group
-                sensor._layer_ref  = None
-                if group:
-                    sensor.n = len(group)
-                else:
-                    lyr = layer_map.get(sensor.joint_id)
-                    sensor._layer_ref = lyr
-                    if lyr is not None:
-                        sensor.n = lyr.n or 1
+            sensor.resolve_refs(self.circuit)

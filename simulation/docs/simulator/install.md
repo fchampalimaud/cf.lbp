@@ -86,8 +86,16 @@ pip install imageio imageio-ffmpeg
 
 ## Updating
 
+**From the app** — Session tab → **Check for updates** (the simulator also checks quietly at start-up; the button then reads **Update to vX**). It downloads the latest version from the public repository, replaces the app's own files and restarts. Your files are not touched.
+
+**With git** — if you cloned the repository:
+
 ```bash
 git pull
 ```
 
-Re-run `start.bat`/`start.sh` (or `pip install -r requirements.txt` for a manual install) to pick up any new dependencies. No database migrations or build steps needed — the simulator is pure Python.
+Either way, re-run `start.bat`/`start.sh` (or `pip install -r requirements.txt` for a manual install) to pick up any new dependencies. No database migrations or build steps needed — the simulator is pure Python.
+
+## Your files
+
+Everything you create — sessions, networks, worlds, motifs, brains, logs, videos — is saved in **`~/LBPSimulator`** (the `LBPSimulator` folder in your home folder), never inside the app's folder, so updates can't touch it. Session tab → **My files** shows the folder, opens it, or moves it somewhere else. The sessions and networks that ship with the simulator (Tutorials, Demos, Default) are marked 🔒 and are read-only; saving one writes your own copy. If you used the simulator before this folder existed, your files are moved there automatically the first time a new version starts.

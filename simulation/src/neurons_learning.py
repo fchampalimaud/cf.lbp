@@ -2,19 +2,23 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from neurons_base import ACTIVATIONS, _activate, DynamicsBase, LayerBase
+from neurons_base import ACTIVATIONS, _activate, DynamicsBase, LayerBase, dt_ratio
 
 class LearningLayerBase(DynamicsBase, LayerBase):
     """
     Base class for all reward-driven learning layers.
 
     Forward pass: V = Σ_conn W @ s  (linear weighted sum over incoming connections)
-    Weight update: ΔW = α_eff · δ · s_prev  where α_eff is alpha_pos (δ≥0) or alpha_neg (δ<0)
+    Weight update: ΔW = α_eff · δ · s  where s is the previous tick's input for TD and
+    the current input for Delta / ThreeFactor (_credit_previous_input), and α_eff is
+    alpha_pos (δ≥0) or alpha_neg (δ<0) — per tick at the default dt, scaled with dt.
     Episodic state: _src_prev, _V_prev — cleared on reset(); connection weights survive.
 
     Subclasses implement _compute_delta(V, r) → δ tensor of shape (n,).
     Optional leaky dynamics on V output via DynamicsBase (_x buffer, tau_rise/tau_decay).
     """
+
+    is_learning = True   # capability (see LayerBase)
 
     def __init__(self, n=1, alpha_pos=0.01, alpha_neg=None,
                  tau_rise=0.0, tau_decay=None, activation='linear',
@@ -48,13 +52,9 @@ class LearningLayerBase(DynamicsBase, LayerBase):
         self._V_prev        = torch.zeros(self.n)
         self._src_prev      = {}
         self.output         = torch.zeros(self.n)
-        if tau_rise:
-            self._init_dynamics_buffers(self.n)
-        else:
-            self.register_buffer('_x',         None)
-            self.register_buffer('_a',         None)
-            self.register_buffer('_noise_buf', None)
-            self.register_buffer('_prev_out',  torch.zeros(self.n))
+        # Always: output_mode='integral' needs _integral and tau_rise can be
+        # raised later in the dialog — state that isn't used just stays at rest.
+        self._init_dynamics_buffers(self.n)
 
     def _competition_mask(self, V):
         """Return a multiplicative mask applying lateral competition to V."""
@@ -78,6 +78,10 @@ class LearningLayerBase(DynamicsBase, LayerBase):
              ['none', 'softmax', 'wta']),
             ('k',           int,   '1',    'number of winners for wta competition'),
         ]
+
+    # Which presynaptic activity the weight update credits: the previous tick's
+    # (TD — δ compares V_t with V_{t-1}) or the current one (δ about V_t = W·s_t).
+    _credit_previous_input = True
 
     def _compute_delta(self, V, r):
         raise NotImplementedError
@@ -112,24 +116,30 @@ class LearningLayerBase(DynamicsBase, LayerBase):
         V = torch.zeros(self.n)
         for src_val, w_cached, conn_idx, conn in src_inputs:
             V = V + w_cached @ src_val
-        V = self._apply_output_mode(V, dt)
-
-        if self.tau_rise:
-            V = self._apply_leaky(V + self.bias, dt)
+        V = self._filter(self._input(V, dt), dt)   # same pipeline as every layer
 
         r     = self._reward
         delta = self._compute_delta(V, r)
         delta = torch.nan_to_num(delta, nan=0.0, posinf=0.0, neginf=0.0)
 
         mask      = self._competition_mask(V)
+        # Learning rates are per tick at the default dt (DT_REF): scaled with
+        # dt so learning per second is the same at any time step.
+        rate      = dt_ratio(dt)
         alpha_eff = torch.where(delta >= 0,
-                                torch.full_like(delta, self.alpha_pos),
-                                torch.full_like(delta, self.alpha_neg))
+                                torch.full_like(delta, self.alpha_pos * rate),
+                                torch.full_like(delta, self.alpha_neg * rate))
         w_lo = float(self.w_min) if self.w_min not in (None, '', 'none') else -float('inf')
         w_hi = float(self.w_max) if self.w_max not in (None, '', 'none') else  float('inf')
         for src_val, w_cached, conn_idx, conn in src_inputs:
-            src_prev = self._src_prev.get(conn_idx, torch.zeros_like(src_val))
-            w_cached.add_(torch.outer(alpha_eff * delta * mask, src_prev))
+            # Credit goes to the input that produced the error: the previous
+            # tick's input for TD (δ compares V_t with V_{t-1}), the current one
+            # for Delta / ThreeFactor (δ is about V_t = W·s_t).
+            if self._credit_previous_input:
+                pre = self._src_prev.get(conn_idx, torch.zeros_like(src_val))
+            else:
+                pre = src_val
+            w_cached.add_(torch.outer(alpha_eff * delta * mask, pre))
             torch.nan_to_num_(w_cached, nan=0.0, posinf=0.0, neginf=0.0)
             if self.weight_decay > 0:
                 w_cached.mul_(1.0 - self.weight_decay * dt)
@@ -140,7 +150,7 @@ class LearningLayerBase(DynamicsBase, LayerBase):
             self._src_prev[conn_idx] = src_val.detach().clone()
 
         self._V_prev = V.detach()
-        out = _activate(V, self.activation, alpha=self.alpha) * self.scale * mask
+        out = self._emit(V) * mask
         self.output  = out.detach()
         return self.output
 
@@ -210,7 +220,7 @@ $$V = \\sum_i W_i \\, s_i, \\quad \\delta = r + \\gamma V - V_{\\text{prev}}, \\
 **Order of operations** (`step_td`, per tick):
 1. `V = Σ_conn W_conn · s_conn` — weighted sum over incoming connections
 2. apply `output_mode` transform to `V` — derivative/integral (if not `none`)
-3. optional leaky filter: `V = leaky(V + bias)` (only if `tau_rise > 0`)
+3. `V += bias`, then the optional leaky filter `V = leaky(V)` (only if `tau_rise > 0`)
 4. `δ = r + γ·V − V_prev` (`r` = current reward signal from the modulator bus)
 5. sanitize `δ` (replace NaN/±Inf with 0)
 6. `mask = competition_mask(V)` (`none` → all ones; `wta` → top-k one-hot; `softmax` → softmax(V))
@@ -273,8 +283,8 @@ settings with spatially co-located cue and reward, prefer **ThreeFactorLayer**.
     def param_defs(cls):
         return [
             ('n',                int,   '1',        'number of output neurons (parallel critics)'),
-            ('alpha_pos',        float, '0.01',     'learning rate for δ ≥ 0 (acquisition)'),
-            ('alpha_neg',        float, '0.01',     'learning rate for δ < 0 (extinction)'),
+            ('alpha_pos',        float, '0.01',     'learning rate for δ ≥ 0 (acquisition; per tick at dt 0.01)'),
+            ('alpha_neg',        float, '0.01',     'learning rate for δ < 0 (extinction; per tick at dt 0.01)'),
             ('gamma',            float, '0.99',     'discount factor γ (0–1)'),
             ('tau_rise',         float, '0.0',      'leaky rise τ on V output (0 = off)'),
             ('tau_decay',        float, '0.0',      'leaky decay τ on V output'),
@@ -329,13 +339,13 @@ $$V = \\sum_i W_i \\, s_i, \\quad \\delta = r - V, \\quad \\Delta W_i = \\alpha_
 **Order of operations** (`step_td`, per tick):
 1. `V = Σ_conn W_conn · s_conn` — weighted sum over incoming connections
 2. apply `output_mode` transform to `V` — derivative/integral (if not `none`)
-3. optional leaky filter: `V = leaky(V + bias)` (only if `tau_rise > 0`)
+3. `V += bias`, then the optional leaky filter `V = leaky(V)` (only if `tau_rise > 0`)
 4. `δ = r − V` (`r` = current reward signal from the modulator bus)
 5. sanitize `δ` (replace NaN/±Inf with 0)
 6. `mask = competition_mask(V)` (`none` → all ones; `wta` → top-k one-hot; `softmax` → softmax(V))
 7. `α_eff = alpha_pos` where `δ ≥ 0`, else `alpha_neg`
-8. for each incoming connection: `ΔW = outer(α_eff · δ · mask, s_prev)`; `W += ΔW`; sanitize; if `weight_decay > 0`: `W *= (1 − weight_decay·dt)`; clamp `W` to `[w_min, w_max]`
-9. store this tick's `s` as `s_prev` (and `V` as `V_prev`, unused by this layer's own `δ`)
+8. for each incoming connection: `ΔW = outer(α_eff · δ · mask, s)` with this tick's input `s` — the one that produced `V`; `W += ΔW`; sanitize; if `weight_decay > 0`: `W *= (1 − weight_decay·dt)`; clamp `W` to `[w_min, w_max]`
+9. store `V` as `V_prev` (unused by this layer's own `δ`)
 10. `output = activation(V) × scale × mask`
 
 **Reset behaviour:** same as TDLayer — episodic state cleared, weights survive.
@@ -366,6 +376,8 @@ settings where reward gates all learning, prefer **ThreeFactorLayer**.
                          w_min=w_min, w_max=w_max, competition=competition, k=k,
                          weight_decay=weight_decay, name=name, **kwargs)
 
+    _credit_previous_input = False   # Rescorla-Wagner: δ_t = r − W·s_t → credit s_t
+
     def _compute_delta(self, V, r):
         return r - V
 
@@ -373,8 +385,8 @@ settings where reward gates all learning, prefer **ThreeFactorLayer**.
     def param_defs(cls):
         return [
             ('n',                int,   '1',        'number of output neurons (parallel critics)'),
-            ('alpha_pos',        float, '0.05',     'learning rate for δ ≥ 0 (acquisition)'),
-            ('alpha_neg',        float, '0.005',    'learning rate for δ < 0 (extinction)'),
+            ('alpha_pos',        float, '0.05',     'learning rate for δ ≥ 0 (acquisition; per tick at dt 0.01)'),
+            ('alpha_neg',        float, '0.005',    'learning rate for δ < 0 (extinction; per tick at dt 0.01)'),
             ('tau_rise',         float, '0.0',      'leaky rise τ on V output (0 = off)'),
             ('tau_decay',        float, '0.0',      'leaky decay τ on V output'),
             ('activation',       str,   'linear',   'output nonlinearity',
@@ -400,11 +412,11 @@ passive decay (if enabled) erodes them.
 
 **Learning rule (per tick, per connection i → neuron j):**
 
-$$\\Delta W_{ji} = \\alpha_{\\text{eff}} \\cdot r \\cdot V_j \\cdot s_{i,\\text{prev}}$$
+$$\\Delta W_{ji} = \\alpha_{\\text{eff}} \\cdot r \\cdot V_j \\cdot s_i$$
 
 - `r` — reward signal from the designated neuromodulator (gates all plasticity)
 - `V_j` — postsynaptic activity of neuron j (selects *which* neuron learns)
-- `s_prev` — presynaptic activity on the previous tick (selects *which* inputs)
+- `s_i` — presynaptic activity on the same tick, the input that produced `V_j` (selects *which* inputs)
 - `α_eff` = `alpha_pos` if r·V ≥ 0, else `alpha_neg`
 
 **Passive forgetting (independent of reward):**
@@ -417,13 +429,13 @@ acquisition rate and decay rate — infrequently rewarded associations fade natu
 **Order of operations** (`step_td`, per tick):
 1. `V = Σ_conn W_conn · s_conn` — weighted sum over incoming connections
 2. apply `output_mode` transform to `V` — derivative/integral (if not `none`)
-3. optional leaky filter: `V = leaky(V + bias)` (only if `tau_rise > 0`)
+3. `V += bias`, then the optional leaky filter `V = leaky(V)` (only if `tau_rise > 0`)
 4. `δ = r · V` (`r` = current reward signal from the modulator bus)
 5. sanitize `δ` (replace NaN/±Inf with 0)
 6. `mask = competition_mask(V)` (`none` → all ones; `wta` → top-k one-hot; `softmax` → softmax(V))
 7. `α_eff = alpha_pos` where `δ ≥ 0`, else `alpha_neg`
-8. for each incoming connection: `ΔW = outer(α_eff · δ · mask, s_prev)`; `W += ΔW`; sanitize; then (regardless of `δ`) if `weight_decay > 0`: `W *= (1 − weight_decay·dt)`; clamp `W` to `[w_min, w_max]`
-9. store this tick's `s` as `s_prev`
+8. for each incoming connection: `ΔW = outer(α_eff · δ · mask, s)` with this tick's input `s`; `W += ΔW`; sanitize; then (regardless of `δ`) if `weight_decay > 0`: `W *= (1 − weight_decay·dt)`; clamp `W` to `[w_min, w_max]`
+9. (nothing to store — pre and post coincide on the same tick)
 10. `output = activation(V) × scale × mask`
 
 **Parameters:**
@@ -476,6 +488,8 @@ Use **↺ Reset Weights** to zero all incoming connection weights.
                          w_min=w_min, w_max=w_max, competition=competition, k=k,
                          weight_decay=weight_decay, name=name, **kwargs)
 
+    _credit_previous_input = False   # pre and post must coincide: r · V_t · s_t
+
     def _compute_delta(self, V, r):
         return r * V
 
@@ -483,8 +497,8 @@ Use **↺ Reset Weights** to zero all incoming connection weights.
     def param_defs(cls):
         return [
             ('n',                int,   '1',        'number of output neurons'),
-            ('alpha_pos',        float, '0.01',     'learning rate for r·V ≥ 0'),
-            ('alpha_neg',        float, '0.01',     'learning rate for r·V < 0 (punishment)'),
+            ('alpha_pos',        float, '0.01',     'learning rate for r·V ≥ 0 (per tick at dt 0.01)'),
+            ('alpha_neg',        float, '0.01',     'learning rate for r·V < 0 (punishment; per tick at dt 0.01)'),
             ('tau_rise',         float, '0.0',      'leaky rise τ on output (0 = off)'),
             ('tau_decay',        float, '0.0',      'leaky decay τ on output'),
             ('activation',       str,   'linear',   'output nonlinearity',
@@ -500,6 +514,8 @@ Use **↺ Reset Weights** to zero all incoming connection weights.
 
 
 class SnapshotLayer(LearningLayerBase):
+    has_outgoing_plasticity = True   # capability (see LayerBase): teacher readout
+
     help_text = """\
 ## SnapshotLayer — one-shot vector-memory neuron (Le Moël et al. 2019)
 
@@ -559,7 +575,7 @@ toward it gradually.
 1. split incoming connections by `src`: the **teach connection** (`src == teach_source`) vs. everything else (**gate connection(s)**)
 2. `V = Σ_conn W_conn · s_conn` over the gate connections only — the teach connection's value is *not* summed into `V`
 3. apply `output_mode` transform to `V` — derivative/integral (if not `none`)
-4. optional leaky filter: `V = leaky(V + bias)` (only if `tau_rise > 0`)
+4. `V += bias`, then the optional leaky filter `V = leaky(V)` (only if `tau_rise > 0`)
 5. `mask = competition_mask(V)`
 6. `output = activation(V) × scale × mask`
 7. for each outgoing connection: if `self._reward` is nonzero *and* a teach value was found, hard-overwrite `W_outgoing ← −teach_source.output` (every output column set to the same negated vector)
@@ -633,12 +649,10 @@ every unit currently reads the same trigger and writes together.
         V = torch.zeros(self.n)
         for src_val, w_cached, conn_idx, conn in gate_inputs:
             V = V + w_cached @ src_val
-        V = self._apply_output_mode(V, dt)
-        if self.tau_rise:
-            V = self._apply_leaky(V + self.bias, dt)
+        V = self._filter(self._input(V, dt), dt)   # same pipeline as every layer
 
         mask = self._competition_mask(V)
-        out  = _activate(V, self.activation, alpha=self.alpha) * self.scale * mask
+        out  = self._emit(V) * mask
         self.output = out.detach()
 
         if outgoing:

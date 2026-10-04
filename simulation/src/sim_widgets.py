@@ -8,7 +8,7 @@ import numpy as np
 import pyqtgraph as pg
 from PySide6.QtWidgets import (
     QDoubleSpinBox, QScrollArea, QWidget, QVBoxLayout,
-    QGroupBox, QTabWidget, QHBoxLayout, QLabel,
+    QGroupBox, QTabWidget, QHBoxLayout, QLabel, QComboBox, QAbstractButton, QSizePolicy,
 )
 from PySide6.QtCore import Qt, QObject, QEvent
 from PySide6.QtGui import QColor
@@ -95,6 +95,30 @@ class _CueKeyFilter(QObject):
         return False
 
 
+class ElidedLabel(QLabel):
+    """A label that never widens its panel: it takes whatever width the row
+    leaves and shows the text with an ellipsis in the middle (full text in
+    the tooltip)."""
+
+    def __init__(self, text='', parent=None):
+        super().__init__(parent)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self._full = ''
+        self.setText(text)
+
+    def setText(self, text):
+        self._full = text
+        self._elide()
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)
+        self._elide()
+
+    def _elide(self):
+        shown = self.fontMetrics().elidedText(self._full, Qt.TextElideMode.ElideMiddle, max(self.width(), 10))
+        QLabel.setText(self, shown)
+
+
 class MonetarySpinBox(QDoubleSpinBox):
     """SpinBox that steps through a monetary scale: 0, 0.1, 0.2, 0.5, 1, 2, 5, 10 …"""
     def __init__(self, parent=None):
@@ -175,6 +199,65 @@ class ControlPanel(QScrollArea):
         self._layout.setSpacing(6)
         self.setWidget(self._inner)
 
+    def compact(self):
+        """Fit the panel's width: combo boxes shrink instead of growing to their
+        longest entry, and rows use tight spacing. Call after the panel is
+        built (and on widgets added later via compact_widget). Each tab's
+        content is pushed to the top, so a short tab doesn't spread its rows
+        over the height of the tallest one."""
+        for w in self._inner.findChildren(QWidget):
+            self.compact_widget(w)
+        for vl in getattr(self, '_tab_layouts', []):
+            vl.addStretch()
+        self._align_row_labels()
+
+    def _align_row_labels(self):
+        """Within each group box, give every row label ("World:", "Arena:", ...)
+        the width of the widest one, so the controls start in one column."""
+        by_group = {}
+        for w in self._inner.findChildren(QWidget):
+            lay = w.layout()
+            if not isinstance(lay, QHBoxLayout) or not lay.count():
+                continue
+            first = lay.itemAt(0).widget()
+            if not (isinstance(first, QLabel) and first.text().rstrip().endswith(':')):
+                continue
+            group = w.parentWidget()
+            while group is not None and not isinstance(group, QGroupBox):
+                group = group.parentWidget()
+            by_group.setdefault(id(group), []).append(first)
+        for labels in by_group.values():
+            width = max(lbl.sizeHint().width() for lbl in labels)
+            for lbl in labels:
+                lbl.setFixedWidth(width)
+
+    @staticmethod
+    def compact_widget(w):
+        if isinstance(w, QAbstractButton):
+            # Clicked with the mouse only: a focused button would otherwise be
+            # pressed by Space / Enter — Space is the manual-drive brake, and
+            # it used to pause the run after clicking ▶ Run.
+            w.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        if isinstance(w, QComboBox):
+            w.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            w.setMinimumContentsLength(6)
+        lay = w.layout()
+        if isinstance(lay, QHBoxLayout):
+            lay.setSpacing(4)
+            # Row labels ("World:", "Arena:", ...) in the same bold as
+            # "Gradients:" / "Objects:" — unless the label is already styled.
+            first = lay.itemAt(0).widget() if lay.count() else None
+            if isinstance(first, QLabel) and first.text().rstrip().endswith(':') \
+                    and not first.styleSheet():
+                first.setStyleSheet(f"color:{C['dark']};font-weight:bold;")
+            # A combo takes the row's spare width (instead of the spare width
+            # being shared out between labels, leaving gaps), unless the row
+            # already says who stretches.
+            if not any(lay.stretch(i) for i in range(lay.count())):
+                for i in range(lay.count()):
+                    if isinstance(lay.itemAt(i).widget(), QComboBox):
+                        lay.setStretch(i, 1)
+
     def add_group(self, title, target=None):
         gb = QGroupBox(title)
         gb.setStyleSheet(f"""
@@ -209,11 +292,11 @@ class ControlPanel(QScrollArea):
             QTabBar::tab {{
                 background: {C['surface']};
                 color: {C['dark']};
-                padding: 5px 10px;
+                padding: 4px 6px;
                 border: 1px solid {C['border']};
                 border-bottom: none;
                 border-radius: 3px 3px 0 0;
-                margin-right: 2px;
+                margin-right: 1px;
             }}
             QTabBar::tab:selected {{
                 background: {C['bg']};
@@ -230,6 +313,7 @@ class ControlPanel(QScrollArea):
             tabs.addTab(page, name)
             vls.append(vl)
         self._layout.addWidget(tabs)
+        self._tab_layouts = getattr(self, '_tab_layouts', []) + vls
         return vls
 
     def add_stretch(self):

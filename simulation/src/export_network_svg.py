@@ -92,19 +92,11 @@ def main():
         joints=joints,
     )
 
-    # Replicate what LBPSimulator._resolve_joint_sensor_refs() does:
-    # ProprioceptiveSensor.n defaults to 1 and is updated at runtime based on
-    # how many joints share its joint_id.  Do the same here so the SVG shows
+    # Sensors size themselves from the circuit (e.g. ProprioceptiveSensor.n =
+    # number of joints sharing its joint_id), as at runtime — so the SVG shows
     # the correct number of sensor nodes.
-    from sensors import ProprioceptiveSensor
     for sensor in circuit.sensors:
-        if isinstance(sensor, ProprioceptiveSensor) and sensor.joint_id:
-            group = sorted(
-                [jt for jt in circuit.joints
-                 if jt.motor_layer_name == sensor.joint_id],
-                key=lambda j: j.motor_output_idx,
-            )
-            sensor.n = len(group) if group else 1
+        sensor.resolve_refs(circuit)
 
     gui = _FakeGui(circuit)
     win = NetworkVisualizerWindow(gui)

@@ -2,7 +2,7 @@
 
 **FeedingBrain** is a hunger-driven vehicle. It cruises through the arena seeking gradient-A patches (food), slows to consume them, and gradually loses interest in food as it fills up — then resumes looking once depleted. It avoids walls using a two-timescale bumper reflex.
 
-Load it from `simulation/2d/networks/FeedingBrain.json` via the network editor.
+Load it from the Brain tab: **Network** mode → Project **🔒 Simulator** / **Default** → Network **FeedingBrain.json** (built-in, read-only — save your own copy to change it).
 
 ---
 

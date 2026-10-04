@@ -9,7 +9,8 @@ import json
 import os
 import re
 import numpy as np
-from neurons import RingAttractorLayer, Conv2dLayer, LAYER_REGISTRY, DynamicsBase
+from neurons import RingAttractorLayer, LAYER_REGISTRY
+from lateral import mirror_name, side_of
 from circuit_model import Connection, Note
 from app_version import get_app_version
 
@@ -254,15 +255,10 @@ def _layer_to_dict(layer) -> dict:
         val = getattr(layer, attr, None)
         if val is not None:
             d[attr] = val
-    # Mirror network_viz_dialogs.py's _layer_dialog: any DynamicsBase param
-    # (e.g. output_mode) not already in the layer's own param_defs() is still
-    # a live, settable attribute via the dialog's auto-injected field, so it
-    # must be persisted here too — otherwise it silently reverts on reload.
-    param_defs = list(type(layer).param_defs())
-    if isinstance(layer, DynamicsBase):
-        existing = {p[0] for p in param_defs}
-        param_defs += [p for p in DynamicsBase._dynamics_param_defs() if p[0] not in existing]
-    for name, *_ in param_defs:
+    # Everything the edit dialog shows (param_defs() plus the shared dynamics
+    # params, e.g. output_mode) is a live, settable attribute, so it must be
+    # persisted — otherwise it silently reverts on reload.
+    for name, *_ in type(layer).all_param_defs():
         val = getattr(layer, name, None)
         if isinstance(val, np.ndarray):
             val = val.tolist()
@@ -276,25 +272,12 @@ def _layer_to_dict(layer) -> dict:
         val = getattr(layer, attr, None)
         if val:
             d[attr] = val
-    # Leaky2dLayer / Reichardt2dLayer: persist shape metadata not covered by param_defs().
-    from neurons import Leaky2dLayer as _L2d, Reichardt2dLayer as _R2d
-    if isinstance(layer, _L2d):
-        for attr in ('n', 'in_ch', 'frame_h', 'frame_w'):
-            val = getattr(layer, attr, None)
-            if val is not None:
-                d[attr] = val
-    elif isinstance(layer, _R2d):
-        # 'n' is already taken by the n_directions hyperparameter (param_defs
-        # above) — 'flat_n' is the possibly pool='none'-expanded live buffer
-        # length (n_directions * H * W), restored eagerly on load so
-        # connections/visualizer see the right size before the first step().
-        val = getattr(layer, 'n', None)
+    # Runtime state a class declares worth saving beyond param_defs() (e.g. image
+    # shape metadata) — {json key: attribute}; passed back to the constructor on load.
+    for key, attr in type(layer).saved_state.items():
+        val = getattr(layer, attr, None)
         if val is not None:
-            d['flat_n'] = val
-        for attr in ('in_ch', 'frame_h', 'frame_w'):
-            val = getattr(layer, attr, None)
-            if val is not None:
-                d[attr] = val
+            d[key] = val
     if getattr(layer, 'muted', False):
         d['muted'] = True
     y_order = getattr(layer, 'y_order', None)
@@ -587,52 +570,31 @@ def load_network_json(data: dict):
                 connections.append(Connection(layer.name, layer.name,
                                               layer._legacy_W.copy()))
             layer._legacy_W = None
-    # Re-establish lateral_pair cross-links for lateralized Conv2dLayer / Leaky2dLayer pairs.
-    # New JSONs already have lateral_pair set via _layer_from_dict(); guard with is None check.
-    from neurons import Leaky2dLayer as _L2dR, Reichardt2dLayer as _R2dR
+    # Re-establish lateral_pair cross-links for lateralized pairs (layer classes
+    # with supports_lateral). New JSONs already have lateral_pair set via
+    # _layer_from_dict(); guard with is None check.
     _lat_candidates = {l.name: l for l in layers
-                       if isinstance(l, (Conv2dLayer, _L2dR, _R2dR)) and getattr(l, 'lateralized', False)}
+                       if l.supports_lateral and getattr(l, 'lateralized', False)}
     for name, layer in _lat_candidates.items():
         if layer.lateral_pair is not None:
             continue  # already restored from JSON
-        if name.endswith('_L'):
-            partner = name[:-2] + '_R'
-        elif name.endswith('_R'):
-            partner = name[:-2] + '_L'
-        else:
-            continue
+        partner = mirror_name(name)
         if partner in _lat_candidates:
             layer.lateral_pair = partner
-    lat_conv = {n: l for n, l in _lat_candidates.items() if isinstance(l, Conv2dLayer)}
-    lat_reich = {n: l for n, l in _lat_candidates.items() if isinstance(l, _R2dR)}
-    # Sync operational params from _L to _R so both sides are always in step.
-    _LATERAL_SYNC_CONV = ('n_filters', 'kernel_size', 'stride', 'padding', 'pool',
-                          'activation', 'tau_rise', 'tau_decay', 'bias', 'scale')
-    for name, layer in lat_conv.items():
-        if name.endswith('_L'):
-            partner_name = layer.lateral_pair
-            if partner_name and partner_name in lat_conv:
-                partner = lat_conv[partner_name]
-                for attr in _LATERAL_SYNC_CONV:
-                    if hasattr(layer, attr):
-                        setattr(partner, attr, getattr(layer, attr))
-    _LATERAL_SYNC_REICH = ('n_directions', 'init_direction', 'offset', 'tau_delay', 'pool',
-                           'activation', 'tau_rise', 'tau_decay', 'bias', 'scale')
-    for name, layer in lat_reich.items():
-        if name.endswith('_L'):
-            partner_name = layer.lateral_pair
-            if partner_name and partner_name in lat_reich:
-                partner = lat_reich[partner_name]
-                for attr in _LATERAL_SYNC_REICH:
-                    if hasattr(layer, attr):
-                        setattr(partner, attr, getattr(layer, attr))
+    # Sync operational params from _L to _R so both sides are always in step —
+    # the same params the edit dialog keeps in sync (lateral_sync_params).
+    for name, layer in _lat_candidates.items():
+        partner = _lat_candidates.get(layer.lateral_pair)
+        if side_of(name) == 'L' and partner is not None and type(partner) is type(layer):
+            for attr in type(layer).lateral_sync_params():
+                if hasattr(layer, attr):
+                    setattr(partner, attr, getattr(layer, attr))
     # Auto-create the mirror camera→conv connection for lateralized pairs that only
     # have the _L side wired (e.g. JSONs saved before the auto-wiring feature was added).
     import copy as _copy
     conn_set = {(c.src, c.tgt) for c in connections}
-    _all_lat = {**lat_conv, **lat_reich}
-    for name, layer in _all_lat.items():
-        if not name.endswith('_L'):
+    for name, layer in _lat_candidates.items():
+        if side_of(name) != 'L':
             continue
         partner_name = layer.lateral_pair
         if not partner_name:
@@ -640,8 +602,7 @@ def load_network_json(data: dict):
         for conn in list(connections):
             if conn.tgt != name:
                 continue
-            mirror_src = (conn.src[:-2] + '_R') if conn.src.endswith('_L') else \
-                         (conn.src[:-2] + '_L') if conn.src.endswith('_R') else None
+            mirror_src = mirror_name(conn.src)
             if mirror_src and (mirror_src, partner_name) not in conn_set:
                 connections.append(Connection(
                     mirror_src, partner_name,
@@ -707,22 +668,18 @@ def check_network_freshness(data: dict, sensors, layers) -> list:
             issues.append({'kind': 'layer', 'name': layer.name,
                            'type': t, 'missing': missing})
 
+    def _normalised(keys):
+        # angle_spread_deg counts as angle_spread
+        return {k[:-4] if k.endswith('_deg') else k for k in keys} - _SKIP
+
     for sensor in sensors:
         t = type(sensor).__name__
-        raw_keys = set(sensor_data.get(sensor.name, {}).keys())
-        # Normalise _deg variants: angle_spread_deg counts as angle_spread too
-        saved_keys = raw_keys - _SKIP
-        for k in list(raw_keys):
-            if k.endswith('_deg'):
-                saved_keys.add(k[:-4])
-
-        from sensors import BaseSensor, SENSOR_REGISTRY
-        cls = SENSOR_REGISTRY.get(t)
-        expected_names = set()
-        if cls is not None and hasattr(cls, 'param_defs'):
-            expected_names.update(p[0] for p in cls.param_defs())
-        expected_names.update(p[0] for p in BaseSensor._sensor_base_param_defs())
-        expected_names -= _SKIP
+        saved_keys = _normalised(sensor_data.get(sensor.name, {}).keys())
+        # Expect exactly what saving this sensor now would write. Params whose
+        # value is None (e.g. GradientSensor.gradient = "all labels") are left
+        # out of the file by design, so they must not count as missing —
+        # otherwise the prompt can never be satisfied by re-saving.
+        expected_names = _normalised(_sensor_to_dict(sensor).keys())
 
         missing = sorted(expected_names - saved_keys)
         if missing:

@@ -62,10 +62,6 @@ class OscChannelManager:
                     key = f'{layer.name}_{i}'
                     if key in self._osc_items:
                         channels.append(key)
-        if not circuit.sensors:
-            for ch in ('sL', 'sR'):
-                if ch in self._osc_items:
-                    channels.append(ch)
         if brain is not None:
             channels += list(brain.plots() or [])
         self.channels = channels

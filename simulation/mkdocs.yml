@@ -47,6 +47,7 @@ nav:
     - Overview: index.md
     - Install: simulator/install.md
     - Simulator: simulator/tour.md
+    - Getting Started: simulator/tutorials/first-braitenberg.md
   - Creating Worlds: simulator/creating-worlds.md
   - Coding Brains: simulator/coding-brains.md
   - Wiring Brains:
@@ -82,6 +83,7 @@ nav:
       - SnapshotLayer: simulator/layers/snapshot.md
       - MatsuokaLayer: simulator/layers/matsuoka.md
     - Neuromodulators: simulator/neuromodulators.md
+  - Headless Runs: simulator/headless.md
   - Developer:
     - Architecture: simulator/architecture.md
     - Class Reference: simulator/reference.md

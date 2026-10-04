@@ -28,14 +28,15 @@ geometry was baked in at the last rebuild.
 
 Architecture
 ------------
-  tick_physics():
-    1. Sample gradient/etc. sensors at current bot_pos (analytical); sample
-       eligible CollisionSensors from MuJoCo's contact array instead.
-    2. brain.loop() → mL, mR.
-    3. Set robot velocity in MuJoCo from mL, mR (kinematic drive).
-    4. mj_step() — MuJoCo resolves contacts (objects, walls, arena).
-    5. Read bot_pos back from MuJoCo qpos.
-    6. Render camera sensors from MuJoCo scene.
+  The step itself lives in sim_engine.step_agents(); this engine provides
+  the MuJoCo-owned parts of it:
+    owns_sensor()              which sensors MuJoCo samples (cameras, eligible
+                               CollisionSensors) — everything else is 2-D
+    sample_collision_sensors() SENSE: contacts at the current positions
+    render_cameras()           SENSE: camera frames (on each camera's fps
+                               schedule, or free-running from the display loop)
+    move_agents()              ACT: differential drive, then MuJoCo resolves
+                               contacts (objects, walls, arena, other agents)
 
   rebuild(world, sim_cfg, agent_sensors=...):
     Regenerate MuJoCo model XML from current world state (+ CollisionSensor
@@ -54,8 +55,8 @@ try:
 except ImportError:
     _MUJOCO_OK = False
 
-from sim_engine import tick_physics as _tick_2d, MAX_SPEED_MS
-from sensors import CameraSensor, CollisionSensor
+from sim_engine import MAX_SPEED_MS
+from sensors import CameraSensor
 from texture_manager import texture_exists, texture_bytes
 
 # Geometry half-sizes (MuJoCo convention)
@@ -116,14 +117,12 @@ def _collision_sector_n_pts(arc_angle_deg: float) -> int:
 
 
 def _mujoco_collision_eligible(sensor) -> bool:
-    """True for CollisionSensors that get dedicated per-sector MuJoCo geometry
-    built into the robot body (see _build_xml) instead of the analytic
-    geometry check in sensors.py: mounted on the robot's root body. Any
-    radius works — the geometry is built at exactly the sensor's own probe
-    radius, so there's no lookahead limit to check. Sensors mounted on a
-    child body (e.g. whisker joint pairs) still need the analytic path,
-    since there's no per-body-id geometry for those here."""
-    return getattr(sensor, 'body_ids', None) in (None, ['root'])
+    """True for sensors that get dedicated per-sector MuJoCo geometry built into
+    the robot body (see _build_xml) instead of the analytic geometry check in
+    sensors.py — declared by the sensor (CollisionSensor.uses_mujoco_contacts:
+    mounted on the root body). Any radius works — the geometry is built at
+    exactly the sensor's own probe radius."""
+    return bool(sensor.uses_mujoco_contacts)
 
 
 def log_collision_sensor_routing(agents) -> None:
@@ -627,9 +626,9 @@ class MuJoCoEngine:
             return renderer.render().copy()
 
     def _render_camera(self, sensor: CameraSensor, agent_idx: int = 0) -> np.ndarray:
-        """Render a robot's front camera. Returns (H, W, 3) float32 [0, 1]."""
+        """Render a robot's front camera. Returns (sensor.height, W, 3) float32 [0, 1]."""
         W = sensor.width
-        H = max(sensor.height, 32)
+        H = max(sensor.height, 32)   # rendered at >= 32 rows, then row-sampled below
         renderer = self._get_renderer(W, H)
 
         cam_name = f'front_cam_{agent_idx}'
@@ -657,151 +656,60 @@ class MuJoCoEngine:
             self.data.cam_xmat[cam_id] = (body_xmat @ cam_body_mat.T).flatten()
 
         renderer.update_scene(self.data, camera=cam_name)
-        return renderer.render()[::-1].copy().astype(np.float32) / 255.0
+        frame = renderer.render()[::-1].astype(np.float32) / 255.0
+        if H != sensor.height:
+            # Pick each output row from the centre of its band, so a 1-row
+            # camera sees the horizon row, not the top of the image.
+            rows = ((np.arange(sensor.height) + 0.5) * H / sensor.height).astype(int)
+            frame = frame[rows]
+        return frame
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def tick_physics_batch(self, agent_list, world, sim_cfg, overrides=None):
-        """
-        Physics step for all agents simultaneously.
+    @staticmethod
+    def owns_sensor(sensor) -> bool:
+        """True for sensors MuJoCo samples (cameras, sensors reading MuJoCo
+        contacts); every other sensor is sampled by the 2-D field code in sim_engine."""
+        return sensor.is_camera or sensor.uses_mujoco_contacts
 
-        agent_list : [(bot_pos, brain, sensors, circuit), ...]
-        overrides  : [motor_override_or_None, ...]  — one per agent
+    def move_agents(self, bot_positions, commands, sim_cfg) -> None:
+        """ACT phase: drive every agent from its (mL, mR) command, then let MuJoCo
+        resolve contacts. Mutates each bot_pos in place.
 
         All positions are written to qpos before the single mj_forward call so
-        MuJoCo resolves inter-agent contacts correctly in one shot.
-
-        Returns: list of raw dicts (one per agent, same format as tick_physics).
-        """
-        n = len(agent_list)
-        if overrides is None:
-            overrides = [None] * n
-        orig_fixate = sim_cfg.fixate_robot
-
-        # Snapshot every agent's pre-tick position as a circle, so DistanceSensor/
-        # CollisionSensor's analytic path (used for non-MuJoCo-eligible sensors)
-        # can see other agents as obstacles — same simultaneous-snapshot approach
-        # MuJoCo itself uses below (all positions read before any agent moves).
-        all_circles = [{'x': bp[0], 'y': bp[1], 'r': sim_cfg.body_radius}
-                       for bp, _, _, _ in agent_list]
-
-        # Phase 1 — sensor sampling + brain.loop per agent (analytical).
-        # fixate_robot=1 suppresses 2D kinematic integration inside _tick_2d.
-        # MuJoCo-native collision sensors read data.contact from the PREVIOUS
-        # tick's mj_forward here too — same reasoning as tick_physics — before
-        # Phase 2 below overwrites it for the new positions.
-        raws = []
-        for i, (bot_pos, brain, sensors, circuit) in enumerate(agent_list):
-            other_sensors = [s for s in sensors if not isinstance(s, CameraSensor)
-                              and not (isinstance(s, CollisionSensor)
-                                       and _mujoco_collision_eligible(s))]
-            other_agents = all_circles[:i] + all_circles[i + 1:]
-            sim_cfg.fixate_robot = 1.0
-            try:
-                raw = _tick_2d(bot_pos, brain, other_sensors, world, sim_cfg,
-                               circuit=circuit, motor_override=overrides[i],
-                               other_agents=other_agents)
-            finally:
-                sim_cfg.fixate_robot = orig_fixate
-            self.sample_collision_sensors(bot_pos, brain, sensors, sim_cfg, agent_idx=i)
-            raws.append(raw)
-
+        MuJoCo resolves inter-agent contacts correctly in one shot. With
+        sim_cfg.fixate_robot set, robots stay where they are (debug option)."""
         with self._lock:
             self.model.opt.timestep = sim_cfg.dt
-            if orig_fixate < 0.5:
-                # Phase 2 — integrate all drives; sync all positions simultaneously.
-                for i, (bot_pos, brain, sensors, circuit) in enumerate(agent_list):
-                    self._integrate_drive(bot_pos, raws[i]['mL'], raws[i]['mR'], sim_cfg)
+            if sim_cfg.fixate_robot < 0.5:
+                for i, (bot_pos, (mL, mR)) in enumerate(zip(bot_positions, commands)):
+                    self._integrate_drive(bot_pos, mL, mR, sim_cfg)
                     self._sync_robot(bot_pos, i)
                 # One mj_forward for all bodies — all inter-agent contacts resolved together.
                 mujoco.mj_forward(self.model, self.data)
-                # Phase 3 — resolve penetrations per agent (may each call mj_forward again).
-                for i, (bot_pos, brain, sensors, circuit) in enumerate(agent_list):
+                # Resolve penetrations per agent (may each call mj_forward again).
+                for i, bot_pos in enumerate(bot_positions):
                     self._resolve_contacts(bot_pos, i)
             else:
-                for i, (bot_pos, brain, sensors, circuit) in enumerate(agent_list):
+                for i, bot_pos in enumerate(bot_positions):
                     self._sync_robot(bot_pos, i)
                 mujoco.mj_forward(self.model, self.data)
 
-        return raws
-
-    def tick_physics(self, bot_pos, brain, sensors, world, sim_cfg,
-                     circuit=None, motor_override=None) -> dict:
-        """
-        MuJoCo-authoritative physics step.
-
-        Sensor sampling and brain.loop are handled analytically (gradients, touch, etc.)
-        by calling _tick_2d with fixate_robot=1 so no movement occurs there.
-        Kinematic integration and collision resolution are then done against MuJoCo
-        geometry via mj_forward + contact data, so the robot bounces off walls and
-        objects that exist only in the MuJoCo model (no 2D scene math needed).
-        """
-        other_sensors = [s for s in sensors if not isinstance(s, CameraSensor)
-                          and not (isinstance(s, CollisionSensor)
-                                   and _mujoco_collision_eligible(s))]
-
-        # Sensor sampling + brain.loop only (fixate_robot=1 suppresses 2D movement).
-        orig_fixate = sim_cfg.fixate_robot
-        sim_cfg.fixate_robot = 1.0
-        try:
-            raw = _tick_2d(bot_pos, brain, other_sensors, world, sim_cfg,
-                           circuit=circuit, motor_override=motor_override)
-        finally:
-            sim_cfg.fixate_robot = orig_fixate
-
-        # MuJoCo-native collision sensors: read contacts from the PREVIOUS tick's
-        # mj_forward (bot_pos hasn't moved yet — fixate_robot=1 above), before
-        # this tick's mj_forward below overwrites data.contact.
-        self.sample_collision_sensors(bot_pos, brain, sensors, sim_cfg, agent_idx=0)
-
-        with self._lock:
-            self.model.opt.timestep = sim_cfg.dt
-            if orig_fixate < 0.5:
-                self._integrate_drive(bot_pos, raw['mL'], raw['mR'], sim_cfg)
-                self._sync_robot(bot_pos, 0)
-                mujoco.mj_forward(self.model, self.data)
-                self._resolve_contacts(bot_pos, 0)
-            else:
-                self._sync_robot(bot_pos, 0)
-                mujoco.mj_forward(self.model, self.data)
-
-        return raw
-
-    def render_cameras(self, brain, sensors, agent_idx: int = 0) -> None:
-        """Render all CameraSensors for the given agent and inject results into brain attributes.
-        Call once per display frame, not once per physics tick."""
-        import numpy as _np
-        cam_sensors = [s for s in sensors if isinstance(s, CameraSensor)]
+    def render_cameras(self, brain, cam_sensors, agent_idx: int, t: float, sim_dt: float) -> None:
+        """SENSE phase for cameras: render each given CameraSensor for one agent at
+        sim time t and store its processed output as brain.<name> (plus raw
+        brain.<name>_L / _R halves when lateralized). Which cameras to render
+        is the caller's decision — see sim_engine.due_cameras /
+        free_running_cameras."""
         if not cam_sensors:
             return
         with self._lock:
-            for sensor in cam_sensors:
-                frame = self._render_camera(sensor, agent_idx)  # (H, W, 3) HWC float32 [0,1]
-                is_rgb = getattr(sensor, 'in_ch', 1) == 3
-                # Store _last_frame in the sensor's native format so the visualiser
-                # can display it correctly (grayscale thumbnail for GrayCameraSensor).
-                sensor._last_frame = frame if is_rgb else _np.mean(frame, axis=-1)
-                row = frame[0]
-                out = (row.reshape(-1) if is_rgb
-                       else _np.mean(row, axis=-1)).astype(_np.float32)
-                setattr(brain, sensor.name, out)
-                if getattr(sensor, 'lateralized', False):
-                    mid     = sensor.width // 2
-                    ovl     = getattr(sensor, 'overlap', 0)
-                    l_end   = int(_np.clip(mid + ovl, 0, sensor.width))
-                    r_start = int(_np.clip(mid - ovl, 0, sensor.width))
-                    if is_rgb:
-                        # CHW so _conv_forward gets planar channels, not HWC-interleaved.
-                        sensor._left_output  = frame[:, :l_end,   :].transpose(2, 0, 1).reshape(-1).astype(_np.float32)
-                        sensor._right_output = frame[:, r_start:, :].transpose(2, 0, 1).reshape(-1).astype(_np.float32)
-                    else:
-                        luma = _np.mean(frame, axis=-1)
-                        sensor._left_output  = luma[:, :l_end  ].reshape(-1).astype(_np.float32)
-                        sensor._right_output = luma[:, r_start:].reshape(-1).astype(_np.float32)
-                    setattr(brain, sensor.name + '_L', sensor._left_output)
-                    setattr(brain, sensor.name + '_R', sensor._right_output)
+            frames = [self._render_camera(sensor, agent_idx) for sensor in cam_sensors]
+        for sensor, frame in zip(cam_sensors, frames):
+            setattr(brain, sensor.name, sensor.process_frame(frame, t, sim_dt))
+            sensor.publish_halves(brain)
 
-    def sample_collision_sensors(self, bot_pos, brain, sensors, sim_cfg, agent_idx: int = 0) -> None:
+    def sample_collision_sensors(self, brain, sensors, sim_cfg, agent_idx: int = 0) -> None:
         """Populate eligible CollisionSensors' outputs from MuJoCo's own contact
         array instead of the analytic 2-D geometry check in sensors.py.
 
@@ -821,17 +729,17 @@ class MuJoCoEngine:
         _scratch/measure_collision_backends.py).
 
         Contacts read here reflect the mj_forward call from the END of the
-        PREVIOUS tick's physics resolution — exactly bot_pos's current
-        position, since fixate_robot=1 means _tick_2d hasn't moved the robot
-        yet this tick — so no extra mj_forward is needed.
+        previous step's move_agents() — exactly the robots' current positions,
+        since nothing has moved yet in this step's SENSE phase — so no extra
+        mj_forward is needed, and the brain sees contacts in the same step as
+        every other sensor.
 
         Only sensors _mujoco_collision_eligible() accepts, AND that already
         have geometry built for them (i.e. survived since the last rebuild —
         see the (agent_idx, sensor.name) lookup below), are handled here;
         callers must still run everything else through the analytic path.
         """
-        col_sensors = [s for s in sensors if isinstance(s, CollisionSensor)
-                       and _mujoco_collision_eligible(s)]
+        col_sensors = [s for s in sensors if s.uses_mujoco_contacts]
         if not col_sensors:
             return
         with self._lock:

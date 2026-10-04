@@ -14,7 +14,13 @@ The slow negative update (`alpha_neg`) gives the animal time to reach the reward
 
 ## Learning rule
 
-$$V = \sum_i W_i \, s_i, \quad \delta = r - V, \quad \Delta W_i = \alpha_{\text{eff}} \, \delta \otimes s_{i,\text{prev}}$$
+$$V = \sum_i W_i \, s_i, \quad \delta = r - V, \quad \Delta W_i = \alpha_{\text{eff}} \, \delta \otimes s_i$$
+
+The update credits this tick's input `s_i` — the one that produced `V`.
+
+Like every layer, V goes through the shared pipeline first — bias, noise (`noise_std` / `noise_tau`, see [Noise](leaky.md#noise)), output mode, leaky filter — so noise on V also reaches the weight update.
+
+Learning rates are **per tick at the default time step dt = 0.01 s** and scale with dt, so learning per second is the same at any dt (see [Noise](leaky.md#noise) for why the default dt is the reference).
 
 **Output:** V(s) ∈ ℝⁿ — reward prediction per neuron.
 

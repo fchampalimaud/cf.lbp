@@ -1,37 +1,38 @@
 # Running Networks on the Real Robot
 
-The simulator can drive a live robot using the same brain network you designed in simulation — no code changes required. In **real-robot mode** the virtual physics are bypassed: sensor values come from the robot's actual hardware, and motor commands go out over the network each step.
+The simulator can drive a live robot using the same brain you designed in simulation — no code changes required. In **real-robot mode** the real robot takes the place of the simulated world: sensor values come from the robot's actual hardware, and motor commands go out over the network each step.
 
 ---
 
 ## How it works
 
-`SimController` has two operating modes:
+Every mode runs the same step: **sense → think → motors → act**. Only sensing and acting change:
 
-| Mode | Sensor source | Motor output | `dt` |
+| Mode | Sense | Act | `dt` |
 |---|---|---|---|
-| **Simulation** (default) | Virtual raycasting / world sampling | In-process physics | Fixed (`sim_cfg.dt`) |
-| **Real robot** | Live data from `RobotDriver` threads | OSC `/wheels` to the robot | Actual wall-clock elapsed time |
+| **Simulation** (default) | MuJoCo + 2-D fields | MuJoCo moves the robot | Fixed (`sim_cfg.dt`) |
+| **Real robot** | Latest value from `RobotDriver` threads, per sensor | OSC `/wheels` to the robot | Actual wall-clock elapsed time |
 
-The neural forward pass (`network_runner.step_network`) is identical in both modes. Only the source of sensor values and the destination of motor commands change.
+Think and motors are the same code in both modes (`sim_engine.run_brain` / `choose_motor_command`): the brain's `loop(dt)` runs once per step, so network brains, code-only brains and any extra Python logic in `loop()` behave the same on the robot as in simulation.
 
 ---
 
 ## Architecture
 
-All robot I/O is isolated in `robot_driver.py`. `SimController` holds one `RobotDriver` instance and calls three methods:
+All robot I/O is isolated in `robot_driver.py`. `RobotModeController` (owned by `SimController`) holds one `RobotDriver`:
 
 ```
-sim_controller.enable_robot_mode(True, host, osc_port, motor_port)
-    └── robot_driver.start(sensors, host, osc_port)
+sim_controller.enable_robot_mode(True)
+    └── robot_driver.start(sensors)
             └── one thread per unique sensor robot_address
 
-sim_controller._tick_robot()           # called each frame instead of _tick()
-    ├── read sensor._robot_value → brain.<name>
-    ├── network_runner.step_network(brain, real_dt)
-    └── robot_driver.send_wheels(host, motor_port, mL, mR)
+sim_controller._tick_robot()           # called each step instead of _tick()
+    ├── sense:  sensor._robot_value → brain.<name>
+    ├── think:  brain.loop(real_dt)
+    ├── motors: keyboard, else the brain's command → wheel_cmd
+    └── act:    MotorThread (~60 Hz) sends wheel_cmd to every motor layer's robot_address
 
-sim_controller.enable_robot_mode(False, ...)
+sim_controller.enable_robot_mode(False)
     └── robot_driver.stop()
 ```
 
@@ -119,13 +120,15 @@ This matters for any layer that uses leaky dynamics (`tau_rise`, `tau_decay`): t
 
 ## Motor output
 
-Motor values come from the brain's `motor` layer output in the usual way. They are clamped to integers and sent as a `/wheels` OSC message:
+Each step's wheel command is what the brain's `loop()` returns (for network brains, the `motor` layer output), clamped to the duty range [−100, 100]. The motor thread rounds it to integers and sends it as a `/wheels` OSC message:
 
 ```
 /wheels  int vleft  int vright
 ```
 
-The target address is `robot_host:robot_motor_port`. The manual-control override (WASD keys) works in robot mode exactly as in simulation — it replaces the brain's motor output before the OSC send.
+It goes to the `robot_address` of **every motor layer** — the same rule for every brain. A code-only brain (one that computes `mL, mR` in Python) just needs a motor layer with a `robot_address` to drive the robot.
+
+Keyboard control (WASD) is a motor command source exactly as in simulation: while active, its command is sent instead of the brain's, and is written into the motor layer so the visualizer and oscilloscope show what drives the robot. The brain keeps running (see `rules/motor_commands.md`).
 
 ---
 
@@ -147,16 +150,10 @@ See the robot network connectivity documentation for the full port reference.
 `SimController.enable_robot_mode` is the single entry point:
 
 ```python
-# Enable
-sim_controller.enable_robot_mode(
-    True,
-    robot_host='192.168.0.224',
-    robot_osc_port=9998,     # local port the OSC server binds to
-    robot_motor_port=2390,   # port on the robot that receives /wheels
-)
-
-# Disable
+sim_controller.enable_robot_mode(True)    # connects using each sensor's robot_address
 sim_controller.enable_robot_mode(False)
 ```
+
+Addresses are not arguments: sensors read from their own `robot_address`, and motor commands go to each motor layer's `robot_address`.
 
 Calling `enable_robot_mode` while the simulation is running pauses it, reconfigures the driver, and restarts automatically.

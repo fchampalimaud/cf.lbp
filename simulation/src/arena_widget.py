@@ -314,11 +314,14 @@ class ArenaWidget(pg.GraphicsLayoutWidget):
         self._world        = None
         self._lim          = 5.0
 
+        # One disk + trail per agent, in agent order — kept in step with the
+        # agent list by sync_robot_items() (SimController calls it whenever
+        # agents are added, removed, recoloured or selected).
         self._robot_items        = []   # list[RobotItem]
         self._trail_items        = []   # list[pg.PlotDataItem]
+        self._robot_ids          = []   # agent id of each item
+        self._robot_colors       = []   # color each item is drawn in
         self._selected_agent_idx = 0
-        self._add_robot_item_internal(0)   # creates first RobotItem + trail
-        self._robot_items[0].setSelected(True)
 
         self._wheel_L = pg.PlotDataItem(pen=pg.mkPen(C['dark'], width=6))
         self._wheel_L.setZValue(9)
@@ -342,54 +345,42 @@ class ArenaWidget(pg.GraphicsLayoutWidget):
 
     @property
     def _robot(self):
-        """Backward-compat: returns the selected agent's RobotItem."""
-        return self._robot_items[self._selected_agent_idx]
-
-    def _add_robot_item_internal(self, agent_idx, color=None, x=0.0, y=0.0, r=None, theta=0.0):
-        if color is None:
-            color = _AGENT_COLORS[agent_idx % len(_AGENT_COLORS)]
-        if r is None:
-            r = self._sim_cfg.body_radius if self._sim_cfg is not None else 0.2
-        robot = RobotItem(color)
-        robot.setRobot(x, y, r, theta)
-        self._plot.addItem(robot)
-        self._robot_items.append(robot)
-
-        trail = pg.PlotDataItem(pen=pg.mkPen(color, width=3, alpha=140))
-        trail.setZValue(4)
-        self._plot.addItem(trail)
-        self._trail_items.append(trail)
-
-    def add_robot_item(self, agent_idx, color=None, x=0.0, y=0.0, r=None, theta=0.0):
-        """Add a new robot disk + trail, placed at (x, y, theta) with radius r
-        (defaults to the current sim_cfg.body_radius) so it doesn't sit at the
-        arena origin with a stale default radius until the next tick."""
-        self._add_robot_item_internal(agent_idx, color=color, x=x, y=y, r=r, theta=theta)
-
-    def update_robot_color(self, idx, color):
-        """Update the color of an existing robot disk and its trail."""
-        if idx < len(self._robot_items):
-            self._robot_items[idx].setColor(color)
-        if idx < len(self._trail_items):
-            self._trail_items[idx].setPen(pg.mkPen(color, width=3, alpha=140))
-
-    def remove_robot_item(self, agent_idx):
-        """Remove the robot disk and trail for the given agent index."""
-        if agent_idx < len(self._robot_items):
-            self._robot_items[agent_idx].setSelected(False)
-            self._plot.removeItem(self._robot_items.pop(agent_idx))
-        if agent_idx < len(self._trail_items):
-            self._plot.removeItem(self._trail_items.pop(agent_idx))
-        self._selected_agent_idx = min(self._selected_agent_idx,
-                                       max(0, len(self._robot_items) - 1))
-
-    def select_robot(self, idx):
-        """Switch which agent's disk is used for the full update_robot() call."""
+        """The selected agent's RobotItem, or None when there are no agents."""
         if 0 <= self._selected_agent_idx < len(self._robot_items):
-            self._robot_items[self._selected_agent_idx].setSelected(False)
-        self._selected_agent_idx = idx
-        if 0 <= idx < len(self._robot_items):
-            self._robot_items[idx].setSelected(True)
+            return self._robot_items[self._selected_agent_idx]
+        return None
+
+    def sync_robot_items(self, agents, selected_agent_id):
+        """Make the robot disks and trails match *agents* — one per agent, in
+        agent order, matched by agent id: create missing ones (placed at the
+        agent's pose), remove stale ones, apply each agent's color, and
+        highlight the selected agent."""
+        existing = {aid: (robot, trail, color) for aid, robot, trail, color
+                    in zip(self._robot_ids, self._robot_items, self._trail_items, self._robot_colors)}
+        r = self._sim_cfg.body_radius if self._sim_cfg is not None else 0.2
+        robots, trails, ids, colors = [], [], [], []
+        for i, agent in enumerate(agents):
+            color = agent.color or _AGENT_COLORS[i % len(_AGENT_COLORS)]
+            if agent.id in existing:
+                robot, trail, old_color = existing.pop(agent.id)
+                if color != old_color:
+                    robot.setColor(color)
+                    trail.setPen(pg.mkPen(color, width=3, alpha=140))
+            else:
+                robot = RobotItem(color)
+                robot.setRobot(agent.bot_pos[0], agent.bot_pos[1], r, agent.bot_pos[2])
+                self._plot.addItem(robot)
+                trail = pg.PlotDataItem(pen=pg.mkPen(color, width=3, alpha=140))
+                trail.setZValue(4)
+                self._plot.addItem(trail)
+            robot.setSelected(agent.id == selected_agent_id)
+            robots.append(robot); trails.append(trail); ids.append(agent.id); colors.append(color)
+        for robot, trail, _color in existing.values():
+            self._plot.removeItem(robot)
+            self._plot.removeItem(trail)
+        self._robot_items, self._trail_items = robots, trails
+        self._robot_ids, self._robot_colors = ids, colors
+        self._selected_agent_idx = ids.index(selected_agent_id) if selected_agent_id in ids else 0
 
     def update_robot_pos(self, agent_idx, x, y, r, theta):
         """Lightweight position-only update for non-selected agent disks."""
@@ -480,7 +471,9 @@ class ArenaWidget(pg.GraphicsLayoutWidget):
         if world.arena_round:
             rgba[np.sqrt(X**2 + Y**2) > lim, 3] = 0.0
         rgba_uint8 = (np.clip(rgba, 0, 1) * 255).astype(np.uint8)
-        self._img_item.setImage(rgba_uint8)
+        # 8-bit data shown as is: fixed levels skip pyqtgraph's per-update
+        # min/max scan and rescale of every pixel.
+        self._img_item.setImage(rgba_uint8, autoLevels=False, levels=None)
         self._img_item.setRect(QRectF(-lim, -lim, 2*lim, 2*lim))
         self._img_item.setZValue(1)
 
@@ -586,18 +579,6 @@ class ArenaWidget(pg.GraphicsLayoutWidget):
                 self._plot.addItem(item)
                 self._sensor_items.append(('camera_fov', sensor, 0, item))
 
-        if not sensors:
-            sL_col = channel_colors.get('sL', _CHAN_PALETTE[0])
-            sR_col = channel_colors.get('sR', _CHAN_PALETTE[1])
-            lineL = pg.PlotDataItem(pen=pg.mkPen(sL_col, width=1.5))
-            lineR = pg.PlotDataItem(pen=pg.mkPen(sR_col, width=1.5))
-            lineL.setZValue(11)
-            lineR.setZValue(11)
-            self._plot.addItem(lineL)
-            self._plot.addItem(lineR)
-            self._sensor_items.append(('legacy_L', None, 0, lineL))
-            self._sensor_items.append(('legacy_R', None, 1, lineR))
-
     def update_child_bodies(self, poses, bodies, sim_cfg):
         """Update child body disk items. Maintains a pool to avoid per-frame add/remove."""
         n_needed = max(0, len(bodies) - 1)
@@ -649,6 +630,8 @@ class ArenaWidget(pg.GraphicsLayoutWidget):
             self._poly_preview = None
 
     def update_robot(self, x, y, r, theta, sim_cfg, poses=None, circuit=None):
+        if self._robot is None:
+            return
         self._robot.setRobot(x, y, r, theta)
 
         c, s   = np.cos(theta), np.sin(theta)
@@ -763,18 +746,6 @@ class ArenaWidget(pg.GraphicsLayoutWidget):
                         tip_dx, tip_dy = cdir, sdir
                     bent.setData([p1x, p1x + rem * tip_dx],
                                  [p1y, p1y + rem * tip_dy])
-            elif kind == 'legacy_L':
-                _, _, _, item = entry
-                r_sense = sim_cfg.sense_radius
-                sl_t    = theta + sim_cfg.sensor_angle
-                item.setData([x, x + r_sense * np.cos(sl_t)],
-                             [y, y + r_sense * np.sin(sl_t)])
-            elif kind == 'legacy_R':
-                _, _, _, item = entry
-                r_sense = sim_cfg.sense_radius
-                sr_t    = theta - sim_cfg.sensor_angle
-                item.setData([x, x + r_sense * np.cos(sr_t)],
-                             [y, y + r_sense * np.sin(sr_t)])
             elif kind == 'sky':
                 _, sensor, _, item = entry
                 out = getattr(sensor, '_last_output', None)
@@ -911,6 +882,6 @@ class ArenaWidget(pg.GraphicsLayoutWidget):
         Flipped vertically so row 0 maps to world -Y (south) as pyqtgraph expects
         (row 0 at the bottom of the rect in a y-up axes system).
         """
-        self._overhead_item.setImage(rgb[::-1])
+        self._overhead_item.setImage(rgb[::-1], autoLevels=False, levels=None)
         s = arena_scale
         self._overhead_item.setRect(QRectF(-s, -s, 2 * s, 2 * s))

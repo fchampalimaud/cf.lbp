@@ -156,13 +156,10 @@ applied anywhere in this layer's per-tick update:
 
     def step(self, input_vec, dt):
         # input_vec has activation applied in _conv_forward before pooling — no activation here.
-        u = torch.as_tensor(input_vec, dtype=torch.float32) + self.bias
-        u = self._apply_output_mode(u, dt)
-        u = self._apply_adaptation_pre(u)
-        out = self._apply_leaky(u, dt)
+        x = self._filter(self._input(input_vec, dt), dt)
         # _a tracks pre-scale output so beta operates in the same units as the input.
-        self._update_adaptation(out, dt)
-        out = out * self.scale
+        self._update_adaptation(x, dt)
+        out = self._emit(x, activate=False)
         self.output = out.detach()
         if self.pool == 'none':
             self._update_last_frame(self.output.numpy())
@@ -181,6 +178,11 @@ applied anywhere in this layer's per-tick update:
             self._last_frame = arr.reshape(H, W)
         except ValueError:
             pass
+
+    # Capabilities (see LayerBase): image in (camera or image layer), 4-D kernels.
+    accepts_image    = True
+    kernel_weights   = True
+    supports_lateral = True
 
     @property
     def is_image_node(self):
@@ -306,7 +308,15 @@ reads positive.
 """
 
     viz_n        = 1     # show as a single image node in the network visualizer (like a camera)
-    is_image_node = True
+
+    # Capabilities (see LayerBase): camera image in, image out, n = pixel count.
+    is_image_node      = True
+    accepts_image      = True
+    needs_camera_input = True
+    passthrough_input  = True
+    supports_lateral   = True
+    n_follows_input    = True
+    saved_state        = {'n': 'n', 'in_ch': 'in_ch', 'frame_h': 'frame_h', 'frame_w': 'frame_w'}
 
     def __init__(self, lateralized=False,
                  in_ch=1, frame_h=None, frame_w=None,
@@ -342,11 +352,7 @@ reads positive.
             self.output = torch.zeros(n)
 
     def step(self, input_vec, dt):
-        u = torch.as_tensor(input_vec, dtype=torch.float32) + self.bias
-        u = self._apply_noise(u, dt)
-        u = self._apply_output_mode(u, dt)
-        x = self._apply_leaky(u, dt)
-        out = _activate(x, self.activation, alpha=self.alpha) * self.scale
+        out = self._emit(self._filter(self._input(input_vec, dt), dt))
         self.output = out.detach()
         self._update_last_frame(self.output.numpy())
         return self.output
@@ -767,13 +773,9 @@ problem either way — every built-in activation is monotonic, so
             pooled = torch.stack(dir_responses)              # (n_directions,)
 
         # --- output dynamics: bias, noise, output_mode, adaptation, leaky, scale ---
-        u = pooled + self.bias
-        u = self._apply_noise(u, dt)
-        u = self._apply_output_mode(u, dt)
-        u = self._apply_adaptation_pre(u)
-        out = self._apply_leaky(u, dt)
-        self._update_adaptation(out, dt)
-        out = out * self.scale
+        x = self._filter(self._input(pooled, dt), dt)   # activation already ran per direction
+        self._update_adaptation(x, dt)
+        out = self._emit(x, activate=False)
         self.output = out.detach()
 
         if self.pool == 'none':
@@ -781,8 +783,25 @@ problem either way — every built-in activation is monotonic, so
 
         return self.output
 
+    # Capabilities (see LayerBase): camera image in through a ones passthrough;
+    # with pool='none' the output is a signed correlation image.
+    signed_image       = True
+    accepts_image      = True
+    needs_camera_input = True
+    passthrough_input  = True
+    supports_lateral   = True
+    # 'n' is the n_directions hyperparameter (param_defs) — 'flat_n' is the
+    # possibly pool='none'-expanded live buffer length (n_directions * H * W),
+    # restored eagerly on load so connections/visualizer see the right size
+    # before the first step().
+    saved_state        = {'flat_n': 'n', 'in_ch': 'in_ch', 'frame_h': 'frame_h', 'frame_w': 'frame_w'}
+
     @property
     def is_image_node(self):
+        return self.pool == 'none'
+
+    @property
+    def n_follows_input(self):
         return self.pool == 'none'
 
     def thumbnail_frames(self, disp_h=32):

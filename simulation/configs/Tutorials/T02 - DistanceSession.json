@@ -1,7 +1,7 @@
 {
     "saved_with_app_version": "0.7.0",
-    "module_name": "BrainGUI",
-    "class_name": "BrainGUI",
+    "mode": "network",
+    "network": "Tutorials/T02 - DistanceBrain.json",
     "sim_params": {
         "dt": 0.01,
         "arena_scale": 4.0,
@@ -14,10 +14,6 @@
         "sensor_angle": 0.14,
         "toggle_stim": 1,
         "fixate_robot": 0.0
-    },
-    "brain_params": {
-        "network_project": "Tutorials",
-        "network_file": "T02 - DistanceBrain.json"
     },
     "plot_multipliers": {
         "mL": 1.0,
@@ -121,14 +117,11 @@
     "arena_round": true,
     "agents": [
         {
-            "module_name": "BrainGUI",
+            "mode": "network",
+            "network": "Tutorials/T02 - DistanceBrain.json",
             "name": "Blah",
             "color": "#4a7fcb",
-            "n": 1,
-            "brain_params": {
-                "network_project": "Tutorials",
-                "network_file": "T02 - DistanceBrain.json"
-            }
+            "n": 1
         }
     ]
 }

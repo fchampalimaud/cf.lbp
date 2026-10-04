@@ -9,7 +9,8 @@ import os
 import numpy as np
 import torch
 import torch.nn.functional as F
-from neurons import Conv2dLayer as _Conv2dLayer, LearningLayerBase as _LLB, _activate, Leaky2dLayer as _L2d, Reichardt2dLayer as _R2d, ProductLayer as _ProdL, SnapshotLayer as _SnapL
+from neurons import _activate
+from lateral import side_of, mirror_name, parent_sensor, is_camera_half, is_body_pair_half
 
 _DEBUG_LAYER = os.environ.get('LBP_DEBUG_LAYER')   # layer name to trace input/output each tick
 
@@ -40,32 +41,6 @@ def _image_layer_fan_in(layer):
     if layer.frame_h and layer.frame_w:
         return layer.in_ch * layer.frame_h * layer.frame_w
     return layer.n
-
-
-def _is_lat_cam_half(src_name, sensors):
-    """Return True when src_name is a lateralized camera half (ends _L/_R, parent is lateralized)."""
-    if not (src_name.endswith('_L') or src_name.endswith('_R')):
-        return False
-    parent_name = src_name.rsplit('_', 1)[0]
-    return any(s.name == parent_name and getattr(s, 'lateralized', False) for s in sensors)
-
-
-def _is_lat_sensor_half(src_name, sensors):
-    """Return True when src_name is a joint-pair sensor half (ends _L/_R, parent has 2 body_ids).
-
-    Unlike camera halves (explicit lateralized=True), joint-pair halves are detected by
-    len(body_ids)==2 — this is the runtime check; mirror_group validation is done at
-    edit time in the visualizer where circuit.bodies is available.
-    """
-    if not (src_name.endswith('_L') or src_name.endswith('_R')):
-        return False
-    parent_name = src_name.rsplit('_', 1)[0]
-    for s in sensors:
-        if s.name == parent_name:
-            if getattr(s, 'lateralized', False):
-                return False   # camera half — handled by _is_lat_cam_half
-            return len(getattr(s, 'body_ids', [])) == 2
-    return False
 
 
 def _conv_forward(src_val, w_tensor, layer, src_sensor=None):
@@ -126,19 +101,18 @@ def _build_conn_meta(conn, layer, w_cached, sensors, layer_map):
         'is_passthrough1d': False,
         'pair_obj': None, 'is_lat_sensor_half': False, 'sensor_partner': None,
     }
-    if w_cached.ndim == 4 and isinstance(layer, _Conv2dLayer):
+    if w_cached.ndim == 4 and layer.kernel_weights:
+        # Shape source: the sensor itself, the camera a half belongs to, or an
+        # image layer (e.g. Leaky2dLayer) as shape proxy.
         src_sensor = next((s for s in sensors if s.name == src), None)
         if src_sensor is None:
-            # Lateralized half: 'sensor0_L' → resolve to parent 'sensor0'
-            parent = src.rsplit('_', 1)[0]
-            src_sensor = next((s for s in sensors if s.name == parent), None)
+            src_sensor = parent_sensor(sensors, src)
         if src_sensor is None:
-            # Source may be a Leaky2dLayer — use it as shape proxy.
             src_sensor = layer_map.get(src)
         meta['is_conv4d']       = True
         meta['src_sensor']      = src_sensor
-        meta['is_lat_cam_half'] = _is_lat_cam_half(src, sensors)
-    elif w_cached.ndim == 1 and isinstance(layer, (_L2d, _R2d)):
+        meta['is_lat_cam_half'] = is_camera_half(sensors, src)
+    elif w_cached.ndim == 1 and layer.passthrough_input:
         meta['is_passthrough1d'] = True
     elif w_cached.ndim == 2:
         src_obj  = layer_map.get(src)
@@ -148,14 +122,33 @@ def _build_conn_meta(conn, layer, w_cached, sensors, layer_map):
             cand = layer_map.get(lat_pair)
             if cand is not None and w_cached.shape[1] == (src_obj.n or 0) + (cand.n or 0):
                 meta['pair_obj'] = cand
-        elif _is_lat_sensor_half(src, sensors):
+        elif is_body_pair_half(sensors, src):
             # Joint-pair sensor half: partner output from brain attributes.
             meta['is_lat_sensor_half'] = True
-            meta['sensor_partner'] = src[:-2] + '_R' if src.endswith('_L') else src[:-2] + '_L'
+            meta['sensor_partner'] = mirror_name(src)
     return meta
 
 
+def _initial_input(layer, is_product, is_2d):
+    """Empty fan-in: ones for a product layer, zeros otherwise (image size
+    for a passthrough image layer)."""
+    if is_product:
+        return torch.ones(layer.n)
+    return torch.zeros(_image_layer_fan_in(layer) if is_2d else layer.n)
+
+
 @torch.no_grad()
+def _modulator_value(layer, cache, mod_name, mode, value, dt):
+    """A modulator row's transformed value (absolute / derivative / integral),
+    computed once per layer per tick: rows sharing (modulator, mode) — e.g. a
+    'pre' and a 'post' row — share state, so a second transform in the same
+    tick would read a zero derivative or add the integral twice."""
+    key = (mod_name, mode)
+    if key not in cache:
+        cache[key] = layer._transform_modulator_value(key, mode, value, dt)
+    return cache[key]
+
+
 def step_network(brain, dt):
     """
     Run one forward pass of the neural circuit stored on *brain*.
@@ -166,13 +159,11 @@ def step_network(brain, dt):
     Python-coded brains keep them as class-level lists.
 
     Mutates layer.output in-place. Weight tensors are cached on brain
-    as _w_cache / _w_cache_conn_id and invalidated when the connections
-    list object is replaced. The same conn_id gate also guards the
-    size-reconciliation and shape-metadata passes below, since both only
-    need to re-run when topology (or a live-edited layer/sensor shape
-    param) changes the connections list identity — see
-    network_viz_dialogs.py's edit-mode handlers, which force a fresh
-    connections list object on any property edit for exactly this reason.
+    as _w_cache / _w_cache_conn_id and invalidated when the circuit changes:
+    the connections or layers list object is replaced, or brain's
+    _topology_version is bumped (circuit_editor does this on every committed
+    edit, including property edits that change layer/sensor shapes). The same
+    gate also guards the size-reconciliation and shape-metadata passes below.
     """
     layers      = brain.__dict__.get('layers')      or getattr(brain.__class__, 'layers',      [])
     connections = brain.__dict__.get('connections') or getattr(brain.__class__, 'connections', [])
@@ -189,7 +180,15 @@ def step_network(brain, dt):
 
     for _layer in active_layers:
         if getattr(_layer, 'muted', False) and _layer.output is not None:
-            _layer.output[:] = 0.0
+            # A fresh zero array, never zeroed in place: output can share memory
+            # with the layer's state (Accumulator's _x, a linear Leaky's _x), and
+            # that state must survive muting so the layer resumes on unmute.
+            out = _layer.output
+            _layer.output = torch.zeros_like(out) if isinstance(out, torch.Tensor) else np.zeros_like(out)
+            _layer._was_muted = True
+        elif getattr(_layer, '_was_muted', False):
+            _layer._was_muted = False
+            _layer.on_unmute()
 
     # conn_id gate: the connections list object is only replaced when topology
     # changes (add/remove/rename) or when a dialog edit deliberately bumps it
@@ -198,7 +197,9 @@ def step_network(brain, dt):
     # including layer_map/layer_meta/conn_meta — precomputed classification
     # (isinstance/endswith/linear-scan work) that used to be re-derived on
     # every single tick regardless of whether topology had actually changed.
-    conn_id = id(connections)
+    # _topology_version is bumped by circuit_editor on every committed edit, so
+    # in-place edits (e.g. a layer appended to the same list) are seen too.
+    conn_id = (id(connections), id(active_layers), getattr(brain, '_topology_version', 0))
     topology_changed = getattr(brain, '_w_cache_conn_id', None) != conn_id
 
     if topology_changed:
@@ -217,7 +218,7 @@ def step_network(brain, dt):
                 # (L0…Ln R[n]…R0 ordering).  When the target IS part of a lateralized pair
                 # (layer1_L / layer1_R), each half owns its own n_filters neurons — no doubling.
                 nt = W_arr.shape[0]
-                if _is_lat_cam_half(src, sensors):
+                if is_camera_half(sensors, src):
                     _tgt_lyr = layer_map.get(tgt)
                     if getattr(_tgt_lyr, 'lateral_pair', None) is None:
                         nt = nt * 2
@@ -233,13 +234,13 @@ def step_network(brain, dt):
                 ns = W_arr.shape[1] if W_arr.ndim == 2 else W_arr.size
                 if tgt in layer_map:
                     _tgt_obj = layer_map[tgt]
-                    # A pooled Reichardt2dLayer (pool != 'none') always receives its
-                    # camera/image input as a 1-D ones passthrough sized to the pixel
-                    # count — that's the connection's weight width (nt here), not this
-                    # layer's own output width (n_directions). Resizing .n to nt would
-                    # blow it up to thousands of "neurons", freezing the visualizer.
-                    _skip = (W_arr.ndim == 1 and isinstance(_tgt_obj, _R2d)
-                             and _tgt_obj.pool != 'none')
+                    # A passthrough layer whose output is pooled (e.g. Reichardt2dLayer
+                    # with pool != 'none') receives its image as a 1-D ones passthrough
+                    # sized to the pixel count — that's the connection's weight width
+                    # (nt here), not the layer's own output width. Resizing .n to nt
+                    # would blow it up to thousands of "neurons", freezing the visualizer.
+                    _skip = (W_arr.ndim == 1 and _tgt_obj.passthrough_input
+                             and not _tgt_obj.n_follows_input)
                     if not _skip:
                         _tgt_obj._ensure_n(nt)
                 if src in layer_map and hasattr(layer_map[src], '_ensure_n'):
@@ -257,52 +258,52 @@ def step_network(brain, dt):
                             pass
 
         # Propagate shape metadata (in_ch, frame_h, frame_w) from camera sources to
-        # Leaky2dLayer targets so _update_last_frame reshapes correctly even after a
-        # save/load cycle where those fields were not persisted.
-        from sensors import GrayCameraSensor as _GrayCam, RGBCameraSensor as _RGBCam
+        # passthrough image layers so _update_last_frame reshapes correctly even
+        # after a save/load cycle where those fields were not persisted.
         for conn in connections:
             tgt_obj = layer_map.get(conn.tgt)
-            if not isinstance(tgt_obj, (_L2d, _R2d)):
+            if tgt_obj is None or not tgt_obj.passthrough_input:
                 continue
             src_sensor = next((s for s in sensors if s.name == conn.src), None)
-            if src_sensor is None and conn.src.endswith(('_L', '_R')):
-                # Lateralized camera half — find parent and derive half width.
-                parent_name   = conn.src.rsplit('_', 1)[0]
-                parent_sensor = next((s for s in sensors if s.name == parent_name), None)
-                if isinstance(parent_sensor, (_GrayCam, _RGBCam)) and getattr(parent_sensor, 'lateralized', False):
-                    mid     = parent_sensor.width // 2
-                    overlap = getattr(parent_sensor, 'overlap', 0)
-                    if conn.src.endswith('_L'):
-                        half_w = int(np.clip(mid + overlap, 0, parent_sensor.width))
-                    else:
-                        r_start = int(np.clip(mid - overlap, 0, parent_sensor.width))
-                        half_w  = parent_sensor.width - r_start
-                    tgt_obj.in_ch   = 3 if isinstance(parent_sensor, _RGBCam) else 1
-                    tgt_obj.frame_h = parent_sensor.height
-                    tgt_obj.frame_w = half_w
+            if src_sensor is None and side_of(conn.src):
+                # Lateralized camera half — its parent camera gives the shape.
+                cam = parent_sensor(sensors, conn.src)
+                if getattr(cam, 'is_camera', False) and getattr(cam, 'lateralized', False):
+                    tgt_obj.in_ch   = cam.in_ch
+                    tgt_obj.frame_h = cam.height
+                    tgt_obj.frame_w = cam.half_width(side_of(conn.src))
                 continue
-            if isinstance(src_sensor, (_GrayCam, _RGBCam)):
-                tgt_obj.in_ch   = 3 if isinstance(src_sensor, _RGBCam) else 1
-                tgt_obj.frame_h = getattr(src_sensor, 'height', None)
-                tgt_obj.frame_w = getattr(src_sensor, 'width', None)
+            if getattr(src_sensor, 'is_camera', False):
+                tgt_obj.in_ch   = src_sensor.in_ch
+                tgt_obj.frame_h = src_sensor.height
+                tgt_obj.frame_w = src_sensor.width
+
+    # Which layers / sensors transmit or receive neuromodulators — topology
+    # (transmitter and receptor edits are edit transactions, which bump it),
+    # so it's found once instead of scanning every element every step.
+    if topology_changed or not hasattr(brain, '_mod_transmitters'):
+        brain._mod_transmitters = (
+            [l for l in active_layers if getattr(l, 'neuromodulator_transmitter', None)],
+            [s for s in sensors if getattr(s, 'neuromodulator_transmitter', None)])
+        brain._mod_sensors = [s for s in sensors if getattr(s, 'modulators', [])]
+    tx_layers, tx_sensors = brain._mod_transmitters
 
     # Build neuromodulator map from transmitter layers and sensors.
     mod_map = {}
-    for layer in active_layers:
-        nt = getattr(layer, 'neuromodulator_transmitter', None)
-        if nt and layer.output is not None:
+    for layer in tx_layers:
+        nt = layer.neuromodulator_transmitter
+        if layer.output is not None:
             out = layer.output
             mod_map[nt] = float(out.mean() if isinstance(out, torch.Tensor)
                                 else np.mean(np.atleast_1d(out)))
-    for sensor in sensors:
-        nt = getattr(sensor, 'neuromodulator_transmitter', None)
-        if nt:
-            val = getattr(brain, sensor.name, None)
-            if val is not None:
-                mod_map[nt] = float(np.mean(np.atleast_1d(val)))
+    for sensor in tx_sensors:
+        nt = sensor.neuromodulator_transmitter
+        val = getattr(brain, sensor.name, None)
+        if val is not None:
+            mod_map[nt] = float(np.mean(np.atleast_1d(val)))
 
     # Apply neuromodulation to sensor outputs.
-    for sensor in sensors:
+    for sensor in brain._mod_sensors:
         mods = getattr(sensor, 'modulators', [])
         if not mods:
             continue
@@ -355,13 +356,13 @@ def step_network(brain, dt):
             conn_by_src.setdefault(conn.src, []).append((i, conn))
         brain._conn_by_tgt = conn_by_tgt
         brain._conn_by_src = conn_by_src
-        # Per-layer classification — only depends on layer type, never per-tick data.
+        # Per-layer classification — declared by each layer class, never per-tick data.
         brain._layer_meta = {
             l.name: {
-                'is_learning': isinstance(l, _LLB),
-                'is_product':  isinstance(l, _ProdL),
-                'is_2d':       isinstance(l, (_L2d, _R2d)),
-                'has_outgoing_plasticity': isinstance(l, _SnapL),
+                'is_learning': l.is_learning,
+                'is_product':  l.combines_by_product,
+                'is_2d':       l.passthrough_input,
+                'has_outgoing_plasticity': l.has_outgoing_plasticity,
             }
             for l in active_layers
         }
@@ -405,12 +406,13 @@ def step_network(brain, dt):
                         conn.W = arr.copy()
                     brain._w_cache[i] = torch.from_numpy(arr.copy())
                 src_inputs.append((src_val, brain._w_cache[i], i, conn))
+            mod_cache = {}   # (modulator, mode) → value, advanced once per tick
             reward_total = 0.0
             for row in getattr(layer, 'modulators', []):
                 mod_name, scale, site, mode, drives_plasticity, threshold = _unpack_mod_row(row)
                 if not drives_plasticity or mod_name not in mod_map:
                     continue
-                v = layer._transform_modulator_value((mod_name, mode), mode, mod_map[mod_name], dt)
+                v = _modulator_value(layer, mod_cache, mod_name, mode, mod_map[mod_name], dt)
                 if v >= threshold:
                     reward_total += scale * v
             rm = getattr(layer, 'reward_modulator', None)   # legacy field, still honored additively
@@ -447,7 +449,7 @@ def step_network(brain, dt):
             for row in getattr(layer, 'modulators', []):
                 mod_name, scale, site, mode, _dp, _th = _unpack_mod_row(row)
                 if site == 'post' and mod_name in mod_map:
-                    v = layer._transform_modulator_value((mod_name, mode), mode, mod_map[mod_name], dt)
+                    v = _modulator_value(layer, mod_cache, mod_name, mode, mod_map[mod_name], dt)
                     post += scale * v
             if post != 1.0 and layer.output is not None:
                 layer.output = layer.output * post
@@ -455,13 +457,15 @@ def step_network(brain, dt):
 
         _is_product = lmeta['is_product']
         _is_2d      = lmeta['is_2d']
-        inp = (torch.ones(layer.n) if _is_product else
-               torch.zeros(_image_layer_fan_in(layer) if _is_2d else layer.n))
+        # inp starts as None: a plain sum takes its first contribution as is
+        # (0 + c == c exactly), saving a zeros tensor and an add per layer per step.
+        # Paths that write into inp (conv halves, passthrough) allocate it first.
+        inp = None
         for i, conn in conn_by_tgt.get(layer.name, []):
             src, tgt, W = conn.src, conn.tgt, conn.W
             src_val = getattr(brain, src, None)
             if src_val is None:
-                if isinstance(layer, _L2d):
+                if layer.passthrough_input:
                     print(f"[L2D] src_val=None for brain.{src!r} — attr missing!")
                 if tgt == _DEBUG_LAYER:
                     print(f"[DEBUG-LAYER] {tgt}: conn from {src!r} — brain.{src} is None, skipped")
@@ -495,13 +499,15 @@ def step_network(brain, dt):
                 meta = _build_conn_meta(conn, layer, w_cached, sensors, layer_map)
                 brain._conn_meta[i] = meta
 
+            if inp is None and (_is_product or _is_2d or meta['is_conv4d'] or meta['is_passthrough1d']):
+                inp = _initial_input(layer, _is_product, _is_2d)
             if meta['is_conv4d']:
                 result = _conv_forward(src_val, w_cached, layer, meta['src_sensor'])
                 n_half = result.shape[0]
                 if meta['is_lat_cam_half'] and layer.n == 2 * n_half:
                     # Lateralized camera → single conv: mirrored layout L0…L[n/2-1] R[n/2-1]…R0.
                     # L side fills the top half sequentially; R side fills the bottom half reversed.
-                    if src.endswith('_L'):
+                    if side_of(src) == 'L':
                         inp = inp.clone()
                         inp[:n_half] = inp[:n_half] + result
                     else:
@@ -533,18 +539,25 @@ def step_network(brain, dt):
                             if not isinstance(_pair_val, torch.Tensor):
                                 _pair_val = torch.as_tensor(
                                     np.atleast_1d(_pair_val), dtype=torch.float32)
-                            if src.endswith('_L'):
+                            if side_of(src) == 'L':
                                 src_val = torch.cat([src_val, _pair_val.flip(0)])
                             else:
                                 src_val = torch.cat([_pair_val.flip(0), src_val])
                 contrib = F.linear(src_val, w_cached)
-                inp = inp * contrib if _is_product else inp + contrib
+                if inp is None:
+                    inp = contrib
+                else:
+                    inp = inp * contrib if _is_product else inp + contrib
 
+        if inp is None:
+            inp = _initial_input(layer, _is_product, _is_2d)
+
+        mod_cache = {}   # (modulator, mode) → value, advanced once per tick
         pre = 1.0
         for row in getattr(layer, 'modulators', []):
             mod_name, scale, site, mode, _dp, _th = _unpack_mod_row(row)
             if site == 'pre' and mod_name in mod_map:
-                v = layer._transform_modulator_value((mod_name, mode), mode, mod_map[mod_name], dt)
+                v = _modulator_value(layer, mod_cache, mod_name, mode, mod_map[mod_name], dt)
                 pre += scale * v
         if pre != 1.0:
             inp = inp * pre
@@ -565,7 +578,7 @@ def step_network(brain, dt):
         for row in getattr(layer, 'modulators', []):
             mod_name, scale, site, mode, _dp, _th = _unpack_mod_row(row)
             if site == 'post' and mod_name in mod_map:
-                v = layer._transform_modulator_value((mod_name, mode), mode, mod_map[mod_name], dt)
+                v = _modulator_value(layer, mod_cache, mod_name, mode, mod_map[mod_name], dt)
                 post += scale * v
         if post != 1.0 and layer.output is not None:
             layer.output = layer.output * post

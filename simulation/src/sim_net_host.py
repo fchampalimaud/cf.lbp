@@ -98,8 +98,7 @@ class SimNetHost:
 
         slot = self._net_host.get_slot(i)
         if slot is not None:
-            mL, mR = slot.get_motors()
-            raw = tick_physics(..., motor_override=(mL, mR))
+            mL, mR = slot.get_motors()   # becomes the agent's motor command in step_agents
             data = _build_sensor_data(agent.brain, agent.circuit.sensors)
             self._net_host.send_sensors(i, data, self.sim_cfg.dt)
     """

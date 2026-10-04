@@ -20,6 +20,16 @@ Every robot in the simulator runs this loop, over and over, many times a second 
 
 Moving changes what the sensors will read on the *next* pass through the loop, which is exactly the idea behind a Braitenberg vehicle: behavior emerges from a fixed loop between sensing and acting, not from a plan.
 
+### Order inside a network { #network-order }
+
+In a network brain, all sensors are read first, then the layers update **one after another, in the order they appear in the network file** (the order they were created). A layer reads each of its sources as it is at that moment:
+
+- **Sensor → layer**: always this tick's reading — no delay.
+- **Layer → layer, source earlier in the list**: the source has already updated, so the target gets this tick's value — no delay.
+- **Layer → layer, source later in the list**: the source hasn't updated yet, so the target gets the previous tick's value — **one tick of delay**. This is what makes feedback loops work, but it also applies to plain feedforward connections. The `motor` layer is usually created first, so everything feeding it typically arrives one tick (0.01 s at the default time step) late.
+
+Every saved network was built and tuned with this rule, so it is kept as it is rather than reordered automatically.
+
 ### How fast does the loop run?
 
 ![Physics steps far more often than the picture redraws](../assets/figures/loop_timing.svg)
@@ -60,6 +70,21 @@ Swap the simulated body for a physical one and the loop doesn't change shape —
 
 This is unrelated to the two-computers case above — one is about *where a creature's brain runs*, the other is about *what body a creature's brain controls*. Either can happen with a single agent or with several running at once.
 
+In code, this is literally one loop: the simulator, a real robot and a network client all run the brain through the same "think" and "motors" steps; only where sensor readings come from and where motor commands go differ.
+
+---
+
+## Running without the window
+
+The simulated world doesn't need the window. `Simulation` (`simulation.py`) holds the arena, the creatures and the physics engine, and advances them one step at a time; the app just drives it from a timer and draws what happens. That means a saved session can also run **headless** — faster than real time, with no screen — for long or repeated experiments:
+
+```bash
+# from simulation/2d/
+python src/headless.py "configs/Tutorials/T03 - ColisionSession.json" --seconds 60 --seed 1 --out run.csv
+```
+
+The CSV has one row per creature per step (position, motor commands, sensor readings). With the same `--seed`, a run is exactly repeatable, and it gives the same result as running the session in the app. Every creature is driven by its own brain — there is no keyboard or network in a headless run. See [Headless Runs](headless.md) for options, the CSV format and scripting experiments in Python.
+
 ---
 
 ## Views on the same world
@@ -74,19 +99,32 @@ Several windows all look at the same arena and circuit from different angles:
 | Network visualizer | The circuit diagram you edit by hand — sensors and neurons as nodes, connections as arcs |
 | Network visualizer's 3-D toggle | A rotatable 3-D rendering of *that same circuit diagram* — it is not a view of the robot's body |
 
-**Important: these three MuJoCo-related controls are independent, and only one of them affects sensor data.**
+**Who simulates what.** MuJoCo is always running — there is no switch to turn it off. The two subsystems drive different aspects of the same simulation:
+
+| Subsystem | Owns |
+|---|---|
+| **MuJoCo** (`sim_engine_mujoco.py`) | Body movement and collisions with walls, objects and other agents; contacts for root-mounted `CollisionSensor`s; camera images |
+| **2-D fields** (`sim_engine.py`, `sensors.py`) | Patches, gradients, sky polarization, interoception, distance rays, whiskers — anything MuJoCo has no notion of |
+
+**One simulation step** (`sim_engine.step_agents`, all agents together):
+
+1. **Sense** — every reading describes the world at the same moment, before any brain runs: 2-D field sensors, MuJoCo contacts, and any camera whose next frame is due.
+2. **Think** — each agent's `brain.loop(dt)` runs once.
+3. **Motors** — one motor source per agent: keyboard, network client, or the brain's own motor layer (see `rules/motor_commands.md`). A keyboard/network command is also written into the motor layer so the visualizer and oscilloscope show what is driving the wheels.
+4. **Act** — MuJoCo moves all agents together and resolves contacts.
+
+**Cameras have their own frame rate.** Each camera sensor's `fps` parameter (default 60) sets how many frames it renders per *simulated* second, so what the brain sees doesn't depend on simulation speed or how fast your computer is. Between frames the brain keeps the last image. With `fps = 0` the camera renders as fast as the app can — once per display update, between batches of simulation steps — without holding up the other sensors.
+
+**The display controls don't affect sensor data.**
 
 | Control | What it actually gates |
 |---|---|
-| **"3D (MuJoCo)" checkbox** | Whether the MuJoCo engine exists at all. Whenever it's checked, `SimController._loop()` calls `MuJoCoEngine.render_cameras()` **every frame, unconditionally** — every `CameraSensor`'s `_last_frame` (what the brain actually sees) is overwritten with a real MuJoCo render, textures included. This has nothing to do with "Top view" or "Show 3D" below. |
 | **"Top view" button** | Purely cosmetic: swaps the *arena canvas* between the plain 2-D top-down drawing and a MuJoCo overhead preview image (`render_overhead()`). Does not touch any sensor. |
 | **"Show 3D" button** | Opens the separate interactive 3-D viewer window. Also does not touch any sensor. |
 
-In other words: **camera sensors go through MuJoCo the moment the "3D (MuJoCo)" checkbox is checked**, even if the arena canvas still looks like the plain flat 2-D view (Top view/Show 3D off). Don't infer what a camera sensor is seeing from what the arena canvas looks like — check the checkbox, not the display mode.
+Camera sensors always see a MuJoCo render, even when the arena canvas shows the plain flat 2-D view — don't infer what a camera sensor is seeing from what the arena canvas looks like.
 
-`GradientSensor`/`SkyCompassSensor` etc. are never routed through MuJoCo regardless of any of these three controls, and never will be — MuJoCo has no notion of a gradient field or sky polarization, so they always run the analytic 2-D geometry in `sensors.py`, on purpose (see `MuJoCoEngine.tick_physics_batch`'s docstring).
-
-`CollisionSensor` is a partial exception: when the "3D (MuJoCo)" checkbox is checked, sensors mounted on the robot's root body read MuJoCo's own contact array instead of the analytic geometry — MuJoCo already computes contacts every tick for physics regardless, so this is much cheaper (see TODO.md Performance). This works for any `radius` (literal touch or lookahead) because each sector gets its own small, real, non-physical geom built directly into the robot body, positioned and sized to match that sensor's own probe radius and arc — "is sector *i* hit" is just "does MuJoCo's contact list include this specific geom", decided by MuJoCo's actual collision engine rather than by approximating it, which is also why one large/close object correctly triggers several adjacent sectors at once. Only a sensor mounted on a non-root body (e.g. a whisker joint pair) falls back to the analytic path — check `MuJoCoEngine._mujoco_collision_eligible()` if you need to know exactly which sensors qualify. `DistanceSensor` still always runs the analytic path (unchanged, still a TODO item).
+`CollisionSensor` sensors mounted on the robot's root body read MuJoCo's own contact array instead of the analytic geometry — MuJoCo already computes contacts every tick for physics regardless, so this is much cheaper (see TODO.md Performance). This works for any `radius` (literal touch or lookahead) because each sector gets its own small, real, non-physical geom built directly into the robot body, positioned and sized to match that sensor's own probe radius and arc — "is sector *i* hit" is just "does MuJoCo's contact list include this specific geom", decided by MuJoCo's actual collision engine rather than by approximating it, which is also why one large/close object correctly triggers several adjacent sectors at once. Only a sensor mounted on a non-root body (e.g. a whisker joint pair) falls back to the analytic path — check `MuJoCoEngine._mujoco_collision_eligible()` if you need to know exactly which sensors qualify. `DistanceSensor` still always runs the analytic path (unchanged, still a TODO item).
 
 ---
 

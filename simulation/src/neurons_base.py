@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -31,6 +33,120 @@ def _activate(x, name: str, alpha: float = 1.0):
         if name == 'hard_sigmoid': return np.clip(x / 6.0 + 0.5, 0.0, 1.0)
         if name == 'elu':          return np.where(x > 0, x, alpha * np.expm1(np.clip(x, -500, 0)))
     raise ValueError(f"Unknown activation '{name}'. Choose from: {ACTIVATIONS}")
+
+
+# ── Shared dynamics math ───────────────────────────────────────────────────────
+# One implementation for layers (torch tensors, in nn.Module buffers) and
+# sensors (numpy arrays). Each function takes the current state and returns
+# the new state; the caller decides where the state lives.
+
+def leaky_step(x, u, tau_rise, tau_decay, dt):
+    """Asymmetric leaky integration: x moves toward u with tau_rise while rising
+    and tau_decay while falling. tau_decay unset (None or 0) means rise-and-hold
+    — x holds its value when u drops. Callers skip this entirely when tau_rise
+    is unset (None or 0: no filtering). Every tau follows that rule: 0 or blank
+    switches its dynamic off, never divides by zero."""
+    if not tau_decay:
+        tau_decay = None
+    if isinstance(x, torch.Tensor):
+        if tau_decay == tau_rise:          # symmetric (most layers): no per-element choice
+            return x + (u - x) / tau_rise * dt
+        rising = u > x
+        if tau_decay is None:
+            delta = torch.where(rising, (u - x) / tau_rise * dt, torch.zeros_like(x))
+        else:
+            tau = torch.where(rising, tau_rise, tau_decay)   # scalars: no temporary tensors
+            delta = (u - x) / tau * dt
+        return x + delta
+    rising = u > x
+    if tau_decay is None:
+        return x + np.where(rising, (u - x) / tau_rise * dt, 0.0)
+    tau = np.where(rising, tau_rise, tau_decay)
+    return x + (u - x) / tau * dt
+
+
+# The time step every network was tuned at (SimConfig's default dt). Per-tick
+# quantities that should not depend on dt — correlated-noise kicks, learning
+# rates — are defined at this dt and rescaled at any other dt.
+DT_REF = 0.01
+
+
+def dt_ratio(dt):
+    """dt / DT_REF, but exactly 1.0 at the default time step so runs there are
+    bit-identical. Tolerance, not ==: the GUI's dt arrives as
+    0.010000000000000002 (slider rounding)."""
+    return 1.0 if abs(dt - DT_REF) < 1e-9 else dt / DT_REF
+
+
+# Every time constant integrated with explicit Euler (x += dt/tau · …).
+TAU_ATTRS = ('tau_rise', 'tau_decay', 'tau_a', 'tau_hold', 'noise_tau')
+
+
+def fast_taus(elements, dt):
+    """(element name, tau name, value) for every tau shorter than the time step.
+    Explicit Euler overshoots when dt/tau > 1 and blows up when dt/tau > 2.
+    Only reported, never corrected — the user decides (TODO 1.1)."""
+    hits = []
+    for el in elements:
+        for attr in TAU_ATTRS:
+            try:
+                tau = float(getattr(el, attr, None) or 0.0)
+            except (TypeError, ValueError):
+                continue
+            if tau > 0 and dt / tau > 1:
+                hits.append((el.name, attr, tau))
+    return hits
+
+
+def fast_tau_warning(hits, dt):
+    """Text for the user about fast_taus() hits, or '' if there are none."""
+    if not hits:
+        return ''
+    worst = max(dt / tau for _n, _a, tau in hits)
+    items = ', '.join(f'{n}.{a} = {tau:g}' for n, a, tau in hits[:6])
+    more = f' (+{len(hits) - 6} more)' if len(hits) > 6 else ''
+    effect = 'will blow up (NaN / huge values)' if worst > 2 else 'will overshoot and ring'
+    return (f'⚠ Time constant shorter than the time step dt = {dt:g} s: {items}{more}. '
+            f'The integration {effect}. Use a tau ≥ dt, or a smaller dt (Physics tab).')
+
+
+def ou_noise_step(buf, noise_std, noise_tau, dt):
+    """One Ornstein-Uhlenbeck step of correlated noise (correlation time noise_tau).
+
+    Random kicks add up as √(number of steps), so the kick scales with √dt
+    (Euler–Maruyama): kick = noise_std · √(dt · DT_REF) · N(0, 1). At
+    dt = DT_REF that is exactly noise_std · dt · N(0, 1) — the original
+    formula, so saved networks behave identically — and at any other dt the
+    noise keeps the same size instead of shrinking with dt. Stationary std of
+    the noise: noise_std · √(noise_tau · DT_REF / 2)."""
+    k = 1.0 / math.sqrt(dt_ratio(dt))
+    if isinstance(buf, torch.Tensor):
+        return buf + (-buf / noise_tau + noise_std * k * torch.randn_like(buf)) * dt
+    return buf + (-buf / noise_tau + noise_std * k * np.random.randn(*np.shape(buf))) * dt
+
+
+def transform_modulator_value(state, key, mode, value, dt):
+    """Apply a modulator response mode to a raw scalar reading from the mod bus.
+
+    'absolute'   — pass through unchanged.
+    'derivative' — rate of change since the last call with this same key
+                   (zero on the first call — no previous value yet).
+    'integral'   — running accumulation over time (forward-Euler).
+
+    State is tracked per `key` (conventionally `(modulator_name, mode)`) in the
+    dict *state*, independent of the owner's own output_mode state and of every
+    other modulator row, so multiple subscriptions never collide.
+    """
+    if mode == 'derivative':
+        row = state.setdefault(key, {'prev': value})
+        prev = row['prev']
+        row['prev'] = value
+        return (value - prev) / max(float(dt), 1e-9)
+    if mode == 'integral':
+        row = state.setdefault(key, {'integral': 0.0})
+        row['integral'] += value * dt
+        return row['integral']
+    return value
 
 
 class DynamicsBase:
@@ -103,8 +219,10 @@ class DynamicsBase:
         self.register_buffer('_noise_buf', torch.zeros(n))
         self.register_buffer('_prev_out',  torch.zeros(n))
         self.register_buffer('_integral',  self._x0_tensor(n))
+        self._prev_valid = False   # _prev_out holds no real value until the first step
 
     def _reset_dynamics(self):
+        self._prev_valid = False
         for attr in ('_a', '_noise_buf', '_prev_out'):
             buf = getattr(self, attr, None)
             if buf is not None:
@@ -134,6 +252,9 @@ class DynamicsBase:
         if mode == 'derivative':
             prev = self._prev_out.detach().clone()
             self._prev_out.copy_(out.detach())
+            if not getattr(self, '_prev_valid', False):
+                self._prev_valid = True
+                return torch.zeros_like(out)      # no previous value on the first step
             return (out - prev) / max(float(dt), 1e-9)
         if mode == 'integral':
             prev_integral = self._integral.detach().clone()
@@ -146,15 +267,44 @@ class DynamicsBase:
         if not self.noise_std:
             return u
         if self.noise_tau > 0:
-            nb = self._noise_buf.detach()
-            self._noise_buf.copy_(
-                nb + (-nb / self.noise_tau + self.noise_std * torch.randn_like(nb)) * dt
-            )
+            self._noise_buf.copy_(ou_noise_step(self._noise_buf.detach(),
+                                                self.noise_std, self.noise_tau, dt))
             return u + self._noise_buf
         return u + self.noise_std * torch.randn_like(u)
 
+    # ── The shared pipeline ────────────────────────────────────────────────────
+    # Every DynamicsBase layer runs  bias → noise → output_mode → adaptation →
+    # leaky filter → activation → scale. step() calls these three stages and
+    # adds only what is specific to the layer (Matsuoka's mutual inhibition,
+    # Pulse's plateau, Reichardt's motion detectors, a learning layer's weight
+    # update), so every dialog parameter works on every layer.
+
+    def _input(self, u, dt):
+        """Input stage: bias → noise → output_mode. Returns the driven input."""
+        u = torch.as_tensor(u, dtype=torch.float32)
+        if self.bias:
+            u = u + self.bias
+        u = self._apply_noise(u, dt)
+        return self._apply_output_mode(u, dt)
+
+    def _filter(self, u, dt):
+        """State stage: adaptation (if tau_a and beta are set) → leaky filter
+        (if tau_rise is set). Returns the state x."""
+        return self._apply_leaky(self._apply_adaptation_pre(u), dt)
+
+    def _emit(self, x, activate=True):
+        """Output stage: activation → scale. Never returns the state buffer
+        itself, so the caller can't alias (and later overwrite) the state."""
+        out = _activate(x, self.activation, alpha=self.alpha) if activate else x
+        if self.scale != 1.0:
+            out = out * self.scale
+        elif out is x:
+            out = out.clone()
+        return out
+
     def _apply_leaky(self, u, dt):
-        """Asymmetric leaky integration. Updates _x and returns it; returns u when tau_rise==0.
+        """Asymmetric leaky integration (leaky_step). Updates _x and returns it;
+        returns u unchanged when tau_rise is unset (no filtering).
 
         tau_decay=None disables the decay branch entirely: x only moves toward u
         while rising, and holds its value when u drops (rise-and-hold integrator).
@@ -167,17 +317,7 @@ class DynamicsBase:
         """
         if not self.tau_rise:
             return u
-        x = self._x.detach()
-        rising = u > x
-        if self.tau_decay is None:
-            delta = torch.where(rising, (u - x) / self.tau_rise * dt,
-                                torch.zeros_like(x))
-        else:
-            tau = torch.where(rising,
-                              torch.full_like(x, self.tau_rise),
-                              torch.full_like(x, self.tau_decay))
-            delta = (u - x) / tau * dt
-        self._x.copy_(x + delta)
+        self._x.copy_(leaky_step(self._x.detach(), u, self.tau_rise, self.tau_decay, dt))
         return self._x
 
     def _apply_adaptation_pre(self, u):
@@ -199,14 +339,14 @@ class DynamicsBase:
         Only params shared by ALL DynamicsBase subclasses belong here.
         Adaptation-specific params (tau_a, beta) stay in the per-layer
         param_defs() that use them (only layers with real adaptation state
-        expose them). `network_viz_dialogs.py`'s `_layer_dialog` auto-appends
+        expose them). `NetworkDialogs.layer_dialog` (network_viz_dialogs.py) auto-appends
         any of these entries a layer's own param_defs() doesn't already
         declare, so `output_mode`/`x0` become available on every DynamicsBase
         layer for free without each one needing to list it explicitly.
         """
         return [
-            ('tau_rise',   float, '0.1',  'leaky rise τ (s)'),
-            ('tau_decay',  float, '0.1',  'leaky decay τ (s; blank/None = no decay, holds value)'),
+            ('tau_rise',   float, '0.1',  'leaky rise τ (s; 0 / blank = no filtering)'),
+            ('tau_decay',  float, '0.1',  'leaky decay τ (s; 0 / blank = no decay, holds value)'),
             ('x0',         float, '0.0',  'initial value of the internal state (x at t=0)'),
             ('activation', str,   'relu',  'nonlinearity', ACTIVATIONS),
             ('bias',       float, '0.0',  'constant added to input sum'),
@@ -267,6 +407,15 @@ class LayerBase(nn.Module):
         super().__init_subclass__(**kwargs)
         LayerBase._registry[cls.__name__] = cls
 
+    def __setattr__(self, name, value):
+        # `output` is reassigned every step and is never a parameter, buffer or
+        # submodule — skip nn.Module's registration checks for it (they cost
+        # more than the layer's arithmetic).
+        if name == 'output':
+            self.__dict__['output'] = value
+        else:
+            super().__setattr__(name, value)
+
     def __init__(self, name='', color=None, layer=None,
                  modulators=None, neuromodulator_transmitter=None, neuromodulator_color=None,
                  lateral_pair=None, **kwargs):
@@ -286,37 +435,59 @@ class LayerBase(nn.Module):
         # which would silently share this mutable state across partners.
         self._mod_row_state             = {}
 
+    def on_unmute(self):
+        """Called once when a muted layer runs again. Its state was kept while
+        muted (only its output was zeroed); layers whose output isn't rebuilt
+        by step() restore it here."""
+
     def is_lateralized(self) -> bool:
         """True when this layer is one half of a lateralized L/R pair."""
         return self.lateral_pair is not None
 
     def _transform_modulator_value(self, key, mode, value, dt):
-        """Apply a modulator response mode to a raw scalar reading from the mod bus.
+        """Modulator response mode (absolute / derivative / integral) for one
+        subscription row — see transform_modulator_value."""
+        return transform_modulator_value(self._mod_row_state, key, mode, value, dt)
 
-        'absolute'   — pass through unchanged (today's only behavior).
-        'derivative' — rate of change since the last call with this same key
-                       (zero on the first call — no previous value yet).
-        'integral'   — running accumulation over time (forward-Euler).
+    # ── Capabilities ───────────────────────────────────────────────────────────
+    # Declared by each layer class; the runner, serializer and editor ask these
+    # instead of checking for concrete classes, so a new layer type only has to
+    # set what applies to it. See rules/network_elements.md.
 
-        State is tracked per `key` (conventionally `(modulator_name, mode)`) in
-        `self._mod_row_state`, independent of this layer's own `output_mode`
-        state (`_prev_out`/`_integral`) and independent of every other
-        modulator row, so multiple subscriptions never collide.
-        """
-        if mode == 'derivative':
-            state = self._mod_row_state.setdefault(key, {'prev': value})
-            prev = state['prev']
-            state['prev'] = value
-            return (value - prev) / max(float(dt), 1e-9)
-        if mode == 'integral':
-            state = self._mod_row_state.setdefault(key, {'integral': 0.0})
-            state['integral'] += value * dt
-            return state['integral']
-        return value
+    is_image_node           = False  # output is a 2-D image (thumbnail node; valid image source)
+    signed_image            = False  # that image is signed (displayed around mid-grey)
+    accepts_image           = False  # input is a flat 2-D image (camera or image layer)
+    needs_camera_input      = False  # ...which must come straight from a camera
+    kernel_weights          = False  # incoming weights are 4-D conv kernels (n_filters, in_ch, kH, kW)
+    passthrough_input       = False  # input arrives through a 1-D ones weight (no weight matrix)
+    supports_lateral        = False  # can be split into an L/R pair (lateralized=True)
+    is_learning             = False  # learns its incoming weights (TD / delta / three-factor)
+    combines_by_product     = False  # incoming connections multiply instead of summing
+    has_outgoing_plasticity = False  # plasticity is on its outgoing connections (teacher readout)
+    saved_state             = {}     # extra runtime state to save: {json key: attribute name};
+                                     # the json keys must be constructor kwargs
+
+    @property
+    def n_follows_input(self):
+        """True when n is the incoming pixel count (an unpooled image layer)."""
+        return False
+
+    @classmethod
+    def all_param_defs(cls):
+        """param_defs() plus the shared dynamics params (DynamicsBase layers) not
+        already listed — everything the edit dialog shows and the serializer saves."""
+        defs = list(cls.param_defs()) if hasattr(cls, 'param_defs') else []
+        if issubclass(cls, DynamicsBase):
+            existing = {p[0] for p in defs}
+            defs += [p for p in DynamicsBase._dynamics_param_defs() if p[0] not in existing]
+        return defs
+
+    @classmethod
+    def lateral_sync_params(cls):
+        """Params kept identical across an L/R pair — it is one layer split spatially."""
+        return [p[0] for p in cls.all_param_defs() if p[0] != 'lateralized']
 
     # ── Visualization protocol ─────────────────────────────────────────────────
-
-    is_image_node = False  # overridden to True by image-displaying layers
 
     def thumbnail_frames(self, disp_h=32):
         """Yield (key, uint8_data) tuples for image thumbnail display. Default: nothing."""

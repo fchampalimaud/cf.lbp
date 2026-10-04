@@ -2,8 +2,8 @@ from brain_base import BaseBrain, Param
 from sensors import GradientSensor, DistanceSensor
 
 class BrainObstacleAvoidance(BaseBrain):
-    gradient_sensors = [GradientSensor(n=2, angle_spread=0.6, name='light')]
-    distance_sensors = [DistanceSensor(n=2, angle_spread=0.6, max_range=1.0, name='distance')]
+    sensors = [GradientSensor(n=2, angle_spread=0.6, name='light'),
+               DistanceSensor(n=2, angle_spread=0.6, max_range=1.0, name='distance')]
 
     speed_base   = Param(50.0,  0, 100,    step=1.0, desc="Base forward speed")
     gain_ipsi    = Param(-50.0, -100, 100, step=1.0, desc="Weight for same-side sensor")

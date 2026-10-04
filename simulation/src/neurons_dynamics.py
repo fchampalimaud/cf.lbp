@@ -157,12 +157,8 @@ $$\\text{output} = f(x) \\times s$$
         ]
 
     def step(self, input_vec, dt):
-        u = torch.as_tensor(input_vec, dtype=torch.float32) + self.bias
-        u = self._apply_noise(u, dt)
-        u = self._apply_output_mode(u, dt)
-        x = self._apply_leaky(u, dt)
-        out = _activate(x, self.activation, alpha=self.alpha) * self.scale
-        self.output = out.detach()
+        out = self._emit(self._filter(self._input(input_vec, dt), dt))
+        self.output = out.detach() if out.requires_grad else out
         return self.output
 
     def init_code_parts(self):
@@ -218,6 +214,8 @@ class ProductLayer(LeakyLayer):
     scale       : float  Output multiplier applied after activation.
     n           : int    Number of neurons (inferred from connections if None).
     """
+
+    combines_by_product = True   # capability (see LayerBase)
 
     help_text = """\
 ## ProductLayer — multiplicative-fan-in leaky neurons
@@ -577,15 +575,11 @@ both at construction and on every reset. Default 0.0. Not the same as `bias`
         ]
 
     def step(self, input_vec, dt):
-        u = torch.as_tensor(input_vec, dtype=torch.float32) + self.bias
-        u = self._apply_noise(u, dt)
-        u = self._apply_output_mode(u, dt)
-        if self.w != 0.0 and self.n == 2:
+        u = self._input(input_vec, dt)
+        if self.w != 0.0 and self.n == 2:          # mutual inhibition (Matsuoka half-centre)
             prev = torch.as_tensor(self.output, dtype=torch.float32)
             u = u - self.w * prev[[1, 0]]
-        u = self._apply_adaptation_pre(u)
-        x = self._apply_leaky(u, dt)
-        out = _activate(x, self.activation, alpha=self.alpha) * self.scale
+        out = self._emit(self._filter(u, dt))
         self._update_adaptation(out, dt)
         self.output = out.detach()
         return self.output
@@ -729,9 +723,10 @@ as aliases for `tau_rise`/`tau_a`:
     def init_code_parts(self):
         parts = [f'tau_rise={self.tau_rise}', f'tau_a={self.tau_a}',
                  f'beta={self.beta}', f'w={self.w}']
+        if self.tau_decay != self.tau_rise:
+            parts.append(f'tau_decay={self.tau_decay}')
         parts += self._base_code_parts()
-        if self.bias != 0.0:
-            parts.append(f'bias={self.bias}')
+        parts += self._dyn_code_parts()   # bias, activation, noise, scale, output_mode, x0, alpha
         parts += self._mod_code_parts()
         return parts
 
@@ -847,7 +842,7 @@ this one does **not** apply noise:
                  theta=0.0, w_s=1.0, drain=1.0,
                  n=None, name='pulse', **kwargs):
         super().__init__(name=name, tau_rise=tau_rise, tau_decay=tau_decay, **kwargs)
-        self.tau_hold = float(tau_hold)
+        self.tau_hold = float(tau_hold or 0.0)   # 0 / blank: no plateau smoothing
         self.theta    = float(theta)
         self.w_s      = float(w_s)
         self.drain    = float(drain)
@@ -867,7 +862,7 @@ this one does **not** apply noise:
         return [
             ('tau_rise',  float, '0.05', 'fast rise τ (membrane)'),
             ('tau_decay', float, '0.05', 'fast decay τ (membrane; blank/None = no decay, holds value)'),
-            ('tau_hold',  float, '2.0',  'plateau duration τ (sustained variable)'),
+            ('tau_hold',  float, '2.0',  'plateau duration τ (sustained variable; 0 / blank = none)'),
             ('theta',     float, '0.0',  'threshold for charging plateau (0 = any positive input)'),
             ('w_s',       float, '1.0',  'gain of sustained variable on output'),
             ('drain',     float, '1.0',  'rate at which negative input erodes plateau'),
@@ -895,18 +890,18 @@ this one does **not** apply noise:
         self.output = torch.zeros(self.n)
 
     def step(self, input_vec, dt):
-        u = torch.as_tensor(input_vec, dtype=torch.float32) + self.bias
-        u = self._apply_output_mode(u, dt)
-        x = self._apply_leaky(u, dt)
+        u = self._input(input_vec, dt)
+        x = self._filter(u, dt)
 
         s = self._s.detach()
-        s = s + (F.relu(x - self.theta) - s) / self.tau_hold * dt
+        drive = F.relu(x - self.theta)
+        s = s + (drive - s) / self.tau_hold * dt if self.tau_hold else drive
         if self.drain > 0.0:
             s = s - self.drain * F.relu(-u) * dt
             s = torch.clamp(s, min=0.0)
         self._s.copy_(s)
 
-        out = _activate(x + self.w_s * self._s, self.activation, alpha=self.alpha) * self.scale
+        out = self._emit(x + self.w_s * self._s)
         self.output = out.detach()
         return self.output
 
@@ -922,14 +917,7 @@ this one does **not** apply noise:
             parts.append(f'drain={self.drain}')
         if self.n is not None:
             parts.append(f'n={self.n}')
-        if self.bias != 0.0:
-            parts.append(f'bias={self.bias}')
-        if self.activation != 'relu':
-            parts.append(f"activation='{self.activation}'")
-        if getattr(self, 'scale', 1.0) != 1.0:
-            parts.append(f'scale={self.scale}')
-        if getattr(self, 'output_mode', 'none') != 'none':
-            parts.append(f"output_mode='{self.output_mode}'")
+        parts += self._dyn_code_parts()   # bias, activation, noise, scale, output_mode, x0, alpha
         parts += self._mod_code_parts()
         return parts
 
@@ -1175,11 +1163,7 @@ both at construction and on every reset. Default 0.0. Not the same as `bias`
                 f"RingAttractorLayer '{self.name}': n is fixed at {self.n}, connection implies n={n}")
 
     def step(self, input_vec, dt):
-        u = torch.as_tensor(input_vec, dtype=torch.float32) + self.bias
-        u = self._apply_noise(u, dt)
-        u = self._apply_output_mode(u, dt)
-        x = self._apply_leaky(u, dt)
-        out = _activate(x, self.activation, alpha=self.alpha)
+        out = self._emit(self._filter(self._input(input_vec, dt), dt))
         self.output = out.detach()
         return self.output
 
@@ -1188,16 +1172,7 @@ both at construction and on every reset. Default 0.0. Not the same as `bias`
         if self.tau_decay != self.tau_rise:
             parts.append(f'tau_decay={self.tau_decay}')
         parts += self._base_code_parts()
-        if self.activation != 'relu':
-            parts.append(f"activation='{self.activation}'")
-        if self.bias != 0.0:
-            parts.append(f'bias={self.bias}')
-        if self.noise_std != 0.0:
-            parts.append(f'noise_std={self.noise_std}')
-        if self.noise_tau != 0.0:
-            parts.append(f'noise_tau={self.noise_tau}')
-        if getattr(self, 'output_mode', 'none') != 'none':
-            parts.append(f"output_mode='{self.output_mode}'")
+        parts += self._dyn_code_parts()   # bias, activation, noise, scale, output_mode, x0, alpha
         parts += self._mod_code_parts()
         return parts
 

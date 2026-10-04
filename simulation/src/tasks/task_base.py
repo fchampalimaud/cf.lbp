@@ -15,7 +15,7 @@ Minimal implementation:
         def setup(self, world, sim_cfg):
             self._t = 0.0
 
-        def tick(self, world, bot_pos, sim_cfg, dt):
+        def tick(self, world, bot_positions, sim_cfg, dt):
             self._t += dt
             for patch in world.patches:
                 if patch.get('label') == 'A':
@@ -37,16 +37,17 @@ class BaseTask:
         """Called once when the task is activated (or on simulation reset)."""
         pass
 
-    def tick(self, world, bot_pos, sim_cfg, dt):
+    def tick(self, world, bot_positions, sim_cfg, dt):
         """
-        Called every simulation tick, after physics but before rendering.
+        Called once per simulation step, after every agent has moved.
 
         Parameters
         ----------
-        world   : World — grants access to world.patches and world.objects
-        bot_pos : list[float] — [x, y, theta], read-only (do not mutate)
-        sim_cfg : SimConfig
-        dt      : float — time step in seconds
+        world         : World — grants access to world.patches and world.objects
+        bot_positions : list of [x, y, theta], one per agent (in agent order),
+                        read-only (do not mutate)
+        sim_cfg       : SimConfig
+        dt            : float — time step in seconds
         """
         pass
 

@@ -103,5 +103,5 @@ The field consists of a repeating pattern of e-vector bars at angle `sky.angle`.
 - **Right-click** on any placed object to delete it.
 - **Drag** in *Move* mode (select *Move* in the toolbar) to reposition patches and obstacles.
 - The **Cont.** and **Wall** toggles apply to whichever gradient colour is currently selected.
-- Sessions (brain params + world layout) are saved as JSON in `configs/`. Use **Save config** in the control panel to snapshot the current world.
+- Sessions (brain params + world layout) are saved as JSON in your files folder (`~/LBPSimulator/configs/` by default, see [Your files](tour.md#my-files)). Use Session tab → **Save** to snapshot the current world.
 - Multiple gradient patches of the same label stack by maximum, not sum. Place several overlapping patches to widen a field without increasing peak intensity.

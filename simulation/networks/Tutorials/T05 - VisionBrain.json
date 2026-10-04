@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "saved_with_app_version": "0.6.2",
+  "saved_with_app_version": "0.8.3",
   "motor_layer": "motor",
   "hidden_cols": [],
   "disabled_cols": [],
@@ -16,6 +16,7 @@
       "center_angle_deg": 0.0,
       "vertical_angle_deg": 0.0,
       "max_range": 10.0,
+      "fps": 60.0,
       "lateralized": true,
       "overlap": 0,
       "noise_std": 0.0,

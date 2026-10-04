@@ -10,6 +10,41 @@ import os
 from sim_constants import _NumpyEncoder
 from app_version import get_app_version
 
+# A group runs either a code brain (a brains/*.py module) or a network (a
+# networks/*.json circuit). In a session file that reads:
+#   code:    {"mode": "code", "module_name": "BrainARS", "brain_params": {...}}
+#   network: {"mode": "network", "network": "Tutorials/T06 - FeedingBrain.json"}
+# Internally a network runs in the network brain module, with the project and
+# file as its brain params. Older files ({"module_name": "BrainGUI",
+# "brain_params": {"network_project": ..., "network_file": ...}}) still load.
+NETWORK_BRAIN_MODULE = 'BrainGUI'
+_NETWORK_PARAMS = ('network_project', 'network_file')
+
+
+def brain_to_file(module, brain_params):
+    """The session-file entry for a group running *module* with *brain_params*."""
+    brain_params = dict(brain_params or {})
+    if module == NETWORK_BRAIN_MODULE:
+        project = brain_params.pop('network_project', '') or ''
+        net     = brain_params.pop('network_file', '') or ''
+        entry = {'mode': 'network', 'network': f'{project}/{net}' if project and net else net}
+        if brain_params:
+            entry['brain_params'] = brain_params
+        return entry
+    return {'mode': 'code', 'module_name': module or '', 'brain_params': brain_params}
+
+
+def brain_from_file(entry):
+    """(module, brain_params) for a session-file group entry (or a top-level
+    session dict) — new or old format."""
+    params = dict(entry.get('brain_params') or {})
+    if entry.get('mode') == 'network':
+        project, _, net = (entry.get('network') or '').rpartition('/')
+        params['network_project'] = project
+        params['network_file']    = net
+        return NETWORK_BRAIN_MODULE, params
+    return entry.get('module_name') or '', params
+
 
 def save_session(path, module_name, brain, sim_cfg, world,
                  speed_mult, trail_length, arena_round, multipliers,
@@ -20,7 +55,8 @@ def save_session(path, module_name, brain, sim_cfg, world,
     Parameters
     ----------
     path         : destination file path (e.g. 'configs/experiment_1.json')
-    module_name  : brain module name as selected in the UI combo box
+    module_name  : brain module of the selected group (written as code brain
+                   or network, see brain_to_file)
     brain        : active BaseBrain instance
     sim_cfg      : SimConfig instance
     world        : World instance
@@ -36,12 +72,13 @@ def save_session(path, module_name, brain, sim_cfg, world,
                    to world.patches verbatim if not given.
     """
     os.makedirs(os.path.dirname(path) if os.path.dirname(path) else '.', exist_ok=True)
-    data = {
-        'saved_with_app_version': get_app_version(),
-        'module_name':      module_name,
-        'class_name':       brain.__class__.__name__,
+    data = {'saved_with_app_version': get_app_version()}
+    data.update(brain_to_file(module_name,
+                              {k: getattr(brain, k) for k in brain.get_param_metadata()}))
+    if data['mode'] == 'code':
+        data['class_name'] = brain.__class__.__name__
+    data.update({
         'sim_params':       {k: getattr(sim_cfg, k) for k in sim_cfg.get_param_metadata()},
-        'brain_params':     {k: getattr(brain, k)   for k in brain.get_param_metadata()},
         'plot_multipliers': multipliers,
         'patches':          patches if patches is not None else world.patches,
         'objects':          world.objects,
@@ -51,16 +88,11 @@ def save_session(path, module_name, brain, sim_cfg, world,
         'speed_mult':       speed_mult,
         'trail_length':     trail_length,
         'arena_round':      arena_round,
-    }
+    })
     if groups is not None:
         data['agents'] = [
-            {
-                'module_name': g['module'] or '',
-                'name':        g['name'],
-                'color':       g['color'],
-                'n':           g['n'],
-                'brain_params': g.get('brain_params', {}),
-            }
+            {'name': g['name'], 'color': g['color'], 'n': g['n'],
+             **brain_to_file(g['module'], g.get('brain_params', {}))}
             for g in groups
         ]
     if net_cfg is not None:

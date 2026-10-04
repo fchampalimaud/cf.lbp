@@ -18,7 +18,7 @@ The sensor on the **left** (`light[0]`) returns a value in `[0, 1]` that grows a
 
 ## Creating your brain file
 
-Drop a Python file anywhere in `brains/`. The simulator discovers it automatically on the next launch (or when you hit **Reload brains**).
+Drop a Python file into the `brains/` folder of [your files folder](tour.md#my-files) (`~/LBPSimulator/brains/` by default) — or click **+** next to the brain list, which creates one there from a template. The simulator discovers it automatically on the next launch (or when you hit **Reload brains**). Brain names must be unique: a name already used by a built-in brain is refused.
 
 ```python title="brains/BrainLightSeeker.py"
 import numpy as np

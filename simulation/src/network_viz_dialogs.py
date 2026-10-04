@@ -1,3 +1,13 @@
+"""
+network_viz_dialogs.py — the network editor's dialogs.
+
+NetworkDialogs (the window's `dialogs`) holds the create / edit dialogs for
+sensors, layers, bodies, notes and column notes. Also WeightMatrixDialog,
+FilterStackDialog and PaletteChip.
+"""
+
+import functools
+
 import numpy as np
 
 from PySide6.QtWidgets import (
@@ -12,6 +22,9 @@ from PySide6.QtGui import QFont, QDrag
 from sim_constants import C, _IDX_MANUAL
 
 from network_viz_layout import _make_conv2d_filter
+from circuit_editor import edit_transaction, rename_layer, apply_renames, unpair_layer
+from lateral import half_names, partner_layer, base_name as _lateral_base
+from neurons_base import fast_taus, fast_tau_warning
 
 def _make_help_html(markdown_text):
     """Generate a standalone HTML help page rendered with marked.js + KaTeX.
@@ -92,6 +105,25 @@ def _small_bold_font():
 # ============================================================
 # HOVER STATUS FILTER
 # ============================================================
+
+def _warns_fast_taus(dialog):
+    """After a sensor / layer dialog: warn if it left a tau shorter than dt
+    (TODO 1.1 — only an alert, nothing is changed). Compares before / after,
+    so taus that were already short aren't reported again on every edit."""
+    @functools.wraps(dialog)
+    def wrapper(self, *args, **kwargs):
+        circuit = self.win.gui.circuit
+        dt = self.win.gui.sim_cfg.dt
+        def hits():
+            return set(fast_taus(list(circuit.sensors) + list(circuit.layers), dt))
+        before = hits()
+        result = dialog(self, *args, **kwargs)
+        new = sorted(hits() - before)
+        if new:
+            QMessageBox.warning(self.win, "Time constant too short", fast_tau_warning(new, dt))
+        return result
+    return wrapper
+
 class _HoverStatus(QObject):
     """Event filter that shows a description in a status QLabel on mouse enter/leave."""
     def __init__(self, label, desc, parent=None):
@@ -110,6 +142,84 @@ class _HoverStatus(QObject):
 # ============================================================
 # WEIGHT MATRIX DIALOG
 # ============================================================
+def _conv_preset_kernels(n_flt, in_ch, ksz):
+    """Filter-preset kernels for a 1-D conv connection, by key."""
+    def _grayscale(nf=n_flt, ic=in_ch, k=ksz):
+        W = np.zeros((nf, ic, k)); ck = k // 2
+        for f in range(nf):
+            for c in range(ic):
+                W[f, c, ck] = 1.0 / max(ic, 1)
+        return W
+
+    def _lum(nf=n_flt, ic=in_ch, k=ksz):
+        W = np.zeros((nf, ic, k)); ck = k // 2
+        for f in range(nf):
+            for c in range(ic):
+                W[f, c, ck] = 1.0 / max(ic, 1)
+        return W
+
+    def _rg(nf=n_flt, ic=in_ch, k=ksz):
+        W = np.zeros((nf, ic, k)); ck = k // 2
+        for f in range(nf):
+            W[f, 0, ck] = 1.0
+            if ic >= 2: W[f, 1, ck] = -1.0
+        return W
+
+    def _gr(nf=n_flt, ic=in_ch, k=ksz):
+        W = np.zeros((nf, ic, k)); ck = k // 2
+        for f in range(nf):
+            if ic >= 2: W[f, 1, ck] = 1.0
+            W[f, 0, ck] = -1.0
+        return W
+
+    def _rb(nf=n_flt, ic=in_ch, k=ksz):
+        W = np.zeros((nf, ic, k)); ck = k // 2
+        for f in range(nf):
+            W[f, 0, ck] = 1.0
+            if ic >= 3: W[f, 2, ck] = -1.0
+        return W
+
+    def _on_centre(nf=n_flt, ic=in_ch, k=ksz):
+        kx = np.arange(k, dtype=float) - k // 2
+        se = max(k / 6.0, 0.5); si = max(k / 3.0, 1.0)
+        sp = 2.0 * np.exp(-kx**2 / (2 * se**2)) - np.exp(-kx**2 / (2 * si**2))
+        mx = np.abs(sp).max()
+        sp = sp / mx if mx > 0 else sp
+        W = np.zeros((nf, ic, k))
+        for f in range(nf):
+            for c in range(ic):
+                W[f, c, :] = sp / max(ic, 1)
+        return W
+
+    def _off_centre(nf=n_flt, ic=in_ch, k=ksz):
+        return -_on_centre(nf, ic, k)
+
+    def _edge_lr(nf=n_flt, ic=in_ch, k=ksz):
+        W = np.zeros((nf, ic, k)); ck = k // 2
+        for f in range(nf):
+            for c in range(ic):
+                if k >= 3:
+                    W[f, c, ck - 1] = -1.0 / max(ic, 1)
+                    W[f, c, ck + 1] =  1.0 / max(ic, 1)
+                elif k >= 2:
+                    W[f, c, 0] = -1.0 / max(ic, 1)
+                    W[f, c, 1] =  1.0 / max(ic, 1)
+        return W
+
+    def _edge_rl(nf=n_flt, ic=in_ch, k=ksz):
+        return -_edge_lr(nf, ic, k)
+
+    def _rgb(nf=n_flt, ic=in_ch, k=ksz):
+        W = np.zeros((nf, ic, k)); ck = k // 2
+        for f in range(min(nf, ic)):
+            W[f, f, ck] = 1.0
+        return W
+
+    return {'grayscale': _grayscale, 'lum': _lum, 'rg': _rg, 'gr': _gr, 'rb': _rb,
+            'on_centre': _on_centre, 'off_centre': _off_centre,
+            'edge_lr': _edge_lr, 'edge_rl': _edge_rl, 'rgb': _rgb}
+
+
 class WeightMatrixDialog(QDialog):
     """Weight-matrix editor with pattern presets and live heatmap preview.
 
@@ -132,15 +242,48 @@ class WeightMatrixDialog(QDialog):
         main.setSpacing(8)
 
         self._filters = []
-        status_lbl = QLabel("")
+        self._status_lbl = status_lbl = QLabel("")   # hover descriptions, see _tip
         status_lbl.setFixedHeight(18)
         status_lbl.setStyleSheet("color:#888;font-style:italic;padding:0 4px;")
 
-        def _tip(w, desc):
-            f = _HoverStatus(status_lbl, desc, self)
-            w.installEventFilter(f)
-            self._filters.append(f)
+        main.addLayout(self._build_info_row(src_name, tgt_name, circuit))
+        if conv_params:
+            main.addWidget(self._build_conv_presets(conv_params))
 
+        # Pattern controls (left) + heatmap (right)
+        mid = QHBoxLayout()
+        mid.setSpacing(14)
+        ctrl_gb, stack, apply_btn = self._build_pattern_group(ns, nt)
+        mid.addWidget(ctrl_gb, stretch=0)
+        mid.addLayout(self._build_heatmap(W_init), stretch=1)
+        main.addLayout(mid)
+        main.addWidget(self._build_raw_table(src_name, tgt_name, ns, nt, W_init))
+
+        main.addWidget(status_lbl)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok |
+                              QDialogButtonBox.StandardButton.Cancel)
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        main.addWidget(bb)
+
+        apply_btn.clicked.connect(self._apply)
+        self._pattern_cb.currentIndexChanged.connect(stack.setCurrentIndex)
+
+        # Pre-populate from saved_params
+        if saved_params:
+            self._load_saved_params(saved_params)
+        else:
+            self._pattern_cb.setCurrentIndex(_IDX_MANUAL)
+
+        self.resize(max(520, ns * 35 + 320), 520)
+
+    def _tip(self, w, desc):
+        """Show `desc` in the status line while hovering `w`."""
+        f = _HoverStatus(self._status_lbl, desc, self)
+        w.installEventFilter(f)
+        self._filters.append(f)
+
+    def _build_info_row(self, src_name, tgt_name, circuit):
         tgt_layer = next((l for l in circuit.layers if l.name == tgt_name), None) if circuit else None
         tgt_ht = getattr(type(tgt_layer), 'help_text', None) if tgt_layer else None
 
@@ -158,128 +301,51 @@ class WeightMatrixDialog(QDialog):
             help_btn.setToolTip(f"About {ltype_name}")
             help_btn.clicked.connect(lambda: QMessageBox.information(self, ltype_name, tgt_ht))
             info_row.addWidget(help_btn)
-        main.addLayout(info_row)
+        return info_row
 
-        # ── Conv filter presets (only for ConvLayer connections) ──────────────
-        if conv_params:
-            n_flt = conv_params['n_filters']
-            in_ch = conv_params['in_ch']
-            ksz   = conv_params['kernel_size']
+    def _build_conv_presets(self, conv_params):
+        """Conv filter presets (only for ConvLayer connections)."""
+        n_flt = conv_params['n_filters']
+        in_ch = conv_params['in_ch']
+        ksz   = conv_params['kernel_size']
 
-            def _make_preset_btn(label, fn, nf=n_flt, ic=in_ch, k=ksz):
-                btn = QPushButton(label)
-                btn.setFixedHeight(22)
-                btn.setStyleSheet(
-                    "QPushButton{padding:0 6px;font-size:8px;"
-                    "border:1px solid #C8A830;border-radius:3px;background:#FFFAE0;}"
-                    "QPushButton:hover{background:#FFF0A0;}"
-                )
-                btn.clicked.connect(lambda: self._apply_conv_preset(fn(), nf, ic, k))
-                return btn
+        def _make_preset_btn(label, fn, nf=n_flt, ic=in_ch, k=ksz):
+            btn = QPushButton(label)
+            btn.setFixedHeight(22)
+            btn.setStyleSheet(
+                "QPushButton{padding:0 6px;font-size:8px;"
+                "border:1px solid #C8A830;border-radius:3px;background:#FFFAE0;}"
+                "QPushButton:hover{background:#FFF0A0;}"
+            )
+            btn.clicked.connect(lambda: self._apply_conv_preset(fn(), nf, ic, k))
+            return btn
 
-            def _grayscale(nf=n_flt, ic=in_ch, k=ksz):
-                W = np.zeros((nf, ic, k)); ck = k // 2
-                for f in range(nf):
-                    for c in range(ic):
-                        W[f, c, ck] = 1.0 / max(ic, 1)
-                return W
+        rows = [[("Grayscale", "grayscale"), ("Luminance", "lum"), ("R−G", "rg"),
+                 ("G−R", "gr"), ("R−B", "rb")],
+                [("On-centre", "on_centre"), ("Off-centre", "off_centre"),
+                 ("Edge →", "edge_lr"), ("Edge ←", "edge_rl")],
+                [("RGB channels", "rgb")]]
+        kernels = _conv_preset_kernels(n_flt, in_ch, ksz)
+        preset_gb = QGroupBox("Filter presets")
+        preset_vl = QVBoxLayout(preset_gb)
+        preset_vl.setSpacing(4)
+        preset_vl.setContentsMargins(6, 4, 6, 4)
+        for i, row in enumerate(rows):
+            hl = QHBoxLayout(); hl.setSpacing(4)
+            for label, key in row:
+                hl.addWidget(_make_preset_btn(label, kernels[key]))
+            if i == len(rows) - 1:
+                hl.addStretch()
+            preset_vl.addLayout(hl)
+        preset_vl.addWidget(QLabel(
+            f"<span style='font-size:8px;color:{C['muted']}'>"
+            f"{n_flt} filter{'s' if n_flt != 1 else ''}"
+            f" × {in_ch} ch × kernel {ksz}"
+            f"</span>"))
+        return preset_gb
 
-            def _lum(nf=n_flt, ic=in_ch, k=ksz):
-                W = np.zeros((nf, ic, k)); ck = k // 2
-                for f in range(nf):
-                    for c in range(ic):
-                        W[f, c, ck] = 1.0 / max(ic, 1)
-                return W
-
-            def _rg(nf=n_flt, ic=in_ch, k=ksz):
-                W = np.zeros((nf, ic, k)); ck = k // 2
-                for f in range(nf):
-                    W[f, 0, ck] = 1.0
-                    if ic >= 2: W[f, 1, ck] = -1.0
-                return W
-
-            def _gr(nf=n_flt, ic=in_ch, k=ksz):
-                W = np.zeros((nf, ic, k)); ck = k // 2
-                for f in range(nf):
-                    if ic >= 2: W[f, 1, ck] = 1.0
-                    W[f, 0, ck] = -1.0
-                return W
-
-            def _rb(nf=n_flt, ic=in_ch, k=ksz):
-                W = np.zeros((nf, ic, k)); ck = k // 2
-                for f in range(nf):
-                    W[f, 0, ck] = 1.0
-                    if ic >= 3: W[f, 2, ck] = -1.0
-                return W
-
-            def _on_centre(nf=n_flt, ic=in_ch, k=ksz):
-                kx = np.arange(k, dtype=float) - k // 2
-                se = max(k / 6.0, 0.5); si = max(k / 3.0, 1.0)
-                sp = 2.0 * np.exp(-kx**2 / (2 * se**2)) - np.exp(-kx**2 / (2 * si**2))
-                mx = np.abs(sp).max()
-                sp = sp / mx if mx > 0 else sp
-                W = np.zeros((nf, ic, k))
-                for f in range(nf):
-                    for c in range(ic):
-                        W[f, c, :] = sp / max(ic, 1)
-                return W
-
-            def _off_centre(nf=n_flt, ic=in_ch, k=ksz):
-                return -_on_centre(nf, ic, k)
-
-            def _edge_lr(nf=n_flt, ic=in_ch, k=ksz):
-                W = np.zeros((nf, ic, k)); ck = k // 2
-                for f in range(nf):
-                    for c in range(ic):
-                        if k >= 3:
-                            W[f, c, ck - 1] = -1.0 / max(ic, 1)
-                            W[f, c, ck + 1] =  1.0 / max(ic, 1)
-                        elif k >= 2:
-                            W[f, c, 0] = -1.0 / max(ic, 1)
-                            W[f, c, 1] =  1.0 / max(ic, 1)
-                return W
-
-            def _edge_rl(nf=n_flt, ic=in_ch, k=ksz):
-                return -_edge_lr(nf, ic, k)
-
-            def _rgb(nf=n_flt, ic=in_ch, k=ksz):
-                W = np.zeros((nf, ic, k)); ck = k // 2
-                for f in range(min(nf, ic)):
-                    W[f, f, ck] = 1.0
-                return W
-
-            preset_gb = QGroupBox("Filter presets")
-            preset_vl = QVBoxLayout(preset_gb)
-            preset_vl.setSpacing(4)
-            preset_vl.setContentsMargins(6, 4, 6, 4)
-            row1 = QHBoxLayout(); row1.setSpacing(4)
-            row2 = QHBoxLayout(); row2.setSpacing(4)
-            row3 = QHBoxLayout(); row3.setSpacing(4)
-            row1.addWidget(_make_preset_btn("Grayscale", _grayscale))
-            row1.addWidget(_make_preset_btn("Luminance",   _lum))
-            row1.addWidget(_make_preset_btn("R−G",    _rg))
-            row1.addWidget(_make_preset_btn("G−R",    _gr))
-            row1.addWidget(_make_preset_btn("R−B",    _rb))
-            row2.addWidget(_make_preset_btn("On-centre",   _on_centre))
-            row2.addWidget(_make_preset_btn("Off-centre",  _off_centre))
-            row2.addWidget(_make_preset_btn("Edge →", _edge_lr))
-            row2.addWidget(_make_preset_btn("Edge ←", _edge_rl))
-            row3.addWidget(_make_preset_btn("RGB channels", _rgb))
-            row3.addStretch()
-            preset_vl.addLayout(row1)
-            preset_vl.addLayout(row2)
-            preset_vl.addLayout(row3)
-            preset_vl.addWidget(QLabel(
-                f"<span style='font-size:8px;color:{C['muted']}'>"
-                f"{n_flt} filter{'s' if n_flt != 1 else ''}"
-                f" × {in_ch} ch × kernel {ksz}"
-                f"</span>"))
-            main.addWidget(preset_gb)
-
-        # Pattern controls (left) + heatmap (right)
-        mid = QHBoxLayout()
-        mid.setSpacing(14)
-
+    def _build_pattern_group(self, ns, nt):
+        """Pattern chooser, one parameter page per pattern, and Apply."""
         ctrl_gb = QGroupBox("Pattern")
         ctrl_vl = QVBoxLayout(ctrl_gb)
         ctrl_vl.setSpacing(6)
@@ -291,15 +357,28 @@ class WeightMatrixDialog(QDialog):
         ctrl_vl.addWidget(self._pattern_cb)
 
         stack = QStackedWidget()
+        for page in (self._page_uniform(), self._page_cosine(ns, nt), self._page_gaussian(),
+                     self._page_mexican_hat(ns, nt), self._page_one_to_one(ns, nt),
+                     self._page_rand_uniform(), self._page_rand_normal(),
+                     self._page_expression(ns, nt), self._page_manual()):
+            stack.addWidget(page)
+        ctrl_vl.addWidget(stack)
 
-        # Uniform
+        apply_btn = QPushButton("Apply ▶")
+        apply_btn.setDefault(False)
+        apply_btn.setAutoDefault(False)
+        ctrl_vl.addWidget(apply_btn)
+        ctrl_vl.addStretch()
+        return ctrl_gb, stack, apply_btn
+
+    def _page_uniform(self):
         unif_w = QWidget(); unif_f = QFormLayout(unif_w); unif_f.setContentsMargins(0, 4, 0, 0)
         self._unif_amp = QDoubleSpinBox(); self._unif_amp.setRange(-100, 100); self._unif_amp.setSingleStep(0.001); self._unif_amp.setDecimals(6); self._unif_amp.setValue(1.0)
         unif_f.addRow("Amplitude", self._unif_amp)
-        _tip(self._unif_amp, "Uniform weight applied to all connections")
-        stack.addWidget(unif_w)
+        self._tip(self._unif_amp, "Uniform weight applied to all connections")
+        return unif_w
 
-        # Cosine
+    def _page_cosine(self, ns, nt):
         cos_w = QWidget(); cos_f = QFormLayout(cos_w); cos_f.setContentsMargins(0, 4, 0, 0)
         self._cos_amp  = QDoubleSpinBox(); self._cos_amp.setRange(-100, 100); self._cos_amp.setSingleStep(0.001); self._cos_amp.setDecimals(6); self._cos_amp.setValue(1.0)
         self._cos_ph0  = QDoubleSpinBox(); self._cos_ph0.setRange(-360, 360); self._cos_ph0.setSingleStep(5); self._cos_ph0.setValue(0); self._cos_ph0.setSuffix(" °")
@@ -307,36 +386,36 @@ class WeightMatrixDialog(QDialog):
         self._cos_step.setValue(round(360.0 / nt, 1) if nt > 1 else 180.0); self._cos_step.setSuffix(" °")
         self._cos_bias = QDoubleSpinBox(); self._cos_bias.setRange(-100, 100); self._cos_bias.setSingleStep(0.001); self._cos_bias.setDecimals(6); self._cos_bias.setValue(0.0)
         cos_f.addRow("Amplitude",  self._cos_amp)
-        _tip(self._cos_amp, "Peak amplitude of the cosine wave — scales the whole pattern")
+        self._tip(self._cos_amp, "Peak amplitude of the cosine wave — scales the whole pattern")
         cos_f.addRow("Phase₀",    self._cos_ph0)
-        _tip(self._cos_ph0, "Phase offset for target neuron 0 (degrees)")
+        self._tip(self._cos_ph0, "Phase offset for target neuron 0 (degrees)")
         cos_f.addRow("Phase step", self._cos_step)
-        _tip(self._cos_step, "Phase increment per target neuron (degrees)")
+        self._tip(self._cos_step, "Phase increment per target neuron (degrees)")
         cos_f.addRow("Bias", self._cos_bias)
-        _tip(self._cos_bias, "Constant added to every weight — shifts the wave up or down")
+        self._tip(self._cos_bias, "Constant added to every weight — shifts the wave up or down")
         cos_f.addRow(QLabel(f"<span style='font-size:8px;color:{C['muted']}'>"
                             f"W[i,j] = amp·cos(2π·j/{ns} − phase₀ − i·step) + bias</span>"))
-        stack.addWidget(cos_w)
+        return cos_w
 
-        # Gaussian
+    def _page_gaussian(self):
         gau_w = QWidget(); gau_f = QFormLayout(gau_w); gau_f.setContentsMargins(0, 4, 0, 0)
         self._gau_amp  = QDoubleSpinBox(); self._gau_amp.setRange(-100, 100); self._gau_amp.setSingleStep(0.001); self._gau_amp.setDecimals(6); self._gau_amp.setValue(1.0)
         self._gau_sig  = QDoubleSpinBox(); self._gau_sig.setRange(0.01, 2.0); self._gau_sig.setSingleStep(0.05); self._gau_sig.setValue(0.2); self._gau_sig.setDecimals(3)
         self._gau_off  = QDoubleSpinBox(); self._gau_off.setRange(-1.0, 1.0); self._gau_off.setSingleStep(0.05); self._gau_off.setValue(0.0); self._gau_off.setDecimals(3)
         self._gau_base = QDoubleSpinBox(); self._gau_base.setRange(-100, 100); self._gau_base.setSingleStep(0.001); self._gau_base.setDecimals(6); self._gau_base.setValue(0.0)
         gau_f.addRow("Amplitude", self._gau_amp)
-        _tip(self._gau_amp, "Peak amplitude of the Gaussian")
+        self._tip(self._gau_amp, "Peak amplitude of the Gaussian")
         gau_f.addRow("Sigma", self._gau_sig)
-        _tip(self._gau_sig, "Width of the Gaussian — larger = broader spread")
+        self._tip(self._gau_sig, "Width of the Gaussian — larger = broader spread")
         gau_f.addRow("Peak shift", self._gau_off)
-        _tip(self._gau_off, "Offset the Gaussian peak along the source axis (wraps around)")
+        self._tip(self._gau_off, "Offset the Gaussian peak along the source axis (wraps around)")
         gau_f.addRow("Baseline", self._gau_base)
-        _tip(self._gau_base, "Constant added to all weights — negative creates lateral inhibition")
+        self._tip(self._gau_base, "Constant added to all weights — negative creates lateral inhibition")
         gau_f.addRow(QLabel(f"<span style='font-size:8px;color:{C['muted']}'>"
                             f"W[i,j] = amp·exp(−dist²/2σ²) + baseline</span>"))
-        stack.addWidget(gau_w)
+        return gau_w
 
-        # Mexican hat
+    def _page_mexican_hat(self, ns, nt):
         _nn_spacing = round(1.0 / max(ns, nt), 3) if max(ns, nt) > 0 else 0.125
         mxh_w = QWidget(); mxh_f = QFormLayout(mxh_w); mxh_f.setContentsMargins(0, 4, 0, 0)
         self._mxh_exc  = QDoubleSpinBox(); self._mxh_exc.setRange(0, 100);  self._mxh_exc.setSingleStep(0.001); self._mxh_exc.setDecimals(6); self._mxh_exc.setValue(2.0)
@@ -344,17 +423,17 @@ class WeightMatrixDialog(QDialog):
         self._mxh_inh  = QDoubleSpinBox(); self._mxh_inh.setRange(0, 100);  self._mxh_inh.setSingleStep(0.001); self._mxh_inh.setDecimals(6); self._mxh_inh.setValue(1.0)
         self._mxh_sigi = QDoubleSpinBox(); self._mxh_sigi.setRange(0.01, 2.0); self._mxh_sigi.setSingleStep(0.01); self._mxh_sigi.setValue(round(_nn_spacing * 3.0, 3)); self._mxh_sigi.setDecimals(3)
         mxh_f.addRow("Exc. amplitude",    self._mxh_exc)
-        _tip(self._mxh_exc, "Excitatory peak amplitude — drives near-neighbour excitation")
+        self._tip(self._mxh_exc, "Excitatory peak amplitude — drives near-neighbour excitation")
         mxh_f.addRow("σ_exc (ring frac.)", self._mxh_sige)
-        _tip(self._mxh_sige,
+        self._tip(self._mxh_sige,
              f"Excitatory width in ring-fraction units [0,1]. "
              f"Must exceed the nearest-neighbour spacing ({_nn_spacing}) "
              f"to produce genuine local excitation. "
              f"For a single bump, σ_exc ≥ 1.0 – 1.5 × spacing.")
         mxh_f.addRow("Inh. amplitude",    self._mxh_inh)
-        _tip(self._mxh_inh, "Inhibitory peak amplitude — suppresses distant neurons")
+        self._tip(self._mxh_inh, "Inhibitory peak amplitude — suppresses distant neurons")
         mxh_f.addRow("σ_inh (ring frac.)", self._mxh_sigi)
-        _tip(self._mxh_sigi,
+        self._tip(self._mxh_sigi,
              "Inhibitory width — must be larger than σ_exc to create the Mexican-hat profile. "
              "If σ_inh ≤ σ_exc the kernel is purely excitatory and no bump forms.")
         self._mxh_zero_diag = QCheckBox("Zero diagonal (no self-connections)"); self._mxh_zero_diag.setChecked(True)
@@ -364,39 +443,39 @@ class WeightMatrixDialog(QDialog):
         mxh_f.addRow(QLabel(f"<span style='font-size:8px;color:{C['muted']}'>"
                             f"Nearest-neighbour spacing: {_nn_spacing}  "
                             f"(= 1/{max(ns, nt)} ring fractions)</span>"))
-        stack.addWidget(mxh_w)
+        return mxh_w
 
-        # One-to-one
+    def _page_one_to_one(self, ns, nt):
         oto_w = QWidget(); oto_f = QFormLayout(oto_w); oto_f.setContentsMargins(0, 4, 0, 0)
         self._oto_amp = QDoubleSpinBox(); self._oto_amp.setRange(-100, 100); self._oto_amp.setSingleStep(0.001); self._oto_amp.setDecimals(6); self._oto_amp.setValue(1.0)
         self._oto_off = QSpinBox(); self._oto_off.setRange(-max(ns, nt), max(ns, nt)); self._oto_off.setValue(0)
         oto_f.addRow("Amplitude",   self._oto_amp)
-        _tip(self._oto_amp, "Weight of each one-to-one pairing")
+        self._tip(self._oto_amp, "Weight of each one-to-one pairing")
         oto_f.addRow("Offset (src)", self._oto_off)
-        _tip(self._oto_off, "Shift source pairing index by this many neurons")
+        self._tip(self._oto_off, "Shift source pairing index by this many neurons")
         oto_f.addRow(QLabel(f"<span style='font-size:8px;color:{C['muted']}'>"
                             f"W[i,j] = amp if j==round(i·{ns}/{nt}+off)%{ns}</span>"))
-        stack.addWidget(oto_w)
+        return oto_w
 
-        # Rand uniform
+    def _page_rand_uniform(self):
         rnd_unif_w = QWidget(); rnd_unif_f = QFormLayout(rnd_unif_w); rnd_unif_f.setContentsMargins(0, 4, 0, 0)
         self._rnd_unif_amp = QDoubleSpinBox(); self._rnd_unif_amp.setRange(0.000001, 100); self._rnd_unif_amp.setSingleStep(0.001); self._rnd_unif_amp.setDecimals(6); self._rnd_unif_amp.setValue(1.0)
         rnd_unif_f.addRow("Amplitude", self._rnd_unif_amp)
-        _tip(self._rnd_unif_amp, "Half-range of uniform distribution: W[i,j] ~ U(−amp, +amp)")
+        self._tip(self._rnd_unif_amp, "Half-range of uniform distribution: W[i,j] ~ U(−amp, +amp)")
         rnd_unif_f.addRow(QLabel(f"<span style='font-size:8px;color:{C['muted']}'>"
                                  f"W[i,j] ~ U(−amp, +amp)</span>"))
-        stack.addWidget(rnd_unif_w)
+        return rnd_unif_w
 
-        # Rand normal
+    def _page_rand_normal(self):
         rnd_norm_w = QWidget(); rnd_norm_f = QFormLayout(rnd_norm_w); rnd_norm_f.setContentsMargins(0, 4, 0, 0)
         self._rnd_norm_std = QDoubleSpinBox(); self._rnd_norm_std.setRange(0.000001, 100); self._rnd_norm_std.setSingleStep(0.001); self._rnd_norm_std.setDecimals(6); self._rnd_norm_std.setValue(0.1)
         rnd_norm_f.addRow("Std dev", self._rnd_norm_std)
-        _tip(self._rnd_norm_std, "Standard deviation of normal distribution: W[i,j] ~ N(0, std)")
+        self._tip(self._rnd_norm_std, "Standard deviation of normal distribution: W[i,j] ~ N(0, std)")
         rnd_norm_f.addRow(QLabel(f"<span style='font-size:8px;color:{C['muted']}'>"
                                  f"W[i,j] ~ N(0, std)</span>"))
-        stack.addWidget(rnd_norm_w)
+        return rnd_norm_w
 
-        # Expression
+    def _page_expression(self, ns, nt):
         expr_w = QWidget(); expr_vl = QVBoxLayout(expr_w); expr_vl.setContentsMargins(0, 4, 0, 0)
         self._expr_edit = QTextEdit()
         self._expr_edit.setFont(QFont('Courier New', 9))
@@ -406,13 +485,13 @@ class WeightMatrixDialog(QDialog):
             f"# Variables: nt={nt}  ns={ns}  np\n"
             f"# i = np.arange(nt)[:,None]   j = np.arange(ns)[None,:]\n"
             f"W = np.cos(2*np.pi*j/ns + np.pi*i/nt)")
-        _tip(self._expr_edit, "Python expression — assign result to W; shape must be (nt, ns)")
+        self._tip(self._expr_edit, "Python expression — assign result to W; shape must be (nt, ns)")
         expr_vl.addWidget(self._expr_edit)
         expr_vl.addWidget(QLabel(f"<span style='font-size:8px;color:{C['muted']}'>"
                                  f"i = arange(nt)[:,None] &nbsp; j = arange(ns)[None,:]</span>"))
-        stack.addWidget(expr_w)
+        return expr_w
 
-        # Manual
+    def _page_manual(self):
         manual_w = QWidget(); manual_f = QFormLayout(manual_w); manual_f.setContentsMargins(0, 4, 0, 0)
         manual_lbl = QLabel(
             "<span style='font-size:9px;color:#888'>"
@@ -425,20 +504,11 @@ class WeightMatrixDialog(QDialog):
         self._manual_scale.setSingleStep(0.1); self._manual_scale.setDecimals(6)
         self._manual_scale.setValue(1.0)
         manual_f.addRow("Scale", self._manual_scale)
-        _tip(self._manual_scale, "Multiplies every hand-entered weight — scale the whole "
+        self._tip(self._manual_scale, "Multiplies every hand-entered weight — scale the whole "
                                   "matrix up or down without retyping each cell")
-        stack.addWidget(manual_w)
+        return manual_w
 
-        ctrl_vl.addWidget(stack)
-
-        apply_btn = QPushButton("Apply ▶")
-        apply_btn.setDefault(False)
-        apply_btn.setAutoDefault(False)
-        ctrl_vl.addWidget(apply_btn)
-        ctrl_vl.addStretch()
-        mid.addWidget(ctrl_gb, stretch=0)
-
-        # Heatmap
+    def _build_heatmap(self, W_init):
         hmap_vl = QVBoxLayout()
         hmap_vl.setSpacing(2)
         hmap_vl.addWidget(QLabel("<span style='font-size:8px;color:gray'>Preview</span>"),
@@ -448,10 +518,10 @@ class WeightMatrixDialog(QDialog):
         self._hmap.set_matrix(W_init)
         hmap_vl.addWidget(self._hmap, alignment=Qt.AlignHCenter)
         hmap_vl.addStretch()
-        mid.addLayout(hmap_vl, stretch=1)
-        main.addLayout(mid)
+        return hmap_vl
 
-        # Raw table (collapsible)
+    def _build_raw_table(self, src_name, tgt_name, ns, nt, W_init):
+        """Raw matrix table (collapsible)."""
         table_gb = QGroupBox("Raw matrix")
         table_gb.setCheckable(True)
         table_gb.setChecked(max(nt, ns) <= 6)
@@ -472,54 +542,38 @@ class WeightMatrixDialog(QDialog):
         table_vl.addWidget(self._table)
         self._table.setVisible(table_gb.isChecked())
         table_gb.toggled.connect(self._table.setVisible)
-        main.addWidget(table_gb)
+        return table_gb
 
-        main.addWidget(status_lbl)
-        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok |
-                              QDialogButtonBox.StandardButton.Cancel)
-        bb.accepted.connect(self.accept)
-        bb.rejected.connect(self.reject)
-        main.addWidget(bb)
-
-        apply_btn.clicked.connect(self._apply)
-        self._pattern_cb.currentIndexChanged.connect(stack.setCurrentIndex)
-
-        # Pre-populate from saved_params
-        if saved_params:
-            p = saved_params
-            u = p.get('uniform', {})
-            if 'amp' in u: self._unif_amp.setValue(u['amp'])
-            c_ = p.get('cosine', {})
-            if 'amp'  in c_: self._cos_amp.setValue(c_['amp'])
-            if 'ph0'  in c_: self._cos_ph0.setValue(c_['ph0'])
-            if 'step' in c_: self._cos_step.setValue(c_['step'])
-            if 'bias' in c_: self._cos_bias.setValue(c_['bias'])
-            g = p.get('gaussian', {})
-            if 'amp'  in g: self._gau_amp.setValue(g['amp'])
-            if 'sig'  in g: self._gau_sig.setValue(g['sig'])
-            if 'off'  in g: self._gau_off.setValue(g['off'])
-            if 'base' in g: self._gau_base.setValue(g['base'])
-            m = p.get('mexican_hat', {})
-            if 'exc'  in m: self._mxh_exc.setValue(m['exc'])
-            if 'sige' in m: self._mxh_sige.setValue(m['sige'])
-            if 'inh'  in m: self._mxh_inh.setValue(m['inh'])
-            if 'sigi' in m: self._mxh_sigi.setValue(m['sigi'])
-            o = p.get('one_to_one', {})
-            if 'amp' in o: self._oto_amp.setValue(o['amp'])
-            if 'off' in o: self._oto_off.setValue(o['off'])
-            ru = p.get('rand_uniform', {})
-            if 'amp' in ru: self._rnd_unif_amp.setValue(ru['amp'])
-            rn = p.get('rand_normal', {})
-            if 'std' in rn: self._rnd_norm_std.setValue(rn['std'])
-            e = p.get('expression', {})
-            if 'code' in e: self._expr_edit.setPlainText(e['code'])
-            ma = p.get('manual', {})
-            if 'scale' in ma: self._manual_scale.setValue(ma['scale'])
-            self._pattern_cb.setCurrentIndex(p.get('type', 8))
-        else:
-            self._pattern_cb.setCurrentIndex(_IDX_MANUAL)
-
-        self.resize(max(520, ns * 35 + 320), 520)
+    def _load_saved_params(self, p):
+        u = p.get('uniform', {})
+        if 'amp' in u: self._unif_amp.setValue(u['amp'])
+        c_ = p.get('cosine', {})
+        if 'amp'  in c_: self._cos_amp.setValue(c_['amp'])
+        if 'ph0'  in c_: self._cos_ph0.setValue(c_['ph0'])
+        if 'step' in c_: self._cos_step.setValue(c_['step'])
+        if 'bias' in c_: self._cos_bias.setValue(c_['bias'])
+        g = p.get('gaussian', {})
+        if 'amp'  in g: self._gau_amp.setValue(g['amp'])
+        if 'sig'  in g: self._gau_sig.setValue(g['sig'])
+        if 'off'  in g: self._gau_off.setValue(g['off'])
+        if 'base' in g: self._gau_base.setValue(g['base'])
+        m = p.get('mexican_hat', {})
+        if 'exc'  in m: self._mxh_exc.setValue(m['exc'])
+        if 'sige' in m: self._mxh_sige.setValue(m['sige'])
+        if 'inh'  in m: self._mxh_inh.setValue(m['inh'])
+        if 'sigi' in m: self._mxh_sigi.setValue(m['sigi'])
+        o = p.get('one_to_one', {})
+        if 'amp' in o: self._oto_amp.setValue(o['amp'])
+        if 'off' in o: self._oto_off.setValue(o['off'])
+        ru = p.get('rand_uniform', {})
+        if 'amp' in ru: self._rnd_unif_amp.setValue(ru['amp'])
+        rn = p.get('rand_normal', {})
+        if 'std' in rn: self._rnd_norm_std.setValue(rn['std'])
+        e = p.get('expression', {})
+        if 'code' in e: self._expr_edit.setPlainText(e['code'])
+        ma = p.get('manual', {})
+        if 'scale' in ma: self._manual_scale.setValue(ma['scale'])
+        self._pattern_cb.setCurrentIndex(p.get('type', 8))
 
     def _compute_W(self):
         ns, nt = self._ns, self._nt
@@ -910,7 +964,90 @@ class PaletteChip(QPushButton):
             drag.exec(Qt.CopyAction)
 
 
-class _DialogsMixin:
+def _read_receptor_table(table, is_learning):
+    """Rows of the modulator-receptor table as modulator tuples; rows with an
+    empty name or an unparseable number are skipped."""
+    mods = []
+    for row in range(table.rowCount()):
+        name_item  = table.item(row, 0)
+        scale_item = table.item(row, 1)
+        site_combo = table.cellWidget(row, 2)
+        mode_combo = table.cellWidget(row, 3)
+        if not (name_item and scale_item and site_combo and mode_combo):
+            continue
+        n = name_item.text().strip()
+        if not n:
+            continue
+        try:
+            mod_row = [n, float(scale_item.text()), site_combo.currentText(), mode_combo.currentText()]
+            if is_learning:
+                chk = table.cellWidget(row, 4)
+                th_item = table.item(row, 5)
+                mod_row.append(bool(chk.isChecked()) if chk is not None else False)
+                mod_row.append(float(th_item.text()) if th_item is not None else 0.0)
+            mods.append(tuple(mod_row))
+        except ValueError:
+            pass
+    return mods
+
+
+def _sync_image_layer_n(lyr):
+    """After an edit, bring a Conv2dLayer / Reichardt2dLayer's n and image-node
+    display in line with its pool / n_filters / n_directions."""
+    import torch
+    from neurons import Conv2dLayer, Reichardt2dLayer
+    if isinstance(lyr, Conv2dLayer):
+        if lyr.pool == 'none':
+            lyr.viz_n = 1
+            if not hasattr(lyr, '_last_frame'):
+                lyr._last_frame = None
+            if not hasattr(lyr, 'frame_h'):
+                lyr.frame_h = None
+            if not hasattr(lyr, 'frame_w'):
+                lyr.frame_w = None
+        else:
+            try:
+                del lyr.viz_n
+            except AttributeError:
+                pass
+        new_n = lyr.n_filters
+        if lyr.n != new_n:
+            lyr.n = new_n
+            lyr.register_buffer('_x', torch.zeros(new_n))
+            lyr.output = torch.zeros(new_n)
+    if isinstance(lyr, Reichardt2dLayer):
+        if lyr.pool == 'none':
+            lyr.viz_n = 1
+            if not hasattr(lyr, '_last_frame'):
+                lyr._last_frame = None
+        else:
+            try:
+                del lyr.viz_n
+            except AttributeError:
+                pass
+            lyr.n = lyr.n_directions
+
+
+class NetworkDialogs:
+    """Create / edit dialogs of the network editor (sensors, layers, bodies,
+    notes, column notes). Each dialog that changes the circuit is one edit
+    transaction on the window's editor; Qt parent is the window."""
+
+    _ANGLE_PARAMS = {'angle_spread', 'center_angle', 'arc_angle', 'mount_angle', 'fov', 'vertical_angle'}
+
+
+
+    def __init__(self, win):
+        self.win = win
+
+    # edit_transaction runs against the window's circuit editor.
+    @property
+    def _editor(self):
+        return self.win._editor
+
+    def _on_edit_committed(self):
+        self.win._on_edit_committed()
+
     def _make_body_combo(self, bodies, current_body_ids=None):
         """Build a QComboBox for sensor body selection.
 
@@ -939,8 +1076,6 @@ class _DialogsMixin:
                     combo.setCurrentIndex(i)
                     break
         return combo
-
-    # ── Dialog shell helpers ──────────────────────────────────────────────────
 
     @staticmethod
     def _show_help_window(parent, title, markdown_text):
@@ -981,7 +1116,7 @@ class _DialogsMixin:
         Returns (dlg, form, status_lbl).  form is already added to the dialog
         layout; the caller just adds rows to it.
         """
-        dlg   = QDialog(self)
+        dlg   = QDialog(self.win)
         dlg.setWindowTitle(title)
         outer = QVBoxLayout(dlg)
         outer.setSpacing(2)
@@ -1225,7 +1360,33 @@ class _DialogsMixin:
                     pass
         return result
 
-    def _sensor_dialog(self, stype, sensor=None, target_container=None):
+    def _add_neuromod_fields(self, form, obj=None, learning=False):
+        """Neuromodulator rows shared by the sensor and layer dialogs: the
+        transmitter this element releases, its colour, and the receptors it
+        has. Returns a reader giving (transmitter|None, color|None, modulators)."""
+        cur_nt = (getattr(obj, 'neuromodulator_transmitter', None) or '') if obj is not None else ''
+        nt_edit = QLineEdit(cur_nt)
+        nt_edit.setPlaceholderText("e.g. dopamine  (leave empty if not a transmitter)")
+        form.addRow("neuromodulator transmitter", nt_edit)
+
+        cur_mod_color = (getattr(obj, 'neuromodulator_color', None) or '') if obj is not None else ''
+        mod_color_edit = QLineEdit(cur_mod_color)
+        mod_color_edit.setPlaceholderText("#FF6600  (hex color for this transmitter)")
+        form.addRow("transmitter color", mod_color_edit)
+
+        existing_mods = (getattr(obj, 'modulators', []) or []) if obj is not None else []
+        receptor_table, receptor_btns = self._receptor_table_widget(existing_mods, learning=learning)
+        form.addRow("Modulator receptors", receptor_table)
+        form.addRow(receptor_btns)
+
+        def read():
+            return (nt_edit.text().strip() or None, mod_color_edit.text().strip() or None,
+                    _read_receptor_table(receptor_table, learning))
+        return read
+
+    @edit_transaction
+    @_warns_fast_taus
+    def sensor_dialog(self, stype, sensor=None, target_container=None):
         """Unified create/edit dialog for sensors.
 
         sensor=None: creation mode (title "Add …", fields show defaults).
@@ -1245,18 +1406,18 @@ class _DialogsMixin:
         title = f"Edit {stype}: {sensor.name}" if is_edit else f"Add {stype}"
         dlg, form, status_lbl = self._make_param_dialog(title, getattr(cls, 'help_text', None))
 
-        default_name = sensor.name if is_edit else f"sensor{len(self.gui.circuit.sensors)}"
+        default_name = sensor.name if is_edit else f"sensor{len(self.win.gui.circuit.sensors)}"
         name_edit = QLineEdit(default_name)
         form.addRow("name", name_edit)
 
-        joints = self.gui.circuit.joints if hasattr(self.gui.circuit, 'joints') else []
-        bodies = self.gui.circuit.bodies if hasattr(self.gui.circuit, 'bodies') else []
+        joints = self.win.gui.circuit.joints if hasattr(self.win.gui.circuit, 'joints') else []
+        bodies = self.win.gui.circuit.bodies if hasattr(self.win.gui.circuit, 'bodies') else []
         cur_values = ({p[0]: getattr(sensor, p[0], p[2]) for p in params}
                       if is_edit else {p[0]: p[2] for p in params})
         editors = self._build_param_editors(
             form, dlg, status_lbl, params, cur_values,
             joints=joints, bodies=bodies, is_proprio=is_proprio,
-            layers=self.gui.circuit.layers)
+            layers=self.win.gui.circuit.layers)
 
         body_combo = None
         if not is_proprio and bodies:
@@ -1264,20 +1425,7 @@ class _DialogsMixin:
             body_combo = self._make_body_combo(bodies, cur_body_ids)
             form.addRow("mounted on body", body_combo)
 
-        cur_nt = (getattr(sensor, 'neuromodulator_transmitter', None) or '') if is_edit else ''
-        nt_edit = QLineEdit(cur_nt)
-        nt_edit.setPlaceholderText("e.g. dopamine  (leave empty if not a transmitter)")
-        form.addRow("neuromodulator transmitter", nt_edit)
-
-        cur_mod_color = (getattr(sensor, 'neuromodulator_color', None) or '') if is_edit else ''
-        mod_color_edit = QLineEdit(cur_mod_color)
-        mod_color_edit.setPlaceholderText("#FF6600  (hex color for this transmitter)")
-        form.addRow("transmitter color", mod_color_edit)
-
-        existing_mods = (getattr(sensor, 'modulators', []) or []) if is_edit else []
-        receptor_table, receptor_btns = self._receptor_table_widget(existing_mods)
-        form.addRow("Modulator receptors", receptor_table)
-        form.addRow(receptor_btns)
+        read_neuromod = self._add_neuromod_fields(form, sensor)
 
         btns = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -1286,72 +1434,38 @@ class _DialogsMixin:
         form.addRow(btns)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
-
-        new_mods = []
-        for row in range(receptor_table.rowCount()):
-            name_item  = receptor_table.item(row, 0)
-            scale_item = receptor_table.item(row, 1)
-            site_combo = receptor_table.cellWidget(row, 2)
-            mode_combo = receptor_table.cellWidget(row, 3)
-            if not (name_item and scale_item and site_combo and mode_combo):
-                continue
-            n = name_item.text().strip()
-            if not n:
-                continue
-            try:
-                new_mods.append((n, float(scale_item.text()), site_combo.currentText(), mode_combo.currentText()))
-            except ValueError:
-                pass
+        nt, mc, new_mods = read_neuromod()
 
         if is_edit:
             # ── Edit mode ─────────────────────────────────────────────────────
-            self._push_undo()
             new_name = name_edit.text().strip()
             if new_name and new_name != sensor.name:
                 old_name = sensor.name
                 sensor.name = new_name
-                self._rekey_container_metadata(old_name, new_name)
-                from dataclasses import replace as _dc_replace
-                self.gui.circuit.connections = [
-                    _dc_replace(c, src=new_name) if c.src == old_name else
-                    _dc_replace(c, src=new_name + c.src[len(old_name):])
-                    if c.src.startswith(old_name + '_') else c
-                    for c in self.gui.circuit.connections
-                ]
+                self.rekey_container_metadata(old_name, new_name)
+                # The sensor and its lateral halves — exact names, so another
+                # sensor that merely starts with the same prefix is left alone.
+                apply_renames(self.win.gui.circuit, self.win, {
+                    old_name: new_name,
+                    **dict(zip(half_names(old_name), half_names(new_name)))})
             for pname, val in self._read_param_editors(editors).items():
                 setattr(sensor, pname, val)
             # Force a fresh connections list identity so network_runner's
             # conn_id-gated shape caches (size-reconciliation, camera shape
             # propagation) re-run and pick up any edited shape param (e.g.
             # camera width/height) instead of staying frozen at pre-edit values.
-            self.gui.circuit.connections = list(self.gui.circuit.connections)
+            self.win.gui.circuit.connections = list(self.win.gui.circuit.connections)
             if body_combo is not None:
                 sensor.body_ids = body_combo.currentData() or ['root']
-            nt = nt_edit.text().strip()
-            sensor.neuromodulator_transmitter = nt if nt else None
-            mc = mod_color_edit.text().strip()
-            sensor.neuromodulator_color = mc if mc else None
+            sensor.neuromodulator_transmitter = nt
+            sensor.neuromodulator_color = mc
             sensor.modulators = new_mods
-            if isinstance(sensor, ProprioceptiveSensor) and sensor.joint_id:
-                grp = sorted(
-                    [jt for jt in joints if jt.motor_layer_name == sensor.joint_id],
-                    key=lambda j: j.motor_output_idx
-                )
-                sensor._joint_refs = grp
-                sensor._layer_ref  = None
-                if grp:
-                    sensor.n = len(grp)
-                else:
-                    lyr = next((l for l in self.gui.circuit.layers
-                                if l.name == sensor.joint_id), None)
-                    sensor._layer_ref = lyr
-                    sensor.n = (lyr.n or 1) if lyr is not None else 1
-            self._build_without_selection_filter()
+            sensor.resolve_refs(self.win.gui.circuit)
+            self.win.editing.build_without_selection_filter()
 
         else:
             # ── Create mode ───────────────────────────────────────────────────
-            self._push_undo()
-            kwargs = {'name': name_edit.text().strip() or f'sensor{len(self.gui.circuit.sensors)}'}
+            kwargs = {'name': name_edit.text().strip() or f'sensor{len(self.win.gui.circuit.sensors)}'}
             kwargs.update(self._read_param_editors(editors))
             angle_vals = {k: kwargs.pop(k) for k in list(kwargs) if k in self._ANGLE_PARAMS}
             new_sensor = cls(**kwargs)
@@ -1359,35 +1473,21 @@ class _DialogsMixin:
                 setattr(new_sensor, pname, val)
             if body_combo is not None:
                 new_sensor.body_ids = body_combo.currentData() or ['root']
-            nt = nt_edit.text().strip()
-            new_sensor.neuromodulator_transmitter = nt if nt else None
-            mc = mod_color_edit.text().strip()
-            new_sensor.neuromodulator_color = mc if mc else None
+            new_sensor.neuromodulator_transmitter = nt
+            new_sensor.neuromodulator_color = mc
             if new_mods:
                 new_sensor.modulators = new_mods
-            if isinstance(new_sensor, ProprioceptiveSensor) and new_sensor.joint_id:
-                group = sorted(
-                    [jt for jt in joints if jt.motor_layer_name == new_sensor.joint_id],
-                    key=lambda j: j.motor_output_idx
-                )
-                new_sensor._joint_refs = group
-                new_sensor._layer_ref  = None
-                if group:
-                    new_sensor.n = len(group)
-                else:
-                    lyr = next((l for l in self.gui.circuit.layers
-                                if l.name == new_sensor.joint_id), None)
-                    new_sensor._layer_ref = lyr
-                    new_sensor.n = (lyr.n or 1) if lyr is not None else 1
-            self.gui.circuit.sensors.append(new_sensor)
+            new_sensor.resolve_refs(self.win.gui.circuit)
+            self.win.gui.circuit.sensors.append(new_sensor)
             if target_container is not None:
                 new_sensor.layer = target_container
-            self.build()
+            self.win.build()
 
-    def _body_dialog(self, layer):
+    @edit_transaction
+    def body_dialog(self, layer):
         import math
         lname   = layer.name
-        circuit = self.gui.circuit
+        circuit = self.win.gui.circuit
 
         linked_joints = [j for j in circuit.joints if j.motor_layer_name == lname]
         if not linked_joints:
@@ -1449,7 +1549,6 @@ class _DialogsMixin:
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
 
-        self._push_undo()
         new_name   = name_edit.text().strip() or base_name
         new_radius = radius_spin.value()
         new_dist   = attach_dist_spin.value()
@@ -1460,7 +1559,7 @@ class _DialogsMixin:
         # Rename layer + connections + joint refs if name changed
         if new_name != lname:
             layer.name = new_name
-            self._rekey_container_metadata(lname, new_name)
+            self.rekey_container_metadata(lname, new_name)
             from dataclasses import replace as _dc_replace
             circuit.connections = [
                 _dc_replace(c,
@@ -1490,32 +1589,37 @@ class _DialogsMixin:
             if new_name != lname:
                 ref_body.name = new_name
 
-        self._build_without_selection_filter()
+        self.win.editing.build_without_selection_filter()
 
-    def _rekey_container_metadata(self, old_name, new_name):
+    def rekey_container_metadata(self, old_name, new_name):
         """Migrate any container_labels/container_notes entry referencing
-        *old_name* to use *new_name* instead, so an explicit label/note set on
-        a container survives renaming one of its occupants — container
-        identity is derived from occupant names (see _container_key), so
-        without this the entry would otherwise be silently orphaned under a
-        now-stale key."""
+        *old_name* to use *new_name* instead (new_name=None: the occupant was
+        removed), so an explicit label/note set on a container survives
+        renaming or removing one of its occupants — container identity is
+        derived from occupant names (see _container_key), so without this the
+        entry would otherwise be silently orphaned under a now-stale key."""
         if old_name == new_name:
             return
-        for store in (self._container_labels, self._container_notes):
+        for store in (self.win._container_labels, self.win._container_notes):
             for old_key in list(store.keys()):
                 parts = old_key.split('|')
                 if old_name not in parts:
                     continue
-                new_key = '|'.join(sorted(new_name if p == old_name else p for p in parts))
+                kept = [new_name if p == old_name else p for p in parts]
+                kept = [p for p in kept if p is not None]
+                if not kept:
+                    continue   # last occupant gone: leave the entry (column may come back via undo)
+                new_key = '|'.join(sorted(kept))
                 if new_key != old_key:
                     store[new_key] = store.pop(old_key)
 
-    def _container_note_dialog(self, container):
+    @edit_transaction
+    def container_note_dialog(self, container):
         """Add/edit/clear a container's note. Returns True if the note text
         changed (caller should call _refresh_container_note), else False."""
-        key     = self._container_key(container)
-        current = self._container_notes.get(key, '')
-        dlg = QDialog(self)
+        key     = self.win.layout_engine.container_key(container)
+        current = self.win._container_notes.get(key, '')
+        dlg = QDialog(self.win)
         dlg.setWindowTitle('Container note')
         vl = QVBoxLayout(dlg)
         vl.addWidget(QLabel(
@@ -1535,18 +1639,18 @@ class _DialogsMixin:
         text = editor.toPlainText()
         if text == current:
             return False
-        self._push_undo()
         if text.strip():
-            self._container_notes[key] = text
+            self.win._container_notes[key] = text
         else:
-            self._container_notes.pop(key, None)
+            self.win._container_notes.pop(key, None)
         return True
 
-    def _note_dialog(self, note=None, pos=None):
+    @edit_transaction
+    def note_dialog(self, note=None, pos=None):
         """Add or edit a sticky note. Returns the Note, or None if cancelled."""
         from circuit_model import Note
         is_edit = note is not None
-        dlg = QDialog(self)
+        dlg = QDialog(self.win)
         dlg.setWindowTitle('Edit note' if is_edit else 'Add note')
         vl = QVBoxLayout(dlg)
         vl.addWidget(QLabel(
@@ -1564,29 +1668,27 @@ class _DialogsMixin:
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return None
         text = editor.toPlainText()
-        self._push_undo()
         if is_edit:
             note.text = text
             return note
         new_note = Note(x=pos.x(), y=pos.y(), text=text)
-        self.gui.circuit.notes.append(new_note)
+        self.win.gui.circuit.notes.append(new_note)
         return new_note
 
-    def _layer_dialog(self, ltype, layer=None, target_container=None):
+    @edit_transaction
+    @_warns_fast_taus
+    def layer_dialog(self, ltype, layer=None, target_container=None):
         """Unified create/edit dialog for layers.
 
         layer=None: creation mode (title "Add …", fields show defaults).
         layer=<obj>: edit mode (title "Edit …: name", fields show live values).
         """
-        from neurons import LAYER_REGISTRY, DynamicsBase, LearningLayerBase
+        from neurons import LAYER_REGISTRY
         cls    = LAYER_REGISTRY.get(ltype)
-        is_learning = cls is not None and issubclass(cls, LearningLayerBase)
-        params = list(cls.param_defs() if cls is not None else [])
+        is_learning = cls is not None and cls.is_learning
+        params = cls.all_param_defs() if cls is not None else []
         if not params:
             return
-        if cls is not None and issubclass(cls, DynamicsBase):
-            existing = {p[0] for p in params}
-            params += [p for p in DynamicsBase._dynamics_param_defs() if p[0] not in existing]
 
         is_edit = layer is not None
         title   = f"Edit {ltype}: {layer.name}" if is_edit else f"Add {ltype}"
@@ -1599,13 +1701,19 @@ class _DialogsMixin:
                 f"Lateralized pair — edits also apply to <b>{pair_name}</b></span>")
             form.addRow(note)
 
-        default_name = layer.name if is_edit else f"layer{len(self.gui.circuit.layers)}"
+        default_name = layer.name if is_edit else f"layer{len(self.win.gui.circuit.layers)}"
         name_edit = QLineEdit(default_name)
         form.addRow("name", name_edit)
 
         cur_values = ({p[0]: getattr(layer, p[0], p[2]) for p in params}
                       if is_edit else {p[0]: p[2] for p in params})
         editors = self._build_param_editors(form, dlg, status_lbl, params, cur_values)
+        if is_edit and layer.name == 'motor':
+            # The wheel motor layer is permanent: fixed name, one neuron per wheel.
+            name_edit.setReadOnly(True)
+            name_edit.setToolTip("The wheel motor layer can't be renamed or removed")
+            if 'n' in editors:
+                editors['n'][1].setEnabled(False)
 
         z_val = (getattr(layer, 'z', 0) or 0) if is_edit else 0
         z_spin = QSpinBox()
@@ -1614,20 +1722,7 @@ class _DialogsMixin:
         z_spin.setToolTip("Subsumption depth — controls Side View row and 3D visualizer depth axis")
         form.addRow("Subsumption depth", z_spin)
 
-        cur_nt = (getattr(layer, 'neuromodulator_transmitter', None) or '') if is_edit else ''
-        nt_edit = QLineEdit(cur_nt)
-        nt_edit.setPlaceholderText("e.g. dopamine  (leave empty if not a transmitter)")
-        form.addRow("neuromodulator transmitter", nt_edit)
-
-        cur_mod_color = (getattr(layer, 'neuromodulator_color', None) or '') if is_edit else ''
-        mod_color_edit = QLineEdit(cur_mod_color)
-        mod_color_edit.setPlaceholderText("#FF6600  (hex color for this transmitter)")
-        form.addRow("transmitter color", mod_color_edit)
-
-        existing_mods = (getattr(layer, 'modulators', []) or []) if is_edit else []
-        receptor_table, receptor_btns = self._receptor_table_widget(existing_mods, learning=is_learning)
-        form.addRow("Modulator receptors", receptor_table)
-        form.addRow(receptor_btns)
+        read_neuromod = self._add_neuromod_fields(form, layer, learning=is_learning)
 
         btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         btns.accepted.connect(dlg.accept)
@@ -1636,251 +1731,186 @@ class _DialogsMixin:
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
 
-        new_mods = []
-        for row in range(receptor_table.rowCount()):
-            name_item  = receptor_table.item(row, 0)
-            scale_item = receptor_table.item(row, 1)
-            site_combo = receptor_table.cellWidget(row, 2)
-            mode_combo = receptor_table.cellWidget(row, 3)
-            if not (name_item and scale_item and site_combo and mode_combo):
-                continue
-            n = name_item.text().strip()
-            if not n:
-                continue
-            try:
-                mod_row = [n, float(scale_item.text()), site_combo.currentText(), mode_combo.currentText()]
-                if is_learning:
-                    chk = receptor_table.cellWidget(row, 4)
-                    th_item = receptor_table.item(row, 5)
-                    mod_row.append(bool(chk.isChecked()) if chk is not None else False)
-                    mod_row.append(float(th_item.text()) if th_item is not None else 0.0)
-                new_mods.append(tuple(mod_row))
-            except ValueError:
-                pass
-
+        values = self._read_param_editors(editors)
+        nt, mc, new_mods = read_neuromod()
         if is_edit:
-            # ── Edit mode ─────────────────────────────────────────────────────
-            all_vals = self._read_param_editors(editors)
-            old_n = layer.n
-            new_n = all_vals.get('n', old_n)
-            if new_n != old_n:
-                check_names = {layer.name}
-                if pair_name:
-                    check_names.add(pair_name)
-                incompatible = []
-                for conn in self.gui.circuit.connections:
-                    W = np.asarray(conn.W, dtype=float)
-                    mismatch = False
-                    if conn.tgt in check_names:
-                        if W.ndim in (2, 4) and W.shape[0] != new_n:
-                            mismatch = True
-                    if not mismatch and conn.src in check_names:
-                        if W.ndim == 2 and W.shape[1] != new_n:
-                            mismatch = True
-                    if mismatch:
-                        incompatible.append(conn)
-                if incompatible:
-                    lines = '\n'.join(
-                        f"  {c.src} → {c.tgt}  (W {np.asarray(c.W).shape})"
-                        for c in incompatible
-                    )
-                    reply = QMessageBox.question(
-                        self, "Incompatible connections",
-                        f"Changing n from {old_n} to {new_n} makes "
-                        f"{len(incompatible)} connection(s) incompatible:\n\n{lines}"
-                        f"\n\nDelete these connections and continue?",
-                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    )
-                    if reply != QMessageBox.StandardButton.Yes:
-                        return
-                    _bad = {id(c) for c in incompatible}
-                    self.gui.circuit.connections = [
-                        c for c in self.gui.circuit.connections if id(c) not in _bad
-                    ]
-                    if hasattr(self.gui.brain, 'connections'):
-                        self.gui.brain.connections = self.gui.circuit.connections
-
-            self._push_undo()
-            new_name = name_edit.text().strip()
-            if new_name and new_name != layer.name:
-                old_name = layer.name
-                layer.name = new_name
-                self._rekey_container_metadata(old_name, new_name)
-                from dataclasses import replace as _dc_replace
-                self.gui.circuit.connections = [
-                    _dc_replace(c,
-                                src=new_name if c.src == old_name else c.src,
-                                tgt=new_name if c.tgt == old_name else c.tgt)
-                    for c in self.gui.circuit.connections
-                ]
-            # Apply params — tau last so it overrides tau_rise/tau_decay
-            tau_val = all_vals.pop('tau', None)
-            for pname, val in all_vals.items():
-                setattr(layer, pname, val)
-            if tau_val is not None:
-                setattr(layer, 'tau', tau_val)
-            layer.z = z_spin.value()
-            nt = nt_edit.text().strip()
-            layer.neuromodulator_transmitter = nt if nt else None
-            mc = mod_color_edit.text().strip()
-            layer.neuromodulator_color = mc if mc else None
-            layer.modulators = new_mods
-
-            import torch as _torch
-            from neurons import Conv2dLayer as _C2d, Reichardt2dLayer as _R2d, Leaky2dLayer as _L2d
-            if isinstance(layer, _C2d) and layer.pool == 'none' and layer.n_filters > 1:
-                QMessageBox.warning(self, "Conv2dLayer",
-                                    "pool='none' requires n_filters=1.\n\n"
-                                    "n_filters has been corrected to 1.")
-                layer.n_filters = 1
-
-            def _sync_conv_n(lyr):
-                if isinstance(lyr, _C2d):
-                    if lyr.pool == 'none':
-                        lyr.viz_n = 1
-                        if not hasattr(lyr, '_last_frame'):
-                            lyr._last_frame = None
-                        if not hasattr(lyr, 'frame_h'):
-                            lyr.frame_h = None
-                        if not hasattr(lyr, 'frame_w'):
-                            lyr.frame_w = None
-                    else:
-                        try:
-                            del lyr.viz_n
-                        except AttributeError:
-                            pass
-                    new_n = lyr.n_filters
-                    if lyr.n != new_n:
-                        lyr.n = new_n
-                        lyr.register_buffer('_x', _torch.zeros(new_n))
-                        lyr.output = _torch.zeros(new_n)
-
-            def _sync_reichardt(lyr):
-                if isinstance(lyr, _R2d):
-                    if lyr.pool == 'none':
-                        lyr.viz_n = 1
-                        if not hasattr(lyr, '_last_frame'):
-                            lyr._last_frame = None
-                    else:
-                        try:
-                            del lyr.viz_n
-                        except AttributeError:
-                            pass
-                        lyr.n = lyr.n_directions
-
-            _sync_conv_n(layer)
-            _sync_reichardt(layer)
-
-            # If lateralized was just turned on (had no pair before), create the _R partner now.
-            if getattr(layer, 'lateralized', False) and not pair_name and isinstance(layer, (_C2d, _L2d, _R2d)):
-                base_name = layer.name
-                if base_name.endswith('_L') or base_name.endswith('_R'):
-                    base_name = base_name[:-2]
-                if not layer.name.endswith('_L'):
-                    old_layer_name = layer.name
-                    layer.name = base_name + '_L'
-                    if hasattr(self.gui.brain, old_layer_name):
-                        delattr(self.gui.brain, old_layer_name)
-                    setattr(self.gui.brain, layer.name, layer)
-                    from dataclasses import replace as _dc_repl
-                    self.gui.circuit.connections = [
-                        _dc_repl(c,
-                                 src=layer.name if c.src == old_layer_name else c.src,
-                                 tgt=layer.name if c.tgt == old_layer_name else c.tgt)
-                        for c in self.gui.circuit.connections
-                    ]
-                r_kwargs = {pname: getattr(layer, pname)
-                            for pname, *_ in params if hasattr(layer, pname)}
-                r_kwargs['name'] = base_name + '_R'
-                r_kwargs['lateralized'] = True
-                partner = type(layer)(**r_kwargs)
-                for attr in ('z', 'layer', 'group', 'neuromodulator_transmitter',
-                             'neuromodulator_color', 'modulators'):
-                    if hasattr(layer, attr):
-                        setattr(partner, attr, getattr(layer, attr))
-                self.gui.circuit.layers.append(partner)
-                setattr(self.gui.brain, partner.name, partner)
-                _sync_conv_n(partner)
-                _sync_reichardt(partner)
-                layer.lateral_pair = partner.name
-                partner.lateral_pair = layer.name
-                pair_name = partner.name
-
-            if pair_name:
-                partner = next((l for l in self.gui.circuit.layers
-                                if l.name == pair_name), None)
-                if partner is not None:
-                    for pname, *_ in params:
-                        if pname != 'lateralized' and hasattr(layer, pname):
-                            setattr(partner, pname, getattr(layer, pname))
-                    for attr in ('group', 'z', 'neuromodulator_transmitter',
-                                 'neuromodulator_color', 'modulators'):
-                        if hasattr(layer, attr):
-                            setattr(partner, attr, getattr(layer, attr))
-                    _sync_conv_n(partner)
-                    _sync_reichardt(partner)
-
-            # Force a fresh connections list identity so network_runner's
-            # conn_id-gated shape caches (size-reconciliation, camera shape
-            # propagation) re-run and pick up any edited shape param (e.g.
-            # n_filters/kernel_size) instead of staying frozen at pre-edit values.
-            self.gui.circuit.connections = list(self.gui.circuit.connections)
-            self._build_without_selection_filter()
-
+            self._apply_layer_edit(layer, params, values, name_edit.text().strip(),
+                                   z_spin.value(), nt, mc, new_mods)
         else:
-            # ── Create mode ───────────────────────────────────────────────────
-            kwargs = {'name': name_edit.text().strip() or f'layer{len(self.gui.circuit.layers)}'}
-            kwargs.update(self._read_param_editors(editors))
-            nt = nt_edit.text().strip()
+            kwargs = {'name': name_edit.text().strip() or f'layer{len(self.win.gui.circuit.layers)}'}
+            kwargs.update(values)
             if nt:
                 kwargs['neuromodulator_transmitter'] = nt
-            mc = mod_color_edit.text().strip()
             if mc:
                 kwargs['neuromodulator_color'] = mc
             if new_mods:
                 kwargs['modulators'] = new_mods
+            self._create_layer(cls, kwargs, z_spin.value(), target_container)
 
-            self._push_undo()
-            from neurons import RingAttractorLayer as _RAL, Conv2dLayer as _C2d, Leaky2dLayer as _L2dCls, Reichardt2dLayer as _R2dCls
-            if issubclass(cls, _C2d) and kwargs.get('pool') == 'none' and int(kwargs.get('n_filters', 1)) > 1:
-                QMessageBox.warning(self, "Conv2dLayer",
-                                    "pool='none' requires n_filters=1.\n\n"
-                                    "n_filters has been corrected to 1.")
-                kwargs['n_filters'] = 1
+    def _drop_incompatible_connections(self, layer, new_n):
+        """Changing a layer's n breaks connections whose W no longer fits. Asks,
+        then deletes them; returns False if the user declined."""
+        check_names = {layer.name}
+        if getattr(layer, 'lateral_pair', None):
+            check_names.add(layer.lateral_pair)
+        incompatible = []
+        for conn in self.win.gui.circuit.connections:
+            W = np.asarray(conn.W, dtype=float)
+            mismatch = False
+            if conn.tgt in check_names:
+                if W.ndim in (2, 4) and W.shape[0] != new_n:
+                    mismatch = True
+            if not mismatch and conn.src in check_names:
+                if W.ndim == 2 and W.shape[1] != new_n:
+                    mismatch = True
+            if mismatch:
+                incompatible.append(conn)
+        if not incompatible:
+            return True
+        lines = '\n'.join(
+            f"  {c.src} → {c.tgt}  (W {np.asarray(c.W).shape})"
+            for c in incompatible
+        )
+        reply = QMessageBox.question(
+            self.win, "Incompatible connections",
+            f"Changing n from {layer.n} to {new_n} makes "
+            f"{len(incompatible)} connection(s) incompatible:\n\n{lines}"
+            f"\n\nDelete these connections and continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return False
+        bad = {id(c) for c in incompatible}
+        self.win.gui.circuit.connections = [
+            c for c in self.win.gui.circuit.connections if id(c) not in bad
+        ]
+        if hasattr(self.win.gui.brain, 'connections'):
+            self.win.gui.brain.connections = self.win.gui.circuit.connections
+        return True
 
-            if kwargs.get('lateralized') and issubclass(cls, (_C2d, _L2dCls, _R2dCls)):
-                base_name = kwargs.pop('name')
-                new_layers = []
-                for side in ('_L', '_R'):
-                    kw = dict(kwargs, name=base_name + side, lateralized=True)
-                    lyr = cls(**kw)
-                    self.gui.circuit.layers.append(lyr)
-                    setattr(self.gui.brain, lyr.name, lyr)
-                    new_layers.append(lyr)
-                new_layers[0].lateral_pair = new_layers[1].name
-                new_layers[1].lateral_pair = new_layers[0].name
-                for lyr in new_layers:
-                    lyr.z = z_spin.value() or None
-                    if target_container is not None:
-                        lyr.layer = target_container
-            else:
-                new_layer = cls(**kwargs)
-                self.gui.circuit.layers.append(new_layer)
-                setattr(self.gui.brain, new_layer.name, new_layer)
-                new_layer.z = z_spin.value()
+    def _apply_layer_edit(self, layer, params, values, new_name, z, nt, mc, new_mods):
+        """Write the dialog values to an existing layer (and its lateral partner)."""
+        if layer.name == 'motor':
+            new_name = 'motor'
+            values['n'] = layer.n
+        new_n = values.get('n', layer.n)
+        if new_n != layer.n and not self._drop_incompatible_connections(layer, new_n):
+            return
+
+        if new_name and new_name != layer.name:
+            # A lateral pair is renamed as a unit (links, connections, weight settings).
+            for old, new in rename_layer(self.win.gui.circuit, layer, new_name, meta=self.win).items():
+                self.rekey_container_metadata(old, new)
+        pair_name = getattr(layer, 'lateral_pair', None)
+        # Apply params — tau last so it overrides tau_rise/tau_decay
+        tau_val = values.pop('tau', None)
+        for pname, val in values.items():
+            setattr(layer, pname, val)
+        if tau_val is not None:
+            setattr(layer, 'tau', tau_val)
+        layer.z = z
+        layer.neuromodulator_transmitter = nt
+        layer.neuromodulator_color = mc
+        layer.modulators = new_mods
+
+        from neurons import Conv2dLayer as _C2d
+        if isinstance(layer, _C2d) and layer.pool == 'none' and layer.n_filters > 1:
+            QMessageBox.warning(self.win, "Conv2dLayer",
+                                "pool='none' requires n_filters=1.\n\n"
+                                "n_filters has been corrected to 1.")
+            layer.n_filters = 1
+        _sync_image_layer_n(layer)
+
+        # If lateralized was just turned on (had no pair before), create the _R partner now;
+        # if it was turned off, the pair becomes one layer again.
+        if getattr(layer, 'lateralized', False) and not pair_name and layer.supports_lateral:
+            pair_name = self._add_lateral_partner(layer, params)
+        elif pair_name and not getattr(layer, 'lateralized', False):
+            removed, renames = unpair_layer(self.win.gui.circuit, layer, meta=self.win)
+            if removed:
+                self.rekey_container_metadata(removed, None)
+            for old, new in renames.items():
+                self.rekey_container_metadata(old, new)
+            pair_name = None
+
+        if pair_name:
+            partner = partner_layer(self.win.gui.circuit.layers, layer)
+            if partner is not None:
+                for pname in type(layer).lateral_sync_params():
+                    if hasattr(layer, pname):
+                        setattr(partner, pname, getattr(layer, pname))
+                for attr in ('group', 'z', 'neuromodulator_transmitter',
+                             'neuromodulator_color', 'modulators'):
+                    if hasattr(layer, attr):
+                        setattr(partner, attr, getattr(layer, attr))
+                _sync_image_layer_n(partner)
+
+        # Force a fresh connections list identity so network_runner's
+        # conn_id-gated shape caches (size-reconciliation, camera shape
+        # propagation) re-run and pick up any edited shape param (e.g.
+        # n_filters/kernel_size) instead of staying frozen at pre-edit values.
+        self.win.gui.circuit.connections = list(self.win.gui.circuit.connections)
+        self.win.editing.build_without_selection_filter()
+
+    def _add_lateral_partner(self, layer, params):
+        """Split `layer` into an _L/_R pair: rename it to _L and add an _R copy.
+        Returns the partner's name."""
+        name_L, name_R = half_names(_lateral_base(layer.name))
+        if layer.name != name_L:
+            old_layer_name = layer.name
+            layer.name = name_L
+            apply_renames(self.win.gui.circuit, self.win, {old_layer_name: name_L})
+        r_kwargs = {pname: getattr(layer, pname)
+                    for pname, *_ in params if hasattr(layer, pname)}
+        r_kwargs['name'] = name_R
+        r_kwargs['lateralized'] = True
+        partner = type(layer)(**r_kwargs)
+        for attr in ('z', 'layer', 'group', 'neuromodulator_transmitter',
+                     'neuromodulator_color', 'modulators'):
+            if hasattr(layer, attr):
+                setattr(partner, attr, getattr(layer, attr))
+        self.win.gui.circuit.layers.append(partner)   # brain re-synced by the transaction
+        _sync_image_layer_n(partner)
+        layer.lateral_pair = partner.name
+        partner.lateral_pair = layer.name
+        return partner.name
+
+    def _create_layer(self, cls, kwargs, z, target_container):
+        """Create mode: add the layer (or an _L/_R pair) to the circuit."""
+        from neurons import RingAttractorLayer as _RAL, Conv2dLayer as _C2d
+        if issubclass(cls, _C2d) and kwargs.get('pool') == 'none' and int(kwargs.get('n_filters', 1)) > 1:
+            QMessageBox.warning(self.win, "Conv2dLayer",
+                                "pool='none' requires n_filters=1.\n\n"
+                                "n_filters has been corrected to 1.")
+            kwargs['n_filters'] = 1
+
+        if kwargs.get('lateralized') and cls.supports_lateral:
+            pair_base = kwargs.pop('name')
+            new_layers = []
+            for half in half_names(pair_base):
+                lyr = cls(**dict(kwargs, name=half, lateralized=True))
+                self.win.gui.circuit.layers.append(lyr)   # brain re-synced by the transaction
+                new_layers.append(lyr)
+            new_layers[0].lateral_pair = new_layers[1].name
+            new_layers[1].lateral_pair = new_layers[0].name
+            for lyr in new_layers:
+                lyr.z = z or None
                 if target_container is not None:
-                    new_layer.layer = target_container
-                if isinstance(new_layer, _RAL):
-                    W = _RAL.default_kernel(new_layer.n)
-                    from circuit_model import Connection as _Conn
-                    self.gui.circuit.connections.append(
-                        _Conn(new_layer.name, new_layer.name, W))
-                    # Force a fresh connections list identity — see the matching
-                    # comment in network_viz_editing.py's _insert_motif — so
-                    # network_runner's conn_id-gated caches don't silently miss
-                    # this default self-recurrent connection.
-                    self.gui.circuit.connections = list(self.gui.circuit.connections)
-            self.build()
-
-    _ANGLE_PARAMS = {'angle_spread', 'center_angle', 'arc_angle', 'mount_angle', 'fov', 'vertical_angle'}
-
+                    lyr.layer = target_container
+        else:
+            new_layer = cls(**kwargs)
+            self.win.gui.circuit.layers.append(new_layer)   # brain re-synced by the transaction
+            new_layer.z = z
+            if target_container is not None:
+                new_layer.layer = target_container
+            if isinstance(new_layer, _RAL):
+                W = _RAL.default_kernel(new_layer.n)
+                from circuit_model import Connection as _Conn
+                self.win.gui.circuit.connections.append(
+                    _Conn(new_layer.name, new_layer.name, W))
+                # Force a fresh connections list identity — see the matching
+                # comment in network_viz_editing.py's _insert_motif — so
+                # network_runner's conn_id-gated caches don't silently miss
+                # this default self.win-recurrent connection.
+                self.win.gui.circuit.connections = list(self.win.gui.circuit.connections)
+        self.win.build()

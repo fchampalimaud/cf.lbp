@@ -20,6 +20,7 @@ no manual setup required. See [Installing](simulator/install.md) for a manual in
 - [Tour of the simulator](simulator/tour.md) — every panel, button, and control
 - [Coding Brains](simulator/coding-brains.md) — build your first vehicle in five minutes
 - [Wiring Brains](simulator/wiring-brains.md) — express the same logic as a neural circuit
+- [Headless Runs](simulator/headless.md) — run saved sessions without the window, for long or repeated experiments
 
 ## Key concepts
 

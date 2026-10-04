@@ -49,16 +49,16 @@ def generate_bonsai_xml(circuit, model_name='SimulatorModel'):
     -------
     str — Bonsai XML ready for clipboard paste into a Bonsai workflow.
     """
-    from neurons import LeakyLayer, ConstantLayer, MatsuokaLayer, AdaptiveLayer, ProductLayer
+    from neurons import LeakyLayer, ConstantLayer, MatsuokaLayer, AdaptiveLayer
 
     sensors = circuit.sensors
     layers  = circuit.layers
     conns   = circuit.connections
 
     # LBP.Torch's JoinAdditive only sums fan-in — there is no multiplicative
-    # join node yet, so a ProductLayer would silently export as if it were a
-    # SumLayer. Fail loudly instead of generating incorrect XML.
-    _product_layers = [l for l in layers if isinstance(l, ProductLayer)]
+    # join node yet, so a multiplicative layer (e.g. ProductLayer) would silently
+    # export as if it summed. Fail loudly instead of generating incorrect XML.
+    _product_layers = [l for l in layers if l.combines_by_product]
     if _product_layers:
         names = ', '.join(l.name for l in _product_layers)
         raise ValueError(

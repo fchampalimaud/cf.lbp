@@ -141,7 +141,8 @@ class TrajectoryWindow:
     pyqtgraph dialog that mirrors the arena background then overlays a trajectory.
 
     Usage:
-        win = TrajectoryWindow.for_latest(log_dir='logs', parent=app_window)
+        win = TrajectoryWindow.for_latest(log_dir=str(__import__('data_paths').user_path('logs')),
+                                          parent=app_window)
         win.show()          # opens / raises the dialog
     """
 
@@ -280,7 +281,7 @@ class TrajectoryWindow:
     def _pick_file(self, dlg):
         from PySide6.QtWidgets import QFileDialog, QMessageBox
         path, _ = QFileDialog.getOpenFileName(
-            dlg, "Open trajectory log", "logs", "JSON-lines (*.jsonl)")
+            dlg, "Open trajectory log", str(__import__('data_paths').user_path('logs')), "JSON-lines (*.jsonl)")
         if not path:
             return
         try:

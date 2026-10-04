@@ -8,7 +8,7 @@ Leaky integrator with spike-frequency adaptation. Can function as a burst neuron
 |---|---|
 | `n` | Number of neurons; default 2 |
 | `tau_rise` | Membrane rise time constant (s); default 0.1 |
-| `tau_decay` | Membrane decay time constant (s); blank/None = no decay, holds value |
+| `tau_decay` | Membrane decay time constant (s); 0 or blank = no decay, holds value |
 | `tau_a` | Adaptation time constant (s); default 0.5 |
 | `beta` | Adaptation strength; default 1.0 |
 | `w` | Mutual inhibition weight (CPG mode, n=2); default 0.0 |

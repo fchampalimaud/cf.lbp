@@ -10,7 +10,7 @@ $$p_i = \bigl(x + d\cos(\theta+\alpha_i),\; y + d\sin(\theta+\alpha_i)\bigr)$$
 
 $$r_i = \text{gradient}(p_i,\; \text{label}) \times \text{scale}$$
 
-`gradient = ''` — responds to all labels. `color_channel = 'R'/'G'/'B'` — single channel.
+`gradient = 'A'`…`'F'` — responds to that label only; a new sensor starts on **A**. `gradient = ''` — responds to all labels. `color_channel = 'R'/'G'/'B'` — single channel.
 
 ## Output pipeline
 

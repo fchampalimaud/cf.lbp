@@ -15,11 +15,12 @@ flowchart TD
     T(["Qt Timer\n~every 20 ms"]) --> L
 
     subgraph L ["Inner loop — up to 50 ms"]
-        P["tick_physics (or _batch)\ndt = 0.01 s, all agents"] --> N[append oscilloscope\ntraces for selected agent]
+        P["step_agents\nsense → think → motors → act\ndt = 0.01 s, all agents"] --> N[append oscilloscope\ntraces for selected agent]
         N -->|deadline not reached| P
     end
 
-    L -->|deadline reached| R[render arena]
+    L -->|deadline reached| C[render fps = 0 cameras]
+    C --> R[render arena]
     R --> O[update oscilloscope\ndisplay]
     O --> T
 ```
@@ -50,7 +51,7 @@ flowchart LR
         direction TB
         Q1(["timer fires"]) --> QL
         subgraph QL ["Inner loop — up to 50 ms"]
-            QR["read _robot_value\napply scale · τ · f"] --> QN["step_network\ndt = real elapsed"]
+            QR["read _robot_value\napply scale · τ · f"] --> QN["brain.loop → wheel_cmd\ndt = real elapsed"]
             QN --> QA[append traces]
             QA -->|deadline not reached| QR
         end
@@ -60,14 +61,14 @@ flowchart LR
 
     subgraph MT ["MotorThread (~60 Hz)"]
         direction TB
-        M1(["sleep 16 ms"]) --> M2["read\nbrain.motor.output"]
-        M2 --> M3["send /wheels\nOSC to robot"]
+        M1(["sleep 16 ms"]) --> M2["read\nwheel_cmd"]
+        M2 --> M3["send /wheels to every\nmotor layer's robot_address"]
         M3 --> M1
     end
 
     Robot((Robot)) -- "bumpers · analogs\nencoders" --> OSC
     OSC -- _robot_value --> QT
-    QT -- motor.output --> MT
+    QT -- wheel_cmd --> MT
     MT -- "/wheels UDP" --> Robot
 ```
 
@@ -78,7 +79,7 @@ flowchart LR
 | MotorThread | ~60 Hz | fixed 16 ms sleep |
 
 !!! note "Thread safety"
-    The simulator relies on Python's GIL rather than explicit locks. `OscThread` writes `sensor._robot_value`; the Qt thread reads it — a stale read is at most one robot transmission cycle old, which is harmless. `MotorThread` reads `brain.motor.output` every 16 ms; the worst case is one network step stale, well within motor latency tolerance.
+    The simulator relies on Python's GIL rather than explicit locks. `OscThread` writes `sensor._robot_value`; the Qt thread reads it — a stale read is at most one robot transmission cycle old, which is harmless. `MotorThread` reads `RobotModeController.wheel_cmd` (a tuple, replaced atomically by the Qt thread each step) every 16 ms; the worst case is one network step stale, well within motor latency tolerance.
 
 ---
 
@@ -86,11 +87,21 @@ flowchart LR
 
 ### `LBPSimulator.py` — `SimulatorApp`
 
-The Qt main window. Its job is layout and wiring: it creates the panels, instantiates the controller objects, and routes Qt signals to them. Since 2026 it's been split across three files by concern — `SimulatorApp` is declared as `class SimulatorApp(_BrainMixin, _SessionMixin, QMainWindow)` — but `LBPSimulator.py` itself still keeps: window/dock construction (`_build_ui`), the generic slider/spinbox row factory (`_make_param_row`), the **Physics** tab, the **Network** tab (Host/Client mode, port + frame-rate controls, connected-client list), the **Robot** tab (real-robot Hz readouts), the **World** tab, and the network callbacks that turn an incoming client registration into a `RobotAgent` (`_on_client_registered`, `_on_remote_agent_removed`, `_update_net_status`).
+The Qt main window. Its job is layout and wiring: it creates the panels, instantiates the controller objects, and routes Qt signals to them. Each tab's behaviour lives in its own mixin file; `LBPSimulator.py` keeps window construction, run control, the simulation-setting handlers, manual driving, MuJoCo start-up, the joint dialog and keyboard handling.
 
-### `sim_app_brain.py` — `_BrainMixin`
+It only reaches the simulation through `SimController`'s collaborators — `sim_ctrl.registry` (agents, groups, selection), `.sim`, `.network`, `.robot`, `.mujoco` — never through private fields.
 
-Owns the agent table (add/remove agent rows), the brain-file combo and reload/new buttons, the brain-parameter panel (`_rebuild_brain_params`), network-file load/save for the selected agent (`_load_data_brain_network`, `_new_network_from_sidebar`), and `_sync_group_network`, which propagates a saved network file to every other member of the same `AgentGroup`.
+| File | Mixin | Owns |
+|---|---|---|
+| `sim_app_ui.py` | `_UiBuilderMixin` | building the control panels |
+| `sim_app_agents.py` | `_AgentsMixin` | the agent table; add / remove / select / recolor agents and groups; selecting by clicking the arena |
+| `sim_app_brain.py` | `_BrainMixin` | brain combo and parameters, network-file load/save for the selected agent, `_sync_group_network` |
+| `sim_app_session.py` | `_SessionMixin` | Session / Task / Logger tabs, session save / load |
+| `sim_app_network.py` | `_NetworkMixin` | Network tab: off / host / client, connecting, agents for remote clients |
+| `sim_app_robot.py` | `_RobotMixin` | Robot tab: real-robot mode, address rows, update-rate readouts |
+| `sim_app_world.py` | `_WorldMixin` | World tab: draw modes, world setup, world save / load, textures |
+
+The arena's robot disks follow the agent list automatically: the registry reports adds, removes and selection changes, and `SimController.sync_robot_items()` updates the arena (call it yourself only after changing an agent's color).
 
 ### `sim_app_session.py` — `_SessionMixin`
 
@@ -100,11 +111,25 @@ Owns the Session/Task/Logger tab builders, `_save_session` / `_load_session`, an
 
 ## Simulation core
 
-### `SimController` — the simulation loop
+### `Simulation` — the world, advanced one step at a time
+
+`simulation.py` (no Qt)
+
+`Simulation` holds the `World`, `SimConfig`, the `AgentRegistry` (agents and groups), the `MuJoCoEngine`, the simulated time and the active task. `step(motor_for)` advances every agent by one `dt` via `sim_engine.step_agents` and then ticks the task once with every agent's position; `reset()` returns everything to t = 0; `render_free_running_cameras()` renders `fps = 0` cameras between batches of steps. Everything that touches a screen, a wall clock, a file or a network is the caller's job — the app's `SimController`, or `headless.py`.
+
+### `session_loader` / `headless` — running without the GUI
+
+`session_loader.build_simulation(path)` builds a reset `Simulation` from a saved session file: world and sim params (`apply_session_world`), every agent group, and each brain via `BrainManager.install_brain` — the same functions the GUI's session/brain loading uses, so a headless run matches the app exactly. `headless.py` runs it from the command line (`python src/headless.py <session> --seconds N [--seed S] [--out run.csv]`) or from Python (`headless.run(..., on_step=...)` for sweeps).
+
+### `data_paths` / `updater` — where files live, and updates
+
+`data_paths.py` knows the two roots with the same layout (`configs/`, `networks/`, `worlds/`, `motifs/`, `brains/`, `textures/`, `logs/`): the app folder (built-in content, read-only in the UI, replaced by updates) and the user folder (`user_dir()`: the Session tab setting, else `private/` in the private repo, else `~/LBPSimulator`; `LBP_USER_DIR` overrides). `resolve(kind, ref)` finds a referenced file — `builtin:` forces the app root, a plain reference tries the user root first; `files`, `builtin_subdirs`, `user_subdirs` and `folder_for` feed the pickers. `write_manifest` / `migrate_user_files` move a user's own files out of an old public install's app folder (only where `manifest.json` exists). `updater.py` is active only in a public copy (`release.json`): `latest_version()` reads the public `VERSION`, `apply_update()` downloads the repo zip, stages and checks it, migrates user files, copies the new files over and removes shipped files the new version dropped.
+
+### `SimController` — the app's simulation loop
 
 `sim_controller.py`
 
-`SimController` owns everything that changes every tick: the `QTimer`, the list of `RobotAgent`s, the running/paused flag, speed multiplier, real-time mode, manual-control override, the active task, and the `SimLogger`. Each tick it resolves a motor command for every agent, steps physics (batched across agents in MuJoCo mode, one at a time otherwise), and emits a single `sig_frame_ready(agents, selected_agent_id, sim_cfg, world, trail_visible, overhead_rgb)` signal that `ArenaWidget` and `OscChannelManager` both listen to.
+`SimController` drives a `Simulation` from the app: the `QTimer`, the running/paused flag, speed multiplier, real-time mode, keyboard control, and feeding the oscilloscope, `SimLogger` and arena. Each tick it decides each agent's motor source (keyboard > network client > its own brain), calls `Simulation.step`, and emits a single `sig_frame_ready(agents, selected_agent_id, sim_cfg, world, trail_visible, overhead_rgb)` signal that `ArenaWidget` and `OscChannelManager` both listen to. Network host/client and real-robot I/O also live here; robot and client modes run the brain through the same think/motors functions as the simulator (`sim_engine.run_brain` / `choose_motor_command`).
 
 **`RobotAgent`** (dataclass) — one robot's state bundle:
 
@@ -129,15 +154,15 @@ Every cross-reference to a robot — the selection, a gradient's `mounted_on`, a
 
 `step_network` is the neural forward pass extracted from `BaseBrain`. It reads `layers`, `connections`, and `sensors` from the brain instance, propagates signals through the weight matrices, applies neuromodulation, and mutates `layer.output` in place. Incoming connections are summed by default; a `ProductLayer` target is special-cased to combine them by elementwise product instead.
 
-### `sim_engine` — pure physics step
+### `sim_engine` — one simulation step
 
 `sim_engine.py`
 
-A module of pure functions, no Qt imports. `tick_physics(bot_pos, brain, sensors, world, sim_cfg, ...)` samples sensors, calls the brain's `loop()`, and integrates the differential-drive kinematics one timestep forward for a single agent.
+A module of pure functions, no Qt imports. `step_agents(agents, world, sim_cfg, engine, t, motor_for)` advances every agent by one step in four phases: **sense** (2-D field sensors via `sample_field_sensors`, MuJoCo contacts, cameras whose frame is due — all at time `t`, before any brain runs), **think** (`brain.loop(dt)`), **motors** (a keyboard/network command from `motor_for` replaces the brain's wheel command and is written back with `apply_motor_command`), and **act** (`engine.move_agents`). The engine is passed in, so tests can use a stand-in.
 
 ### `sim_engine_mujoco.py` — `MuJoCoEngine`
 
-The MuJoCo physics bridge actually wired into `SimController`. Builds a per-tick-rebuildable XML model covering every agent, arena walls, and objects. Key methods: `tick_physics_batch()` (steps **all** agents together in one physics step, so they can collide with each other), `render_overhead()` (top-down image composited into `ArenaWidget`), `render_cameras()` (per-agent camera-sensor rendering), `launch_viewer()` (interactive 3-D window).
+The MuJoCo side of the simulation, always running. Builds a per-tick-rebuildable XML model covering every agent, arena walls, and objects. Key methods: `owns_sensor()` (cameras and root-mounted `CollisionSensor`s are MuJoCo's; everything else is 2-D), `sample_collision_sensors()` and `render_cameras()` (sense phase), `move_agents()` (act phase — drives **all** agents together in one physics step, so they can collide with each other), `render_overhead()` (top-down image composited into `ArenaWidget`), `launch_viewer()` (interactive 3-D window).
 
 !!! warning "Legacy file"
     `mujoco_bridge.py`'s `MuJocoBridge` class is an earlier, single-robot, passive-viewer experiment. It predates `sim_engine_mujoco.MuJoCoEngine` and is no longer imported anywhere — treat it as dead code, not as the current MuJoCo integration.
@@ -211,15 +236,23 @@ Keeps a `RobotItem` and a trail `PlotDataItem` per agent. `add_robot_item` / `re
 
 ### `NetworkVisualizerWindow` and friends
 
-`network_viz.py` composes five mixins, organized by responsibility rather than by code-kind:
+`NetworkVisualizerWindow` (`network_viz.py`) is the window itself — toolbar, palette, side panels, z slider, Qt event hooks, `build()`, and the edit-transaction / undo hooks — and holds five parts, each with a reference back to the window (`self.win`):
 
-| File | Mixin | Covers |
+| File | Part (window attribute) | Covers |
 |---|---|---|
-| `network_viz_layout.py` | `_LayoutMixin` | pure column/depth/position layout math and hit-testing — zero Qt/pyqtgraph mutation |
-| `network_viz_render.py` | `_RenderMixin` | all pyqtgraph/Qt graphics item creation and mutation (drawing nodes, edges, panels) |
-| `network_viz_dialogs.py` | `_DialogsMixin` | sensor/layer/body creation and edit dialogs; also `WeightMatrixDialog`, `FilterStackDialog`, `PaletteChip` |
-| `network_viz_editing.py` | `_EditingMixin` | mouse events, edit-mode toggles, every circuit-mutating user action; also `NetworkViewBox` |
-| `network_viz_serialization.py` | `_SerializationMixin` | undo snapshots, save/load JSON, Bonsai/SVG export, motif save |
+| `network_viz_layout.py` | `LayoutEngine` (`layout_engine`) | where every node and column goes (`compute()` → `LayoutResult`), column bookkeeping for edits (snap, insert, compact); no Qt. Geometry helpers (bezier, bow) are module functions |
+| `network_viz_render.py` | `NetworkRenderer` (`renderer`) | all pyqtgraph item creation and mutation — nodes, edges, panels, notes, thumbnails — and the live refresh (activity colours, Weights / Activations panels) |
+| `network_viz_dialogs.py` | `NetworkDialogs` (`dialogs`) | sensor / layer / body / note create and edit dialogs; also `WeightMatrixDialog`, `FilterStackDialog`, `PaletteChip` |
+| `network_viz_editing.py` | `NetworkEditing` (`editing`) | clicks and context menus, hit-testing, selection, every circuit-mutating user action; also `NetworkViewBox` |
+| `network_viz_serialization.py` | `NetworkPersistence` (`persistence`) | Save (network JSON / brain Python), motifs, copy selection, Bonsai / SVG export |
+
+The changing state lives in three objects, each written by one part:
+
+| Object | Owner | Holds |
+|---|---|---|
+| `LayoutResult` (window `_lay`) | layout — returned by `LayoutEngine.compute()`, replaced on every build | node positions, columns (`container_x_map`, `node_container_map`, spans), the view-fit extent, and the z-cut state (active / subsumed names, ghosts) |
+| `SceneItems` (`renderer.drawn`) | render — a fresh one per build | every drawn pyqtgraph item (nodes, edges, panels, labels, image thumbnails, notes) and the per-node caches the refresh timer reads |
+| `Selection` (`editing.sel`) | editing | selected node / edge / note, the shift-click multi-selection, the highlighted node and ring overrides |
 
 `network_viz_context.py` holds `NetworkVizContext`, the narrow DI facade bridging the visualizer to `SimulatorApp` — it doesn't fit any of the five responsibility categories above, so it gets its own small file.
 
@@ -245,7 +278,23 @@ Owns everything that is not the robot: gradient patches, solid obstacles, polygo
 
 `circuit_model.py`
 
-A plain container holding the four lists that define one agent's circuit: `sensors`, `layers`, `connections`, and `bodies`/`joints`. `connections` is a list of `Connection` dataclass objects (`src`, `tgt`, `W`, `learning`, `lr`).
+A plain container holding the lists that define one agent's circuit: `sensors`, `layers`, `connections`, `bodies`/`joints` and `notes`, plus `history` — that agent's undo stack. `connections` is a list of `Connection` dataclass objects (`src`, `tgt`, `W`, `learning`, `lr`).
+
+### `lateral` — L/R pairs
+
+`lateral.py` (no Qt)
+
+Everything about lateral pairs in one place: `side_of`, `base_name`, `mirror_name`, `half_names`, `partner_layer` (via `lateral_pair`), `parent_sensor` (of a `_L`/`_R` half), `is_camera_half`, `is_body_pair_half`, `is_lateral_half`. Nothing else parses `_L` / `_R` suffixes.
+
+### Layer and sensor capabilities
+
+Each layer / sensor class declares what it is — e.g. `is_image_node`, `accepts_image`, `kernel_weights`, `passthrough_input`, `supports_lateral`, `is_learning` on layers; `is_camera`, `needs_other_agents`, `uses_mujoco_contacts` on sensors — and the runner, step, MuJoCo engine, serializer and editor ask these instead of checking for concrete classes. A new layer type only sets what applies to it (see `rules/network_elements.md` §4).
+
+### `circuit_editor` — edit transactions and undo
+
+`circuit_editor.py` (no Qt)
+
+Every edit of a circuit runs as one transaction (`CircuitEditor.edit()`, or `@edit_transaction` on visualizer methods): the undo snapshot is taken before anything changes, nothing is recorded if nothing changed, and afterwards the brain is re-synced with the circuit and `brain._topology_version` is bumped so `step_network` rebuilds its caches. Undo restores everything, including bodies, joints, notes and column labels; the stack holds the last 50 edits, lives on the `CircuitModel` (so it survives closing the window and never crosses agents) and is cleared when a brain or network is loaded. The module also holds the lateral-pair rules used by the editor: `find_mirror`, `rename_layer`, `unpair_layer` (lateralized switched off), `apply_renames`. Column numbers of hidden / disabled columns are renumbered in place by `NetworkVisualizerWindow.renumber_columns` whenever columns move (insert, compact), because the app holds and saves the same set objects.
 
 ### `RigidBody` / `Joint` — articulated robot body
 
@@ -377,6 +426,8 @@ graph LR
 
 Two pure functions, `save_session` and `load_session`, serialise and deserialise the full simulator state (agents, brain params, world patches, sim config, oscilloscope multipliers) as JSON.
 
+Each agent group says what it runs: `{"mode": "code", "module_name": "BrainARS", "brain_params": {...}}` for a code brain, or `{"mode": "network", "network": "Tutorials/T06 - FeedingBrain.json"}` for a network (a circuit in `networks/`). `brain_to_file` / `brain_from_file` convert between that and the brain module + params used internally (a network runs in the `BrainGUI` module with `network_project` / `network_file` params); older files that name `BrainGUI` directly still load.
+
 ### `brain_serializer` — code generation
 
 `brain_serializer.py`
@@ -404,12 +455,23 @@ Isolates all real-robot communication. Manages one background thread per unique 
 ## File map
 
 ```
-LBPSimulator.py           main window (SimulatorApp) — Physics/Network/Robot/World tabs
-sim_app_brain.py          _BrainMixin — agent table, brain loading, network sync
+LBPSimulator.py           main window (SimulatorApp) — layout, wiring, run control, joints, keys
+sim_app_ui.py             _UiBuilderMixin — builds the control panels
+sim_app_agents.py         _AgentsMixin — agent table, add/remove/select agents and groups
+sim_app_brain.py          _BrainMixin — brain loading and parameters, network sync
 sim_app_session.py        _SessionMixin — Session/Task/Logger tabs, save/load
-sim_controller.py         simulation loop, RobotAgent, AgentGroup, multi-agent tick
-sim_engine.py             pure physics step for one agent (tick_physics)
-sim_engine_mujoco.py      MuJoCoEngine — batched multi-agent MuJoCo physics + rendering
+sim_app_network.py        _NetworkMixin — Network tab (host / client, remote agents)
+sim_app_robot.py          _RobotMixin — Robot tab (real-robot mode)
+sim_app_world.py          _WorldMixin — World tab (draw modes, world save/load)
+sim_controller.py         app's simulation loop: timer, signals, keyboard/network/robot I/O
+simulation.py             Simulation — world + agents + MuJoCo + sim time, step()/reset() (no Qt)
+session_loader.py         build a Simulation from a session file without the GUI
+data_paths.py             app folder vs user folder: lookup, pickers, manifest, migration
+updater.py                update from the public repo (public copies only)
+headless.py               command-line / Python runner for headless sessions
+agent_registry.py         RobotAgent, AgentGroup, AgentRegistry
+sim_engine.py             one simulation step for all agents (step_agents) + 2-D field sensing
+sim_engine_mujoco.py      MuJoCoEngine — movement, contacts, cameras, overhead render
 mujoco_bridge.py          legacy single-robot viewer — unused, not wired in
 network_runner.py         neural forward pass
 neurons.py                all layer classes + DynamicsBase
@@ -424,6 +486,7 @@ world_editor.py           arena draw-mode state machine (multi-agent aware)
 rigid_body.py             RigidBody, Joint
 osc_controller.py         OscChannelManager (oscilloscope, selected agent only)
 session_io.py             save/load session JSON (multi-agent)
+shortcuts.py              every keyboard shortcut (one list), app-wide Run/Step/Reset keys, help panel
 robot_driver.py           real-robot OSC + camera threads
 sim_net_host.py           SimNetHost — distributed-sim host side
 sim_net_client.py         SimNetClient — distributed-sim client side (+ headless CLI)
@@ -432,13 +495,15 @@ sim_widgets.py            reusable Qt widgets
 sim_constants.py          shared numeric constants
 logger.py                 SimLogger — CSV data recording
 arena_widget.py           ArenaWidget, RobotItem — multi-robot 2-D scene
-network_viz.py            NetworkVisualizerWindow (composes the mixins below)
+network_viz.py            NetworkVisualizerWindow (holds the parts below)
 network_viz_context.py    NetworkVizContext — DI facade bridging to SimulatorApp
-network_viz_layout.py     _LayoutMixin — pure column/depth/position layout math
-network_viz_render.py     _RenderMixin — pyqtgraph/Qt graphics item drawing
-network_viz_dialogs.py    _DialogsMixin — creation/edit dialogs
-network_viz_editing.py    _EditingMixin — mouse events, toolbar, circuit edits
-network_viz_serialization.py  _SerializationMixin — undo, save/load, export
+network_viz_layout.py     LayoutEngine — column/depth/position layout (no Qt)
+network_viz_render.py     NetworkRenderer — pyqtgraph/Qt graphics item drawing
+network_viz_dialogs.py    NetworkDialogs — creation/edit dialogs
+network_viz_editing.py    NetworkEditing — clicks, selection, circuit edits
+network_viz_serialization.py  NetworkPersistence — save, motifs, export
+circuit_editor.py         edit transactions + undo history; mirror / rename rules (no Qt)
+lateral.py                L/R pair helpers — partners, halves, names (no Qt)
 side_view.py              network layout editor (NOT a robot body view)
 net_view_3d.py            NetView3DWindow — 3-D view of the circuit graph
 trajectory_viz.py         post-run trajectory visualiser

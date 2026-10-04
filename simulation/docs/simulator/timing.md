@@ -11,22 +11,26 @@ flowchart TD
     T([Qt Timer\n~every 20 ms]) --> L
 
     subgraph L [Inner loop — up to 50 ms]
-        P[tick_physics\ndt = 0.01 s] --> N[step_network\ndt = 0.01 s]
-        N --> A[append oscilloscope\ntraces]
-        A -->|deadline not reached| P
+        S[step_agents\nsense → think → motors → act\ndt = 0.01 s] --> A[append oscilloscope\ntraces]
+        A -->|deadline not reached| S
     end
 
-    L -->|deadline reached| R[render arena]
+    L -->|deadline reached| C[render fps = 0\ncameras]
+    C --> R[render arena]
     R --> O[update oscilloscope\ndisplay]
     O --> T
 ```
 
 Because the inner loop runs many steps before handing control back to the GUI, the **network executes at ~200+ steps/s** (depending on step cost) while the **display updates at ~14 Hz**.
 
+Cameras run on their own clock. A camera with `fps > 0` renders inside `step_agents` once per `1/fps` *simulated* seconds, so its frame rate is the same at any simulation speed. A camera with `fps = 0` renders as fast as possible — once per display cycle, after the inner loop — so it never holds up the per-step sensors.
+
 | Component | Typical rate |
 |---|---|
 | Qt timer fires | ~14 Hz |
-| `tick_physics` + `step_network` | ~230 Hz |
+| `step_agents` (incl. `step_network`) | ~230 Hz |
+| Camera, `fps > 0` | `fps` frames per simulated second |
+| Camera, `fps = 0` | ~14 Hz (once per display cycle) |
 | Arena repaint | ~14 Hz |
 | Oscilloscope update | ~14 Hz |
 
@@ -49,7 +53,7 @@ flowchart LR
         direction TB
         Q1([timer fires]) --> QL
         subgraph QL [Inner loop — up to 50 ms]
-            QR[read _robot_value\napply scale · τ · f] --> QN[step_network\ndt = real elapsed]
+            QR[read _robot_value\napply scale · τ · f] --> QN[brain.loop → wheel_cmd\ndt = real elapsed]
             QN --> QA[append traces]
             QA -->|deadline not reached| QR
         end
@@ -59,14 +63,14 @@ flowchart LR
 
     subgraph MT ["MotorThread  (~60 Hz)"]
         direction TB
-        M1([sleep 16 ms]) --> M2[read\nbrain.motor.output]
-        M2 --> M3[send /wheels\nOSC to robot]
+        M1([sleep 16 ms]) --> M2[read\nwheel_cmd]
+        M2 --> M3[send /wheels to every\nmotor layer's robot_address]
         M3 --> M1
     end
 
     Robot((Robot)) -- bumpers · analogs\nencoders --> OSC
     OSC -- _robot_value --> QT
-    QT -- motor.output --> MT
+    QT -- wheel_cmd --> MT
     MT -- /wheels UDP --> Robot
 ```
 
@@ -82,7 +86,7 @@ flowchart LR
     The simulator relies on Python's GIL rather than explicit locks. Attribute reads and writes on primitive types are atomic at the bytecode level, which is sufficient here:
 
     - **Sensor values** — `OscThread` writes `sensor._robot_value`; the Qt thread reads it. A stale read is harmless: the value is at most one robot transmission cycle old.
-    - **Motor commands** — `MotorThread` reads `brain.motor.output` every 16 ms; the Qt thread writes it after each network step. In the worst case the robot receives a command one network step stale — well within motor latency tolerance.
+    - **Motor commands** — `MotorThread` reads `wheel_cmd` (a tuple, replaced atomically) every 16 ms; the Qt thread writes it after each network step. In the worst case the robot receives a command one network step stale — well within motor latency tolerance.
     - **Display** — all rendering happens on the Qt thread; no cross-thread writes occur there.
 
     If you add state involving multi-attribute invariants (e.g. a weight matrix updated atomically with a bias vector), protect it with a `threading.Lock`.

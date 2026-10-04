@@ -108,6 +108,11 @@ exactly `value`, not `value × n`.
             self.output = self._make_output(self.n) + np.random.normal(0.0, self.noise_std, self.output.shape)
         return self.output
 
+    def on_unmute(self):
+        # step() keeps the output as is, so the zeros of a mute would stay.
+        if self.n is not None:
+            self.output = self._make_output(self.n)
+
     def init_code_parts(self):
         v    = self._value
         vstr = repr(float(v[0])) if v.size == 1 else repr(v.tolist())
@@ -246,6 +251,15 @@ class MotorLayer(SumLayer):
                          e.g. 192.168.0.1:2390/wheels
                          Leave empty to suppress sending in robot mode.
     """
+
+    # Synthesized limb/whisker actuators (BrainManager.add_joint /
+    # rebuild_joint_motor_layers) set this True on the instance.
+    _is_joint_motor = False
+
+    @property
+    def drives_wheels(self):
+        """True for a user motor layer (wheels); False for a joint actuator."""
+        return not self._is_joint_motor
 
     help_text = """\
 ## MotorLayer — motor output with robot actuation

@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 
 from sim_constants import GRADIENT_COLORS, OBJECT_COLORS  # noqa: F401 — re-exported for callers
@@ -61,8 +63,10 @@ class World:
     def get_signal(self, sx, sy, stheta, color_channel=None, label=None):
         if not self.cfg.toggle_stim or not self.patches:
             return 0.0
+        # Plain-float math on purpose: called per ray per step with a few
+        # patches, where NumPy's per-call overhead on scalars dominates.
         r_sense = self.cfg.sense_radius
-        ex, ey  = sx + r_sense * np.cos(stheta), sy + r_sense * np.sin(stheta)
+        ex, ey  = sx + r_sense * math.cos(stheta), sy + r_sense * math.sin(stheta)
         dx, dy  = ex - sx, ey - sy
         den     = dx*dx + dy*dy
         lim     = self.cfg.arena_scale
@@ -73,17 +77,17 @@ class World:
             if patch.get('type') == 'wall':
                 width = patch.get('width', 0.5)
                 if self.arena_round:
-                    d_wall = lim - np.hypot(sx, sy)
+                    d_wall = lim - math.hypot(sx, sy)
                 else:
                     d_wall = min(lim - abs(sx), lim - abs(sy))
                 sig = max(0.0, 1.0 - max(0.0, d_wall) / max(width, 1e-9))
             elif patch.get('continuous'):
                 px, py, p_rad = patch["x"], patch["y"], patch["r"]
-                sig = 1.0 if np.hypot(sx - px, sy - py) < p_rad else 0.0
+                sig = 1.0 if math.hypot(sx - px, sy - py) < p_rad else 0.0
             else:
                 px, py, p_rad = patch["x"], patch["y"], patch["r"]
-                t    = np.clip(((px - sx)*dx + (py - sy)*dy) / den, 0, 1) if den > 0 else 0
-                dist = np.sqrt((px - (sx + t*dx))**2 + (py - (sy + t*dy))**2)
+                t    = min(max(((px - sx)*dx + (py - sy)*dy) / den, 0), 1) if den > 0 else 0
+                dist = math.sqrt((px - (sx + t*dx))**2 + (py - (sy + t*dy))**2)
                 sig  = max(0.0, 1.0 - dist / p_rad)
             if color_channel is not None:
                 sig *= patch.get("color", [1.0, 1.0, 1.0])[color_channel]
