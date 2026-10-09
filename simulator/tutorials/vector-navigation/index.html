@@ -1,0 +1,2497 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Build and run neural-circuit behaviours on a simulated robot">
+      
+      
+      
+      
+        <link rel="prev" href="../first-braitenberg/">
+      
+      
+        <link rel="next" href="../../creating-worlds/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/logo.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Vector-Based Homing - Little Brain Project Simulator</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../extra.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#vector-based-homing-path-integration-and-steering" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="Little Brain Project Simulator" class="md-header__button md-logo" aria-label="Little Brain Project Simulator" data-md-component="logo">
+      
+  <img src="../../../assets/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Little Brain Project Simulator
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Vector-Based Homing
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../.." class="md-tabs__link">
+          
+  
+  
+  Home
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../first-braitenberg/" class="md-tabs__link">
+          
+  
+  
+  Tutorials
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../creating-worlds/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Creating Worlds
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../coding-brains/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Coding Brains
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../wiring-brains/" class="md-tabs__link">
+          
+  
+  
+  Wiring Brains
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../headless/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Headless Runs
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/" class="md-tabs__link">
+          
+  
+  
+  Developer
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="Little Brain Project Simulator" class="md-nav__button md-logo" aria-label="Little Brain Project Simulator" data-md-component="logo">
+      
+  <img src="../../../assets/logo.svg" alt="logo">
+
+    </a>
+    Little Brain Project Simulator
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_1" id="__nav_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Home
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tour/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Simulator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorials
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tutorials
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../first-braitenberg/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your First Braitenberg Vehicle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vector-Based Homing
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vector-Based Homing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#background-why-a-population-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Background — why a population code?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#part-1-path-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Part 1 — Path integration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Part 1 — Path integration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#step-1-the-compass-tl" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1 — The compass (TL)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-2-clean-the-bump-into-a-true-sinusoid-layer3-tb" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2 — Clean the bump into a true sinusoid (layer3, TB)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-3-speed-from-the-wheels-sensor2-tn2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3 — Speed, from the wheels (sensor2, TN2)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-4-gate-speed-by-heading-tbgate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4 — Gate speed by heading (TBGate)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-5-integrate-into-a-home-vector-cpu4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 5 — Integrate into a home vector (CPU4)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#part-2-homing-reading-the-vector-back-out" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Part 2 — Homing: reading the vector back out
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Part 2 — Homing: reading the vector back out">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#step-6-cross-compare-hemispheres-p" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 6 — Cross-compare hemispheres (P)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-7-compare-to-current-heading-cpu1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 7 — Compare to current heading (CPU1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-8-read-it-out" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 8 — Read it out
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#going-further" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Going further
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-to-try-next" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What to try next
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../creating-worlds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Creating Worlds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../coding-brains/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Coding Brains
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Wiring Brains
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Wiring Brains
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../wiring-brains/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Introduction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_2" id="__nav_5_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sensor types
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Sensor types
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/gradient/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GradientSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/color/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ColorSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/collision/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CollisionSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/distance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DistanceSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/interoceptive/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    InteroceptiveSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/proprioceptive/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ProprioceptiveSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/whisker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WhiskerSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/skycompass/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SkyCompassSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/graycamera/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GrayCameraSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/rgbcamera/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RGBCameraSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_3" id="__nav_5_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neuron types
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Neuron types
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/sum/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SumLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/motor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MotorLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/constant/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ConstantLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/leaky/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LeakyLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/product/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ProductLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/adaptive/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AdaptiveLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/pulse/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PulseLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/sine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SineLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/ring_attractor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RingAttractorLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/conv2d/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Conv2dLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/leaky2d/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Leaky2dLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/reichardt2d/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reichardt2dLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/td/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TDLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/delta/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DeltaLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/three_factor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ThreeFactorLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/snapshot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SnapshotLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/matsuoka/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MatsuokaLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../neuromodulators/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neuromodulators
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../headless/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Headless Runs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Class Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Unit Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#background-why-a-population-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Background — why a population code?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#part-1-path-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Part 1 — Path integration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Part 1 — Path integration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#step-1-the-compass-tl" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1 — The compass (TL)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-2-clean-the-bump-into-a-true-sinusoid-layer3-tb" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2 — Clean the bump into a true sinusoid (layer3, TB)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-3-speed-from-the-wheels-sensor2-tn2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3 — Speed, from the wheels (sensor2, TN2)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-4-gate-speed-by-heading-tbgate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4 — Gate speed by heading (TBGate)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-5-integrate-into-a-home-vector-cpu4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 5 — Integrate into a home vector (CPU4)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#part-2-homing-reading-the-vector-back-out" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Part 2 — Homing: reading the vector back out
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Part 2 — Homing: reading the vector back out">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#step-6-cross-compare-hemispheres-p" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 6 — Cross-compare hemispheres (P)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-7-compare-to-current-heading-cpu1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 7 — Compare to current heading (CPU1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-8-read-it-out" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 8 — Read it out
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#going-further" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Going further
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-to-try-next" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What to try next
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="vector-based-homing-path-integration-and-steering">Vector-Based Homing: Path Integration and Steering</h1>
+<p>This tutorial builds the compass half of an insect-style <strong>path integration</strong> circuit — the mechanism desert ants and bees use to walk home in a straight line after a long, winding foraging trip, without retracing their steps. You'll build it piece by piece in the network editor, using the exact parameters shipped in the built-in <strong>Demos / VectorBasedHomingBrain</strong> network, and see why each piece has to be there.</p>
+<p>The circuit is based on Stone et al. (2017), <em>"An Anatomically Constrained Model for Path Integration in the Bee Brain"</em>, simplified down to the compass-only pathway (no optic-flow speed input — this version reads speed from the wheels instead).</p>
+<p><strong>What you will build</strong></p>
+<table>
+<thead>
+<tr>
+<th>Part</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1. Path integration</td>
+<td>Combine a compass heading and a wheel-speed signal into a running "home vector" memory</td>
+</tr>
+<tr>
+<td>2. Homing</td>
+<td>Compare that memory against current heading to produce a left/right steering signal</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="background-why-a-population-code">Background — why a population code?</h2>
+<p>A heading can be represented three ways: as <code>(x, y)</code> coordinates, as <code>(distance, angle)</code>, or as the amplitude and phase of a single cosine wave. All three are mathematically equivalent — but only the third is biologically realistic, because real neurons can't fire negative, so no single cell can <em>be</em> a signed cosine. Instead, the brain spreads it across a <strong>ring of cells</strong>, each tuned to a different preferred direction, each individually a clipped (half-wave-rectified) cosine. Added together, population-coded directions still add, subtract, and integrate as if they <em>were</em> cosines — which is exactly what this circuit relies on at every stage.</p>
+<p>The ring in this network has <strong>8 cells</strong>, each one 45° apart.</p>
+<hr />
+<h2 id="part-1-path-integration">Part 1 — Path integration</h2>
+<h3 id="step-1-the-compass-tl">Step 1 — The compass (<code>TL</code>)</h3>
+<p>Add a <strong>SkyCompassSensor</strong> named <code>TL</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>n</code></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code>scale</code></td>
+<td>1.0</td>
+</tr>
+<tr>
+<td><code>bias</code></td>
+<td>0.0</td>
+</tr>
+<tr>
+<td><code>phase</code></td>
+<td>0.0</td>
+</tr>
+<tr>
+<td><code>activation</code></td>
+<td><code>relu</code></td>
+</tr>
+</tbody>
+</table>
+<p>Each of the 8 <code>TL</code> neurons outputs <code>relu(cos(heading − sun_dir − k·45°))</code> — a half-wave-rectified cosine bump, zero for any direction more than 90° from current heading. This is the compass's raw signal: clean, but clipped to flat zero over half the ring.</p>
+<div class="admonition note">
+<p class="admonition-title">Ring neurons ≠ ring attractor</p>
+<p>Don't confuse this with the biological "ring neurons" (ER neurons) of the ellipsoid body — those are a separate, visual-input cell type. <code>TL</code> here plays the role of <strong>E-PG/CL1</strong>, the actual compass-bump population.</p>
+</div>
+<h3 id="step-2-clean-the-bump-into-a-true-sinusoid-layer3-tb">Step 2 — Clean the bump into a true sinusoid (<code>layer3</code>, <code>TB</code>)</h3>
+<p>Add a <strong>RingAttractorLayer</strong> named <code>layer3</code> (<code>n=8</code>, <code>tau_rise=0.1</code>, <code>tau_decay=0.1</code>, <code>activation=relu</code>, <code>bias=0.0</code>). Connect <code>TL → layer3</code> with the <strong>One-to-one</strong> preset (Amplitude <code>1.0</code>, Offset <code>0</code>) — a straight identity relay.</p>
+<p>Give <code>layer3</code> a <strong>self-connection</strong> (<code>layer3 → layer3</code>) with an inhibition-dominated kernel: every row's weights must sum to a <em>negative</em> number, with near neighbours inhibited more weakly than far ones, so the ring settles into a single localized bump rather than firing uniformly (see the <code>RingAttractorLayer</code> reference page for the exact bump-formation checklist — row-sum sign, excitatory width, and tonic drive all matter).</p>
+<div class="admonition info">
+<p class="admonition-title">Why clean it up at all?</p>
+<p><code>TL</code>'s own output is already clipped to zero over half the ring, and a competitive ring attractor's bump is narrow and sharp — neither is a smooth, never-zero sinusoid. The next step needs one.</p>
+</div>
+<p>Now add a <strong>LeakyLayer</strong> named <code>TB</code> (<code>n=8</code>, <code>tau_rise=0.1</code>, <code>tau_decay=0.1</code>, <code>bias=1.5</code>, <code>activation=relu</code>, <code>scale=0.333333</code>). Connect <code>layer3 → TB</code> with the <strong>Cosine</strong> preset:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Amplitude</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>Phase₀</td>
+<td>0°</td>
+</tr>
+<tr>
+<td>Phase step</td>
+<td>45°</td>
+</tr>
+<tr>
+<td>Bias</td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+<p>This makes every <code>TB</code> cell a weighted sum of <strong>all eight</strong> <code>layer3</code> cells, <code>W[i,j] = cos((i−j)·45°)</code> — a circulant cosine kernel. Mathematically, that's a discrete Fourier filter: it keeps only the ring's fundamental (one-bump-per-revolution) component and discards everything else, reconstructing a smooth sinusoid from whatever shape <code>layer3</code>'s bump actually has.</p>
+<p><code>TB</code>'s own <code>bias=1.5</code> and <code>scale=0.333333</code> then shift that sinusoid so it never touches zero: <code>1.5 × 0.333333 = 0.5</code> exactly, so <code>TB</code> oscillates in a band centred on 0.5 (roughly <code>[0.17, 0.83]</code>), always positive. That matters downstream, because the next step multiplies <code>TB</code> by a speed signal — and a signal that still hit zero at some directions would zero out speed in those directions too.</p>
+<h3 id="step-3-speed-from-the-wheels-sensor2-tn2">Step 3 — Speed, from the wheels (<code>sensor2</code>, <code>TN2</code>)</h3>
+<p>Add a <strong>ProprioceptiveSensor</strong> named <code>sensor2</code> reading the <code>motor</code> joint (<code>use_velocity=false</code>, <code>scale=1.0</code>, <code>bias=0.0</code>, <code>activation=linear</code>) — this is the stand-in for the bee's optic-flow speed signal; a wheeled robot reads wheel rotation instead, which is really closer to a desert ant's <em>leg-based</em> stride integrator than to the original bee's visual odometer.</p>
+<p>Add a <strong>LeakyLayer</strong> named <code>TN2</code> (<code>n=2</code>, <code>tau_rise=0.1</code>, <code>tau_decay=0.1</code>, <code>bias=0.0</code>, <code>activation=relu</code>). Connect <code>sensor2 → TN2</code> with a <strong>Manual</strong> matrix where every entry is <code>0.005</code>:</p>
+<div class="arithmatex">\[
+W = \begin{pmatrix} 0.005 &amp; 0.005 \\ 0.005 &amp; 0.005 \end{pmatrix}
+\]</div>
+<p>Both <code>TN2</code> cells end up computing the <em>same</em> number — <code>0.005·(v_L + v_R)</code>, total forward speed — rather than the two differently-tuned channels the real bee circuit uses. That's a deliberate simplification: a wheeled base doesn't have two independent optic-flow axes to split speed across.</p>
+<h3 id="step-4-gate-speed-by-heading-tbgate">Step 4 — Gate speed by heading (<code>TBGate</code>)</h3>
+<p>Add a <strong>ProductLayer</strong> named <code>TBGate</code> (<code>n=8</code>, <code>tau_rise=0</code>, <code>tau_decay=0</code>, <code>bias=0</code>, <code>activation=linear</code>). A <code>ProductLayer</code> <strong>multiplies</strong> the totals of its incoming connections instead of summing them — give it two:</p>
+<ul>
+<li><code>TB → TBGate</code>: <strong>One-to-one</strong> preset, Amplitude <code>1.0</code> (identity).</li>
+<li><code>TN2 → TBGate</code>: <strong>Uniform</strong> preset, Amplitude <code>1.0</code> — every <code>TBGate</code> cell receives <code>TN2_0 + TN2_1</code> (both channels, summed, broadcast identically to all 8 cells).</li>
+</ul>
+<p>So <code>TBGate[k] = TB[k] · (TN2_0+TN2_1)</code> — the instantaneous "am I moving, and which way am I facing" signal for ring position <code>k</code>.</p>
+<div class="admonition warning">
+<p class="admonition-title">The hidden baseline</p>
+<p>Because <code>TB</code> never goes below ≈0.17 (step 2), this product always contains a chunk that has nothing to do with direction: expand <code>TB[k] = 0.5 + wave(k)</code> and <code>TBGate[k] = 0.5·(TN2_0+TN2_1) + wave(k)·(TN2_0+TN2_1)</code>. The first term is identical at <em>every</em> ring position — pure contamination from the fact <code>TB</code> can't be silent. Step 5 cancels exactly that term.</p>
+</div>
+<h3 id="step-5-integrate-into-a-home-vector-cpu4">Step 5 — Integrate into a home vector (<code>CPU4</code>)</h3>
+<p>Add a <strong>LeakyLayer</strong> named <code>CPU4</code> (<code>n=16</code>, <code>tau_rise=0.0</code>, <code>tau_decay=0.0</code>, <code>bias=0.0</code>, <code>activation=hard_sigmoid</code>, <code>scale=1.0</code>, <strong><code>x0=0.5</code></strong>, <strong><code>output_mode=integral</code></strong>).</p>
+<div class="admonition tip">
+<p class="admonition-title">Why LeakyLayer, not RingAttractorLayer?</p>
+<p><code>CPU4</code> has no self-connection, so none of <code>RingAttractorLayer</code>'s bump-forming machinery ever runs — it's 16 independent leaky integrators. <code>LeakyLayer</code>'s own parameter docs even cite this exact circuit's <code>CPU4</code> memory as the textbook reason <code>x0</code> exists: a <code>[0,1]</code>-clipped integrator that must be able to move both up and down from a neutral start needs <code>x0=0.5</code>, not 0.</p>
+</div>
+<p><code>CPU4</code> is split into two hemispheres of 8 cells each, both fed by the <em>same</em> <code>TBGate</code>/<code>TN2</code> signals (since <code>TN2_0=TN2_1</code> in this simplified version, the hemispheres end up numerically identical here — in the full biological model they'd carry genuinely different ±45°-offset speed channels). Wire two connections:</p>
+<ul>
+<li><code>TBGate → CPU4</code> (<strong>Manual</strong>, weight <code>-1</code>): each <code>TBGate[k]</code> feeds <em>both</em> <code>CPU4[k]</code> and <code>CPU4[k+8]</code>.</li>
+<li><code>TN2 → CPU4</code> (<strong>Manual</strong>): <code>TN2_0 → CPU4[0..7]</code> and <code>TN2_1 → CPU4[8..15]</code>, weight <code>+1</code> each — this is exactly the term that cancels <code>TBGate</code>'s hidden baseline from Step 4.</li>
+</ul>
+<p>Each cell now integrates <code>TN2_hemisphere − TBGate[k]</code>, starting from <code>x0=0.5</code>, through <code>output_mode=integral</code> — literally <code>x(t) = 0.5 + ∫(TN2 − TBGate)dt</code>, accumulated once per simulation tick as <code>(…)·dt</code>, not as the raw value itself. Work through the algebra and the hidden baseline cancels exactly, leaving <code>CPU4[k] − 0.5 ∝ −∫v·cos(heading−dir_k)dt</code> — the <strong>negative</strong> of the outbound displacement, i.e. <code>CPU4</code> points <strong>home</strong>, not along the path travelled.</p>
+<p>Because the accumulator is never clipped internally (only <code>hard_sigmoid</code> clips the <em>output</em>), this memory has a finite range: travel far enough in one direction and the cells aligned with it saturate, flattening the bump. That's not a bug to fix — real ants and bees have a measurably finite path-integration range too.</p>
+<p>You've now built the full <strong>path integration</strong> half. Load the <code>Demos/VectorBasedHomingBrain</code> network and compare — <code>TL → layer3 → TB</code>, <code>sensor2 → TN2</code>, <code>TBGate</code>, <code>CPU4</code> are wired exactly as above (the rest of that network goes further than this tutorial does — see the end of this page).</p>
+<hr />
+<h2 id="part-2-homing-reading-the-vector-back-out">Part 2 — Homing: reading the vector back out</h2>
+<p><code>CPU4</code> holds the home vector, but it's in world (compass) coordinates. Steering needs to know how that compares to <strong>current</strong> heading.</p>
+<h3 id="step-6-cross-compare-hemispheres-p">Step 6 — Cross-compare hemispheres (<code>P</code>)</h3>
+<p>Add a <strong>LeakyLayer</strong> named <code>P</code> (<code>n=16</code>, <code>tau_rise=0.1</code>, <code>tau_decay=0.1</code>, <code>bias=0.0</code>, <code>activation=relu</code>). Connect <code>CPU4 → P</code> with <strong>One-to-one</strong>, Amplitude <code>1.0</code> — a plain relay; <code>P</code> is literally just a renamed copy of <code>CPU4</code> at this point. (Since this circuit's two hemispheres are numerically identical, this relay doesn't yet do anything interesting on its own — it's set up for the next step.)</p>
+<h3 id="step-7-compare-to-current-heading-cpu1">Step 7 — Compare to current heading (<code>CPU1</code>)</h3>
+<p>Add a <strong>LeakyLayer</strong> named <code>CPU1</code> (<code>n=16</code>, <code>tau_rise=0.1</code>, <code>tau_decay=0.1</code>, <code>bias=0.0</code>, <code>activation=relu</code>, <strong><code>noise_std=2.0</code></strong>, <code>noise_tau=1.5</code>). Wire three incoming connections:</p>
+<ul>
+<li><code>P → CPU1</code>: <strong>One-to-one</strong>, Amplitude <code>-1</code>, <strong>Offset <code>8</code></strong> — <code>W[i,j] = -1</code> where <code>j = (i+8) mod 16</code>. This crosses each hemisphere to the <em>other</em> hemisphere's matching ring position, negated.</li>
+<li><code>CPU4 → CPU1</code> (<strong>Manual</strong>): hemisphere A shifts <strong>+1 ring step</strong> (<code>CPU1[i] = CPU4[i+1]</code>), hemisphere B shifts <strong>−1 ring step</strong> (<code>CPU1[i+8] = CPU4[i+7]</code>) — opposite directions, same 45° magnitude.</li>
+<li><code>TB → CPU1</code> (<strong>Manual</strong>, weight <code>-1</code>): the <em>same</em> <code>TB[i]</code> cell feeds both <code>CPU1[i]</code> and <code>CPU1[i+8]</code> — current heading, unshifted, subtracted from both hemispheres.</li>
+</ul>
+<p>Put together:</p>
+<div class="arithmatex">\[\text{CPU1}[i] = \text{CPU4}[i+1] - \text{CPU4}[i+8] - \text{TB}[i]\]</div>
+<div class="admonition info">
+<p class="admonition-title">Why the opposite shifts?</p>
+<p>Shifting <code>CPU4</code> by +45° on one side and −45° on the other gives each hemisphere a <em>different vantage point</em> on the same stored vector — like sampling it from slightly left-of-centre and slightly right-of-centre. Subtracting the same <code>TB</code> from both breaks the left/right symmetry only when current heading doesn't match the stored direction: pointed straight at the goal, the two hemispheres balance; drift off course, and they diverge — exactly the asymmetry a differential-drive steering command needs. With no shift at all, both hemispheres would be identical and there'd be no way to tell left from right.</p>
+</div>
+<div class="admonition info">
+<p class="admonition-title">Why the noise?</p>
+<p>A heading-error signal built from subtracting cosines has not one but <em>two</em> zero-crossings: one where you're facing the goal (a stable point — nudge off it and the signal pushes you back), and one where you're facing <strong>directly away</strong> from it (an unstable point — nudge off it and the correction grows instead of shrinking, but <em>at</em> that point the signal is exactly balanced with no inherent left/right bias). <code>CPU1</code>'s unusually large <code>noise_std=2.0</code> — far bigger than anything else in this network — exists specifically to kick the system off that knife-edge so it reliably commits to turning one way or the other.</p>
+</div>
+<h3 id="step-8-read-it-out">Step 8 — Read it out</h3>
+<p>Stone et al.'s own readout is simple: <strong>sum each hemisphere's <code>CPU1</code> activity and subtract</strong> — <code>steering = Σ(CPU1 hemisphere A) − Σ(CPU1 hemisphere B)</code>. Positive/negative sign gives the turn direction; a separate, roughly constant forward-thrust term (not derived from the vector at all) drives the base forward speed.</p>
+<div class="admonition warning">
+<p class="admonition-title">A flat sum doesn't work with a raw cosine</p>
+<p>Summing a full-period cosine over evenly-spaced ring cells is <strong>always exactly zero</strong>, for any phase — there is nothing a flat sum could ever pick up from a clean, unclipped sinusoid. This readout only works <em>after</em> <code>CPU1</code>'s own <code>relu</code> has already clipped the negative half of the wave away; a half-wave-rectified cosine does not sum to zero. The built-in <code>Demos/VectorBasedHomingBrain</code> network takes this exact approach at its <code>CPU1 → DNa03</code> connection (flat hemisphere sums, relying on <code>CPU1</code>'s <code>relu</code>) — if you build your own readout from a layer that <em>hasn't</em> been rectified, project onto a cosine template instead of summing flat, or you'll get zero regardless of the input.</p>
+</div>
+<p>Two motor neurons, driven by <code>steering</code> (differential) plus a constant forward bias, complete the circuit.</p>
+<hr />
+<h2 id="going-further">Going further</h2>
+<p>The built-in <code>Demos/VectorBasedHomingBrain</code> network implements a fuller version of this pathway — <code>Pontine</code>/<code>CPU1</code> feed into additional <code>PFL2</code>, <code>DNa03</code>, <code>DNa02</code> layers before reaching <code>motor</code>. Those extra stages come from <em>later</em> Drosophila connectome studies (Namiki et al. 2018; Rayshubskiy et al. 2020; Mussells Pires et al. 2024) layered on top of Stone et al.'s original 2017 bee model, not from Stone's paper itself — Stone's own circuit really does stop at <code>CPU1 → motor</code>, exactly as built above. Worth comparing both once you've built this version by hand.</p>
+<p>An interactive explorer for the <code>CPU1</code> steering computation — sliders for the home-vector and heading cosine waves, live-updating output — lives in this repo's <code>analysis/vector_navigation/</code> folder (<code>cpu1_steering_interactive.py</code>) if you want to build intuition for Part 2 before wiring it up.</p>
+<h2 id="what-to-try-next">What to try next</h2>
+<ul>
+<li><strong><a href="../../ringattractorbrain/">RingAttractorBrain</a></strong> — the companion circuit: estimating heading from wheel rotation alone (no compass), using the same ring-population idea.</li>
+<li><strong><a href="../../layers/ring_attractor/">RingAttractorLayer</a></strong> — full parameter reference and bump-formation checklist for <code>layer3</code>.</li>
+<li><strong><a href="../../layers/product/">ProductLayer</a></strong> — how multiplicative gating (<code>TBGate</code>) differs from the usual summed connections.</li>
+<li><strong><a href="../../wiring-brains/">Wiring Brains</a></strong> — weight-matrix presets (Cosine, One-to-one, Mexican hat, …) in full detail.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.top", "content.code.copy", "content.code.annotate", "toc.follow"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+
+      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    var markup =
+      '<span class="lbp-title-project">little brain project</span>' +
+      '<span class="lbp-title-sim">SIMULATOR</span>';
+    document.querySelectorAll(
+      ".md-header__title .md-header__topic .md-ellipsis"
+    ).forEach(function (el) {
+      el.innerHTML = markup;
+    });
+  });
+</script>
+
+  </body>
+</html>
