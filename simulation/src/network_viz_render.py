@@ -450,25 +450,32 @@ class NetworkRenderer:
                 tn = f'{layer.name}_{ti}'
                 if sn not in positions or tn not in positions:
                     continue
+                # Bow sign from the *unordered* pair: a reciprocal edge (e.g. a
+                # Matsuoka pair's mutual inhibition, drawn as (0,1,-w) AND (1,0,-w))
+                # must get the same sign both times. Keying it off (fi, ti) in
+                # draw order instead flips sign on the reverse edge, and with the
+                # endpoints swapped too that lands on the identical curve — the
+                # second edge silently draws right on top of the first.
+                lo, hi = (fi, ti) if fi < ti else (ti, fi)
+                ln, hn = f'{layer.name}_{lo}', f'{layer.name}_{hi}'
+                p_lo, p_hi = positions[ln], positions[hn]
                 if is_ring:
                     # Bow each edge outward from the ring centre.
                     # _ctrl_pt with bow>0 shifts the midpoint by (cdy, -cdx),
                     # i.e. 90° CW from the chord. Choose the sign so that shift
                     # aligns with the outward direction (centre → chord midpoint).
-                    p0  = positions[sn]
-                    p1  = positions[tn]
                     cx  = getattr(layer, '_ring_cx', 0.5)
                     cy  = getattr(layer, '_ring_cy', 0.5)
-                    cdx, cdy = p1[0] - p0[0], p1[1] - p0[1]
-                    odx = (p0[0] + p1[0]) / 2 - cx   # chord-midpoint – centre
-                    ody = (p0[1] + p1[1]) / 2 - cy
+                    cdx, cdy = p_hi[0] - p_lo[0], p_hi[1] - p_lo[1]
+                    odx = (p_lo[0] + p_hi[0]) / 2 - cx   # chord-midpoint – centre
+                    ody = (p_lo[1] + p_hi[1]) / 2 - cy
                     # dot( (cdy,-cdx), (odx,ody) ) > 0 → bow>0 is already outward
                     sb = self.win._INTERNAL_BOW if (cdy * odx - cdx * ody) >= 0 \
                          else -self.win._INTERNAL_BOW
                 else:
-                    sb = _signed_bow(_hemisphere(fi, n), _hemisphere(ti, n),
+                    sb = _signed_bow(_hemisphere(lo, n), _hemisphere(hi, n),
                                           self.win._INTERNAL_BOW,
-                                          (positions[sn][1] + positions[tn][1]) / 2)
+                                          (p_lo[1] + p_hi[1]) / 2)
                 self._draw_edge(positions[sn], positions[tn], w, sb, sn=sn, tn=tn,
                                lw=0.6, mark=False)
 
@@ -1083,18 +1090,22 @@ class NetworkRenderer:
         )
 
     def _panel_label_text(self, container):
-        """Text for a column panel's title: an auto-title of whoever currently
-        wins if this column is shared across z-levels; else the manual
-        "Set label..." nickname if one has been set; else the name of
-        whichever occupant was added to the circuit first, so a fresh
-        container starts out captioned instead of blank."""
+        """Text for a column panel's title: the manual "Set label..." nickname
+        for whoever currently fronts this container, if one has been set
+        (container_key() already resolves to the current z-winner's identity
+        for a column shared across z-levels, so this stays correct as the
+        z-cut slider changes who's in front — no staleness risk); else an
+        auto-title of the current winner's name if this column is shared
+        across z-levels; else the name of whichever occupant was added to
+        the circuit first, so a fresh container starts out captioned instead
+        of blank."""
+        label = self.win._container_labels.get(self.win.layout_engine.container_key(container))
+        if label:
+            return label
         ghost_count = self.win._lay.ghost_count
         container_winner_names = self.win._lay.container_winner_names
         if ghost_count.get(container, 0) > 0 and container_winner_names.get(container):
             return ', '.join(container_winner_names[container])
-        label = self.win._container_labels.get(self.win.layout_engine.container_key(container))
-        if label:
-            return label
         return self.win.layout_engine.first_occupant_name(container)
 
     def _ghost_display_name(self, name):
@@ -1537,11 +1548,17 @@ class NetworkRenderer:
         if not self.win._activation_pinned:
             return
         layer_map = {l.name: l for l in self.win.gui.circuit.layers}
+        brain = getattr(self.win.gui, 'brain', None)
         for name, entry_widget in self.win._activation_pinned.items():
             layer_obj = layer_map.get(name)
-            if layer_obj is None or layer_obj.output is None:
+            if layer_obj is not None:
+                out = layer_obj.output
+            elif brain is not None:
+                out = getattr(brain, name, None)   # sensor reading, set each tick by sim_engine
+            else:
+                out = None
+            if out is None:
                 continue
-            out = layer_obj.output
             if hasattr(out, 'detach'):
                 out = out.detach().numpy()
             entry_widget.set_values(np.ravel(np.asarray(out, dtype=float)))
@@ -1982,8 +1999,8 @@ class WeightEntryWidget(QWidget):
 # ACTIVATION ENTRY WIDGET  (one slot in the live activation panel)
 # ============================================================
 class ActivationEntryWidget(QWidget):
-    """Shows a label and a live-updating bar chart of one layer's current
-    per-neuron output — x-axis is neuron index, y-axis is activation value."""
+    """Shows a label and a live-updating bar chart of one layer's or sensor's
+    current per-neuron output — x-axis is neuron index, y-axis is activation value."""
 
     def __init__(self, name, parent=None):
         super().__init__(parent)

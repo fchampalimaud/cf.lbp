@@ -42,25 +42,35 @@ def _activate(x, name: str, alpha: float = 1.0):
 
 def leaky_step(x, u, tau_rise, tau_decay, dt):
     """Asymmetric leaky integration: x moves toward u with tau_rise while rising
-    and tau_decay while falling. tau_decay unset (None or 0) means rise-and-hold
-    — x holds its value when u drops. Callers skip this entirely when tau_rise
-    is unset (None or 0: no filtering). Every tau follows that rule: 0 or blank
-    switches its dynamic off, never divides by zero."""
+    and tau_decay while falling. Either tau unset (None or 0) means x snaps
+    straight to u on that side instead of easing toward it — e.g. tau_rise
+    unset + tau_decay set gives a fast-attack/slow-decay envelope follower.
+    Callers skip this entirely when both taus are unset (no state to track,
+    output just follows input). Every tau follows the same rule: 0 or blank
+    switches its own dynamic off (instant), never divides by zero."""
+    if not tau_rise:
+        tau_rise = None
     if not tau_decay:
         tau_decay = None
     if isinstance(x, torch.Tensor):
-        if tau_decay == tau_rise:          # symmetric (most layers): no per-element choice
-            return x + (u - x) / tau_rise * dt
+        if tau_rise == tau_decay:          # both None (full passthrough) or both equal (symmetric)
+            return u if tau_rise is None else x + (u - x) / tau_rise * dt
         rising = u > x
-        if tau_decay is None:
-            delta = torch.where(rising, (u - x) / tau_rise * dt, torch.zeros_like(x))
+        if tau_rise is None:
+            delta = torch.where(rising, u - x, (u - x) / tau_decay * dt)
+        elif tau_decay is None:
+            delta = torch.where(rising, (u - x) / tau_rise * dt, u - x)
         else:
             tau = torch.where(rising, tau_rise, tau_decay)   # scalars: no temporary tensors
             delta = (u - x) / tau * dt
         return x + delta
     rising = u > x
+    if tau_rise is None and tau_decay is None:
+        return u
+    if tau_rise is None:
+        return x + np.where(rising, u - x, (u - x) / tau_decay * dt)
     if tau_decay is None:
-        return x + np.where(rising, (u - x) / tau_rise * dt, 0.0)
+        return x + np.where(rising, (u - x) / tau_rise * dt, u - x)
     tau = np.where(rising, tau_rise, tau_decay)
     return x + (u - x) / tau * dt
 
@@ -131,7 +141,9 @@ def transform_modulator_value(state, key, mode, value, dt):
     'absolute'   — pass through unchanged.
     'derivative' — rate of change since the last call with this same key
                    (zero on the first call — no previous value yet).
-    'integral'   — running accumulation over time (forward-Euler).
+    'integral'   — running accumulation over time (forward-Euler): each call
+                   adds `value * dt`, not `value` itself, so the accumulator
+                   grows more slowly at a smaller `dt` for the same reading.
 
     State is tracked per `key` (conventionally `(modulator_name, mode)`) in the
     dict *state*, independent of the owner's own output_mode state and of every
@@ -243,6 +255,11 @@ class DynamicsBase:
                        first tick, since there is no previous value yet).
         'integral'   — running ∫Out dt via forward-Euler accumulation.
 
+        Each tick adds `out * dt` to the running total, not `out` itself —
+        the same per-tick drive accumulates more slowly at a smaller `dt`,
+        so the number of ticks needed to reach a given accumulated value
+        scales with 1/dt, not with the drive alone.
+
         Both non-'none' modes keep the stored history buffer detached (a
         constant from the current step's perspective) while letting gradient
         flow through the current *out* — the same single-step-detach
@@ -289,7 +306,7 @@ class DynamicsBase:
 
     def _filter(self, u, dt):
         """State stage: adaptation (if tau_a and beta are set) → leaky filter
-        (if tau_rise is set). Returns the state x."""
+        (if tau_rise or tau_decay is set). Returns the state x."""
         return self._apply_leaky(self._apply_adaptation_pre(u), dt)
 
     def _emit(self, x, activate=True):
@@ -304,10 +321,11 @@ class DynamicsBase:
 
     def _apply_leaky(self, u, dt):
         """Asymmetric leaky integration (leaky_step). Updates _x and returns it;
-        returns u unchanged when tau_rise is unset (no filtering).
+        returns u unchanged only when both taus are unset (no filtering at all).
 
-        tau_decay=None disables the decay branch entirely: x only moves toward u
-        while rising, and holds its value when u drops (rise-and-hold integrator).
+        Either tau unset makes that side instantaneous: tau_rise unset + tau_decay
+        set gives a fast-attack/slow-decay envelope follower; tau_rise set +
+        tau_decay unset snaps straight down to u as soon as it falls.
 
         Updates _x in place via .copy_() rather than `self._x = ...` — nn.Module's
         __setattr__ silently calls the full register_buffer() machinery on every
@@ -315,7 +333,7 @@ class DynamicsBase:
         more expensive than an in-place tensor write and dominates per-tick cost
         for any layer calling this on every step().
         """
-        if not self.tau_rise:
+        if not self.tau_rise and not self.tau_decay:
             return u
         self._x.copy_(leaky_step(self._x.detach(), u, self.tau_rise, self.tau_decay, dt))
         return self._x
@@ -345,8 +363,8 @@ class DynamicsBase:
         layer for free without each one needing to list it explicitly.
         """
         return [
-            ('tau_rise',   float, '0.1',  'leaky rise τ (s; 0 / blank = no filtering)'),
-            ('tau_decay',  float, '0.1',  'leaky decay τ (s; 0 / blank = no decay, holds value)'),
+            ('tau_rise',   float, '0.1',  'leaky rise τ (s; 0 / blank = instant rise)'),
+            ('tau_decay',  float, '0.1',  'leaky decay τ (s; 0 / blank = instant decay)'),
             ('x0',         float, '0.0',  'initial value of the internal state (x at t=0)'),
             ('activation', str,   'relu',  'nonlinearity', ACTIVATIONS),
             ('bias',       float, '0.0',  'constant added to input sum'),

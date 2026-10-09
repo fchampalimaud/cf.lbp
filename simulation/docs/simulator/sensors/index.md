@@ -14,8 +14,9 @@ The time constants follow the same rules as layers:
 
 | Setting | Meaning |
 |---|---|
-| `tau_rise` 0 or blank | No filtering — the reading passes straight through (whatever `tau_decay` says) |
-| `tau_decay` 0 or blank | Rise-and-hold — the output rises toward the reading but never decays |
+| `tau_rise` 0 or blank | Instant rise — the output jumps straight to the reading while it's rising, then eases down with `tau_decay` while falling |
+| `tau_decay` 0 or blank | Instant decay — the output eases up with `tau_rise` while rising, then jumps straight down to the reading while falling |
 | both set | Rises with `tau_rise`, falls with `tau_decay` |
+| both 0 or blank | No filtering at all — the reading passes straight through |
 
 With `output_mode = derivative`, the output is 0 on the first step, since there is no previous reading yet.

@@ -1351,7 +1351,13 @@ class NetworkDialogs:
                 ptype = kind
                 raw = w.value() if hasattr(w, 'value') else w.text()
                 try:
-                    if str(raw).strip() != '':
+                    if str(raw).strip() == '':
+                        # Blank is a real, settable state (0 / '' — e.g. "0 = off" taus
+                        # and noise, "blank = unbounded" w_min/w_max), not "leave
+                        # unchanged": every DynamicsBase param treats its type's zero
+                        # value as off/unset, so writing it here is always safe.
+                        result[pname] = ptype()
+                    else:
                         val = ptype(raw)
                         if is_angle:
                             val = np.radians(val)

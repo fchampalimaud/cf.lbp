@@ -6,8 +6,8 @@ Pixel-wise temporal filter — applies the same first-order leaky integration as
 
 | Parameter | Description |
 |---|---|
-| `tau_rise` | Rise time constant (s); default 0.1 |
-| `tau_decay` | Decay time constant (s); 0 or blank = no decay, holds value |
+| `tau_rise` | Rise time constant (s); 0 or blank = instant rise; default 0.1 |
+| `tau_decay` | Decay time constant (s); 0 or blank = instant decay |
 | `bias` | Constant added to each pixel before integration; default 0.0 |
 | `activation` | Per-pixel nonlinearity: `linear`, `relu`, `sigmoid`, `tanh`; default `linear` |
 | `scale` | Output multiplier; default 1.0 |

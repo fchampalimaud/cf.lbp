@@ -56,8 +56,8 @@ class LeakyLayer(DynamicsBase, LayerBase):
 
     Parameters
     ----------
-    tau_rise    : float  Rise time constant (s). Default 0.1.
-    tau_decay   : float  Decay time constant (s). None = no decay (holds value).
+    tau_rise    : float  Rise time constant (s). None/0 = instant rise. Default 0.1.
+    tau_decay   : float  Decay time constant (s). None/0 = instant decay.
     bias        : float  Constant added to input before filtering.
     activation  : str    Output nonlinearity: relu / sigmoid / tanh / linear.
     output_mode : str    'none' / 'derivative' / 'integral' — see DynamicsBase.
@@ -72,8 +72,8 @@ class LeakyLayer(DynamicsBase, LayerBase):
 ## LeakyLayer — low-pass filter neurons
 
 **Parameters:**
-- `tau_rise` (τ_rise) — rise time constant (s); default 0.1
-- `tau_decay` (τ_decay) — decay time constant (s); blank/None = no decay (holds value)
+- `tau_rise` (τ_rise) — rise time constant (s); blank/None = instant rise; default 0.1
+- `tau_decay` (τ_decay) — decay time constant (s); blank/None = instant decay
 - `bias` (b) — constant added to each input sum; default 0.0
 - `activation` (f) — nonlinearity: `relu`, `sigmoid`, `tanh`, `linear`; default `relu`
 - `n` — number of neurons
@@ -91,14 +91,16 @@ $$\\text{output} = f(x) \\times s$$
 - `tau_rise = tau_decay` — symmetric smoothing.
 - `tau_rise < tau_decay` — fast rise, slow decay (memory trace).
 - `tau_rise > tau_decay` — slow rise, fast decay (transient detector).
-- `tau_decay = None` (blank) — no decay: x only moves toward u while rising, holds when u drops.
+- `tau_rise = None` (blank) — instant rise: x jumps straight to u while rising, then eases toward u with `tau_decay` while falling (fast-attack/slow-decay envelope follower).
+- `tau_decay = None` (blank) — instant decay: x eases toward u with `tau_rise` while rising, then jumps straight down to u while falling.
+- Both blank — no filtering at all: output just follows input.
 
 ---
 
 **Output mode** (shared by every `DynamicsBase` layer/sensor — see `DynamicsBase._apply_output_mode`) — applied to the raw input **u**, before the leaky filter and activation above run:
 
 - `output_mode='derivative'`: replaces u with du/dt — finite difference between consecutive ticks' raw input; fires on *any* change to the input. The (now-derivative) signal still passes through the leaky filter and activation normally.
-- `output_mode='integral'`: replaces u with the running ∫u dt.
+- `output_mode='integral'`: replaces u with the running ∫u dt. Each tick adds `u × dt` to the accumulator, not `u` itself — the same drive accumulates more slowly at a smaller `dt`, so reaching a given accumulated value takes more ticks (not fewer) as `dt` shrinks.
 
 ---
 
@@ -205,7 +207,7 @@ class ProductLayer(LeakyLayer):
     Parameters
     ----------
     tau_rise    : float  Rise time constant (s). Default 0.1.
-    tau_decay   : float  Decay time constant (s). None = no decay (holds value).
+    tau_decay   : float  Decay time constant (s). None = instant decay.
     bias        : float  Constant added to the product before filtering.
     activation  : str    Output nonlinearity: relu / sigmoid / tanh / linear.
     output_mode : str    'none' / 'derivative' / 'integral' — see DynamicsBase.
@@ -228,7 +230,7 @@ tau/noise/output_mode pipeline as every other dynamics-based layer.
 
 **Parameters:**
 - `tau_rise` (τ_rise) — rise time constant (s); default 0.1
-- `tau_decay` (τ_decay) — decay time constant (s); blank/None = no decay (holds value)
+- `tau_decay` (τ_decay) — decay time constant (s); blank/None = instant decay
 - `bias` (b) — constant added to the product each step; default 0.0
 - `activation` (f) — nonlinearity: `relu`, `sigmoid`, `tanh`, `linear`; default `relu`
 - `n` — number of neurons
@@ -262,7 +264,7 @@ if a ProductLayer is present in the circuit.
 **Output mode** (shared by every `DynamicsBase` layer/sensor) — applied to the raw product **u**, before the leaky filter/activation above run:
 
 - `output_mode='derivative'`: replaces u with du/dt — rate of change of the product itself.
-- `output_mode='integral'`: replaces u with the running ∫u dt.
+- `output_mode='integral'`: replaces u with the running ∫u dt. Each tick adds `u × dt`, not `u` itself — the same drive accumulates more slowly at a smaller `dt`.
 
 ---
 
@@ -462,7 +464,7 @@ class AdaptiveLayer(DynamicsBase, LayerBase):
     Parameters
     ----------
     tau_rise  : float   Membrane rise time constant (s).
-    tau_decay : float   Membrane decay time constant (s). None = no decay (holds value).
+    tau_decay : float   Membrane decay time constant (s). None = instant decay.
     tau_a     : float   Adaptation time constant (s). Sets oscillation period ≈ 2*tau_a.
     beta      : float   Adaptation strength. Higher → shorter burst, faster oscillation.
     w         : float   Mutual inhibition weight (n=2 only). 0 = no oscillation.
@@ -479,7 +481,7 @@ class AdaptiveLayer(DynamicsBase, LayerBase):
 
 **Parameters:**
 - `tau_rise` (τ) — membrane rise time constant (s); default 0.1
-- `tau_decay` — membrane decay time constant (s); blank/None = no decay (holds value)
+- `tau_decay` — membrane decay time constant (s); blank/None = instant decay
 - `tau_a` (τ_a) — adaptation time constant (s); default 0.5
 - `beta` (β) — adaptation strength; default 1.0
 - `w` — mutual inhibition weight (CPG mode, n=2); default 0.0
@@ -513,7 +515,9 @@ Requirements: `w >= 1`, `beta ~ 2–3`, `bias > 0` (tonic drive).
 **Output mode** — `output_mode` ∈ `{none, derivative, integral}` (not listed above;
 auto-added to this dialog by `DynamicsBase`). Transforms the raw input u
 *before* adaptation/leaky filtering/activation run: `derivative` replaces u
-with its rate of change; `integral` replaces u with its running accumulation.
+with its rate of change; `integral` replaces u with its running accumulation
+— each tick adds `u × dt` to the accumulator, not `u` itself, so the same
+drive accumulates more slowly at a smaller `dt`.
 
 **Initial value** — `x0` (not listed above; also auto-added by `DynamicsBase`)
 sets the starting value of `x` and of the `output_mode='integral'` accumulator,
@@ -766,7 +770,7 @@ class PulseLayer(DynamicsBase, LayerBase):
     Parameters
     ----------
     tau_rise  : float   Fast rise time constant (s). Default 0.05.
-    tau_decay : float   Fast decay time constant (s). None = no decay (holds value).
+    tau_decay : float   Fast decay time constant (s). None = instant decay.
     tau_hold  : float   Plateau duration — time constant of _s decay (s). Default 2.0.
     theta     : float   Threshold above which _s charges. 0 = hold at any positive input.
     w_s       : float   Gain of sustained variable on output. Default 1.0.
@@ -784,7 +788,7 @@ Models calcium-like sustained (working-memory) activity.
 
 **Parameters:**
 - `tau_rise` (τ_rise) — fast membrane rise time constant (s); default 0.05
-- `tau_decay` (τ_decay) — fast membrane decay time constant (s); blank/None = no decay (holds value)
+- `tau_decay` (τ_decay) — fast membrane decay time constant (s); blank/None = instant decay
 - `tau_hold` (τ_hold) — plateau charging/draining time constant (s); default 2.0
 - `theta` (θ) — threshold for charging plateau; default 0.0
 - `w_s` — gain of plateau variable on output; default 1.0
@@ -861,7 +865,7 @@ this one does **not** apply noise:
     def param_defs(cls):
         return [
             ('tau_rise',  float, '0.05', 'fast rise τ (membrane)'),
-            ('tau_decay', float, '0.05', 'fast decay τ (membrane; blank/None = no decay, holds value)'),
+            ('tau_decay', float, '0.05', 'fast decay τ (membrane; blank/None = instant decay)'),
             ('tau_hold',  float, '2.0',  'plateau duration τ (sustained variable; 0 / blank = none)'),
             ('theta',     float, '0.0',  'threshold for charging plateau (0 = any positive input)'),
             ('w_s',       float, '1.0',  'gain of sustained variable on output'),
@@ -1034,7 +1038,7 @@ Recurrent connectivity defined by a **self-connection** (use the Mexican hat pre
 **Parameters:**
 - `n` — number of neurons on the ring; default 8
 - `tau_rise` (τ_rise) — rise time constant (s); default 0.1
-- `tau_decay` (τ_decay) — decay time constant (s); blank/None = no decay (holds value)
+- `tau_decay` (τ_decay) — decay time constant (s); blank/None = instant decay
 - `activation` (f) — nonlinearity: `relu`, `sigmoid`, `tanh`, `linear`; default `relu`
 - `bias` (b) — constant tonic drive per neuron (replaces a ConstantLayer); default 0.0
 - `noise_std` / `noise_tau` — same as LeakyLayer
@@ -1064,7 +1068,9 @@ or the Mexican hat row sums are not sufficiently negative.
 **Output mode** — `output_mode` ∈ `{none, derivative, integral}` (not listed above;
 auto-added to this dialog by `DynamicsBase`). Transforms the raw input u
 *before* adaptation/leaky filtering/activation run: `derivative` replaces u
-with its rate of change; `integral` replaces u with its running accumulation.
+with its rate of change; `integral` replaces u with its running accumulation
+— each tick adds `u × dt` to the accumulator, not `u` itself, so the same
+drive accumulates more slowly at a smaller `dt`.
 
 **Initial value** — `x0` (not listed above; also auto-added by `DynamicsBase`)
 sets the starting value of `x` and of the `output_mode='integral'` accumulator,
@@ -1140,7 +1146,7 @@ both at construction and on every reset. Default 0.0. Not the same as `bias`
         return [
             ('n',          int,   '8',      'number of neurons'),
             ('tau_rise',   float, '0.1',    'rise time constant (s)'),
-            ('tau_decay',  float, '0.1',    'decay time constant (s); blank/None = no decay (holds value)'),
+            ('tau_decay',  float, '0.1',    'decay time constant (s); blank/None = instant decay'),
             ('activation', str,   'relu',   'output nonlinearity', ACTIVATIONS),
             ('bias',       float, '0.0',    'constant added to input each step — replaces a ConstantLayer drive'),
             ('noise_std',  float, '0.0',    'noise amplitude'),

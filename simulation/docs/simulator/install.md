@@ -1,15 +1,40 @@
 # Installing the Simulator
 
-## 1. Get the code
+## Download and run
 
-Open a terminal in the folder where you want to install the simulator, then:
+No git, no terminal commands to remember — just one file.
+
+=== "Windows"
+
+    [Download install.bat](https://raw.githubusercontent.com/fchampalimaud/cf.lbp/main/simulation/install.bat){ .md-button }
+
+    Save it anywhere and double-click it.
+
+=== "macOS / Linux"
+
+    [Download install.sh](https://raw.githubusercontent.com/fchampalimaud/cf.lbp/main/simulation/install.sh){ .md-button }
+
+    Downloaded files aren't executable by default, so open a terminal where you saved it and run:
+
+    ```bash
+    bash install.sh
+    ```
+
+First run downloads the simulator (no git required), installs [uv](https://docs.astral.sh/uv/) if
+needed, then uses it to install the right Python version and all dependencies into an isolated
+environment, and launches the app. Later runs just relaunch it — after that, updates go through the
+**🔄** button in the app itself, not this script.
+
+---
+
+## Alternative: clone with git
+
+Already comfortable with git? Clone the repository directly instead of downloading the installer:
 
 ```bash
 git clone https://github.com/fchampalimaud/cf.lbp.git
 cd cf.lbp/simulation
 ```
-
-## 2. Run
 
 === "Windows"
 
@@ -23,9 +48,8 @@ cd cf.lbp/simulation
     ./start.sh
     ```
 
-First run installs [uv](https://docs.astral.sh/uv/) if needed, then uses it to install the right
-Python version and all dependencies into an isolated environment, and launches the simulator.
-No manual Python install required. Later runs reuse the same environment and start instantly.
+Same effect as the installer above — `start.bat`/`start.sh` bootstrap Python via `uv` and launch
+the app — it just assumes you already have the code on disk.
 
 ---
 
@@ -86,7 +110,7 @@ pip install imageio imageio-ffmpeg
 
 ## Updating
 
-**From the app** — Session tab → **Check for updates** (the simulator also checks quietly at start-up; the button then reads **Update to vX**). It downloads the latest version from the public repository, replaces the app's own files and restarts. Your files are not touched.
+**From the app** — click the **🔄** next to the *Simulation* title (the simulator also checks quietly at start-up; the icon turns green with the new version in its tooltip when one is available). It downloads the latest version from the public repository, replaces the app's own files and restarts. Your files are not touched.
 
 **With git** — if you cloned the repository:
 

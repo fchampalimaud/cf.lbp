@@ -12,8 +12,8 @@
 | `padding` | `same` (preserve H×W) or `valid` (no padding); default `same` |
 | `pool` | `global_avg`, `global_max`, or `none`; default `global_avg` |
 | `activation` | Nonlinearity on feature maps before pooling; default `relu` |
-| `tau_rise` | Leaky dynamics rise τ on pooled output (0 = off); default 0.0 |
-| `tau_decay` | Leaky dynamics decay τ; 0 or blank = no decay, holds value |
+| `tau_rise` | Leaky dynamics rise τ on pooled output (0 or blank = instant rise); default 0.0 |
+| `tau_decay` | Leaky dynamics decay τ; 0 or blank = instant decay |
 | `tau_a` | Adaptation time constant (0 = off); default 0.0 |
 | `beta` | Adaptation strength (0 = off); default 0.0 |
 | `bias` | Constant added to each pooled output; default 0.0 |
@@ -25,7 +25,7 @@
 
 $$M = f(\text{conv2d}(I,\, W)), \quad \text{pooled} = \text{pool}(M) + b$$
 
-**Optional leaky dynamics** (when `tau_rise > 0`):
+**Optional leaky dynamics** (when `tau_rise` or `tau_decay` is set — either unset makes that side instantaneous, both unset means no filtering):
 
 $$\frac{dx}{dt} = \frac{\text{pooled} - x}{\tau}, \quad \text{output} = x \times \text{scale}$$
 

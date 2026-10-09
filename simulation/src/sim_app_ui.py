@@ -318,6 +318,40 @@ class _UiBuilderMixin:
         title_w = QFontMetrics(gb.font()).horizontalAdvance(gb.title())
         btn_help.move(8 + title_w + 10, 0)   # QGroupBox title starts 8 px in (sim_widgets)
         btn_help.raise_()
+
+        # Update check (top-right of the header): only public copies carry release.json
+        # (see updater.py) — a development checkout shows nothing here.
+        import updater
+        if updater.release_info() is not None:
+            from app_version import get_app_version
+            btn_update = QPushButton("🔄", gb)
+            btn_update.setFixedSize(16, 16)
+            btn_update.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            btn_update.setToolTip(f"Check for updates (current: v{get_app_version()})")
+            self._update_btn_style_normal = (
+                f"QPushButton {{ background:{C['surface']}; color:{C['dark']}; font-weight:bold;"
+                f" border:1px solid {C['border']}; border-radius:8px; padding:0; font-size:8pt; }}"
+                f"QPushButton:hover {{ background:{C['primary']}; }}")
+            self._update_btn_style_available = (
+                f"QPushButton {{ background:{C['success']}; color:{C['dark']}; font-weight:bold;"
+                f" border:1px solid {C['border']}; border-radius:8px; padding:0; font-size:8pt; }}"
+                f"QPushButton:hover {{ background:{C['primary']}; }}")
+            btn_update.setStyleSheet(self._update_btn_style_normal)
+            btn_update.clicked.connect(self._on_update_clicked)
+
+            def _position_update_btn():
+                btn_update.move(gb.width() - btn_update.width() - 8, 0)
+            _position_update_btn()
+            btn_update.raise_()
+            _orig_gb_resize = gb.resizeEvent
+            def _on_gb_resize(ev):
+                _orig_gb_resize(ev)
+                _position_update_btn()
+            gb.resizeEvent = _on_gb_resize
+
+            self._update_btn = btn_update
+            self._start_update_check()
+
         self._btn_run_stop.clicked.connect(self._on_run_stop)
         self._btn_step.clicked.connect(lambda: self._sim_ctrl.step())
         self._btn_reset.clicked.connect(self._reset)
@@ -608,7 +642,7 @@ class _UiBuilderMixin:
         al.addWidget(QLabel("Arena:"))
         self._arena_square_rb = QRadioButton("Square")
         self._arena_round_rb  = QRadioButton("Round")
-        self._arena_square_rb.setChecked(True)
+        self._arena_round_rb.setChecked(True)   # default: round, not square (fresh install)
         self._arena_square_rb.toggled.connect(self._on_arena_type_change)
         al.addWidget(self._arena_square_rb); al.addWidget(self._arena_round_rb)
         al.addStretch()

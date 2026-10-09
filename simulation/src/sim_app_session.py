@@ -43,7 +43,6 @@ class _SessionMixin:
             fl.addWidget(b)
         vl.addWidget(files_row)
         self._show_user_dir()
-        self._build_update_row(vl)
 
         dir_row = QWidget(); dl = QHBoxLayout(dir_row); dl.setContentsMargins(0, 0, 0, 0)
         dl.addWidget(QLabel("Directory:"))
@@ -62,22 +61,18 @@ class _SessionMixin:
                 select=self._first_folder_key('configs', self._session_root_combo.currentData())))
         self._session_dir_combo.currentIndexChanged.connect(self._refresh_session_list)
 
-        save_row = QWidget(); sl = QHBoxLayout(save_row); sl.setContentsMargins(0, 0, 0, 0)
-        sl.addWidget(QLabel("Name:"))
-        self._session_name = QLineEdit("experiment_1")
-        sl.addWidget(self._session_name)
-        btn_save = self._make_btn("Save", C['dark'])
-        btn_save.clicked.connect(self._save_session)
-        sl.addWidget(btn_save)
-        vl.addWidget(save_row)
+        self._last_session_name = "experiment_1"   # suggested name in the Save dialog
 
         load_row = QWidget(); ll = QHBoxLayout(load_row); ll.setContentsMargins(0, 0, 0, 0)
         ll.addWidget(QLabel("Load:"))
         self._session_combo = QComboBox()
-        ll.addWidget(self._session_combo)
+        ll.addWidget(self._session_combo, 1)
         btn_load = self._make_btn("Load", C['muted'])
         btn_load.clicked.connect(self._load_session)
         ll.addWidget(btn_load)
+        btn_save = self._make_btn("Save", C['dark'])
+        btn_save.clicked.connect(self._save_session)
+        ll.addWidget(btn_save)
         vl.addWidget(load_row)
 
     def _build_task_group(self, panel_vl=None):
@@ -259,22 +254,13 @@ class _SessionMixin:
         print(f"[Video] Saved {n} frames → " + ", ".join(paths))
 
     # ── Updates (public copies only: release.json, see updater.py) ──────────
+    # The 🔄 button lives in the Simulation group header (sim_app_ui._build_sim_group,
+    # next to the "?" help button); it only gets built there when release.json is present.
 
-    def _build_update_row(self, vl):
-        import updater
-        from app_version import get_app_version
-        if updater.release_info() is None:
-            return               # development copy: updates come from git
-        row = QWidget(); hl = QHBoxLayout(row); hl.setContentsMargins(0, 0, 0, 0)
-        hl.addWidget(QLabel(f"Simulator v{get_app_version()}"))
-        hl.addStretch()
-        self._update_btn = self._make_btn("Check for updates", C['muted'])
-        self._update_btn.setToolTip("Update from the public repository — your files are never touched")
-        self._update_btn.clicked.connect(self._on_update_clicked)
-        hl.addWidget(self._update_btn)
-        vl.addWidget(row)
-        # Quiet check at start-up, off the UI thread; silent when offline.
+    def _start_update_check(self):
+        """Quiet check at start-up, off the UI thread; silent when offline."""
         import threading
+        import updater
         self._latest_version = None
         self._update_check_done = False
         def _check():
@@ -293,8 +279,9 @@ class _SessionMixin:
         from app_version import get_app_version
         latest = self._latest_version
         if latest and updater.is_newer(latest, get_app_version()):
-            self._update_btn.setText(f"Update to v{latest}")
-            self._status_bar.showMessage(f"Simulator v{latest} is available (Session tab)", 10000)
+            self._update_btn.setToolTip(f"Update available: v{latest} (current: v{get_app_version()})")
+            self._update_btn.setStyleSheet(self._update_btn_style_available)
+            self._status_bar.showMessage(f"Simulator v{latest} is available — click 🔄 to update", 10000)
 
     def _on_update_clicked(self):
         import sys
@@ -418,25 +405,94 @@ class _SessionMixin:
         resolve_mounted_patches(self.world, self._sim_ctrl.registry.agents)
 
     def _save_session(self):
+        """Ask for a name and directory (as for saving a network), then write.
+        Sessions always save to the user's configs/ — the simulator's own
+        folders are offered there by name but are never written to."""
         if not self.brain:
             print("SAVE FAILED: No brain loaded.")
             return
-        raw_name    = self._session_name.text().strip()
+        from PySide6.QtWidgets import (
+            QDialog, QFormLayout, QComboBox, QLineEdit, QDialogButtonBox, QPushButton,
+            QHBoxLayout, QInputDialog,
+        )
+
+        current = self._session_dir_combo.currentData() or ""
+        if current.startswith(data_paths.BUILTIN):
+            current = current[len(data_paths.BUILTIN):]
+        subdirs = sorted(set(data_paths.user_subdirs('configs')) | ({current} if current else set()))
+        subdirs = [''] + subdirs
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle('Save Session')
+        form = QFormLayout(dlg)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+
+        note = QLabel("Always saved to My files — the Simulator's own folders are read-only.")
+        note.setWordWrap(True)
+        note.setStyleSheet(f"color:{C['muted']}; font-style:italic;")
+        form.addRow(note)
+
+        dir_row = QHBoxLayout()
+        dir_combo = QComboBox()
+        dir_combo.addItems([d if d else '(My Sessions)' for d in subdirs])
+        dir_combo.setCurrentIndex(subdirs.index(current) if current in subdirs else 0)
+        btn_new_dir = QPushButton('+')
+        btn_new_dir.setFixedWidth(24)
+        btn_new_dir.setToolTip('Create new subdirectory')
+        def _new_dir():
+            name_d, ok = QInputDialog.getText(dlg, 'New directory', 'Directory name:')
+            if not ok or not name_d.strip():
+                return
+            name_d = name_d.strip()
+            data_paths.user_path('configs', name_d).mkdir(parents=True, exist_ok=True)
+            if name_d not in subdirs:
+                subdirs.append(name_d)
+                subdirs.sort()
+                dir_combo.clear()
+                dir_combo.addItems([d if d else '(My Sessions)' for d in subdirs])
+            dir_combo.setCurrentIndex(subdirs.index(name_d))
+        btn_new_dir.clicked.connect(_new_dir)
+        dir_row.addWidget(dir_combo, 1)
+        dir_row.addWidget(btn_new_dir)
+        form.addRow('Directory:', dir_row)
+
+        name_edit = QLineEdit(self._last_session_name)
+        form.addRow('Name:', name_edit)
+
+        preview = QLabel()
+        preview.setWordWrap(True)
+        preview.setStyleSheet(f"color:{C['muted']};")
+        form.addRow('Saves to:', preview)
+
+        def _update_preview():
+            chosen = subdirs[dir_combo.currentIndex()]
+            raw    = name_edit.text().strip()
+            clean  = "".join(x for x in raw if x.isalnum() or x in "._- ") or "autosave"
+            dest   = data_paths.user_path('configs', chosen, create=False)
+            preview.setText(str(dest / f"{clean}.json"))
+        dir_combo.currentIndexChanged.connect(_update_preview)
+        name_edit.textChanged.connect(_update_preview)
+        _update_preview()
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        form.addRow(buttons)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        chosen_dir  = subdirs[dir_combo.currentIndex()]
+        raw_name    = name_edit.text().strip()
         clean_name  = "".join(x for x in raw_name if x.isalnum() or x in "._- ") or "autosave"
-        key         = self._session_dir_combo.currentData() or ""
-        redirected  = key.startswith(data_paths.BUILTIN)
-        if redirected:   # the simulator's folders are read-only: save to My files / <same name>
-            key = key[len(data_paths.BUILTIN):]
-        session_dir = data_paths.folder_for('configs', key)
+        session_dir = data_paths.user_path('configs', chosen_dir)
         session_dir.mkdir(parents=True, exist_ok=True)
         path        = os.path.join(str(session_dir), f"{clean_name}.json")
         if self._write_session(path):
+            self._last_session_name = clean_name
             print(f"SUCCESS: Session saved to {path}")
-            note = " (the simulator's sessions are read-only — saved to My files)" if redirected else ""
-            self._status_bar.showMessage(f"✓ Session saved: {path}{note}", 8000)
-            if redirected:
-                self._refresh_session_dirs(select=key)
-            self._refresh_session_list()
+            self._status_bar.showMessage(f"✓ Session saved: {path}", 8000)
+            self._refresh_session_dirs(select=chosen_dir)
             self._session_combo.setCurrentText(f"{clean_name}.json")
         else:
             self._status_bar.showMessage(f"✕ Session could not be saved to {path} (see console)", 8000)
@@ -580,7 +636,7 @@ class _SessionMixin:
             self._arena.update_child_bodies(poses, self.circuit.bodies, self.sim_cfg)
             if self._net_viz:
                 self._net_viz.build()
-            self._session_name.setText(selected.replace(".json", ""))
+            self._last_session_name = selected.replace(".json", "")
             self._reset()
             print(f"Session Restored: {selected}")
         except Exception as e:

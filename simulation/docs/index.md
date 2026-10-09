@@ -4,16 +4,25 @@ A self-contained Python application for building and running neural-circuit beha
 
 ## Getting started
 
-Open a terminal in the folder where you want to install the simulator, then:
+Download one file and run it — no git, no manual Python install.
 
-```bash
-git clone https://github.com/fchampalimaud/cf.lbp.git
-cd cf.lbp/simulation
-start.bat       # macOS/Linux: ./start.sh
-```
+=== "Windows"
 
-First run installs everything it needs (including Python itself) into an isolated environment —
-no manual setup required. See [Installing](simulator/install.md) for a manual install instead.
+    [Download install.bat](https://raw.githubusercontent.com/fchampalimaud/cf.lbp/main/simulation/install.bat){ .md-button }
+
+    Save it anywhere and double-click it.
+
+=== "macOS / Linux"
+
+    [Download install.sh](https://raw.githubusercontent.com/fchampalimaud/cf.lbp/main/simulation/install.sh){ .md-button }
+
+    ```bash
+    bash install.sh
+    ```
+
+First run downloads the simulator and installs everything it needs (including Python itself) into
+an isolated environment. Later runs just relaunch it. See [Installing](simulator/install.md) for
+the git-clone alternative or a fully manual install.
 
 ## Where to start
 

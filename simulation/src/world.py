@@ -22,7 +22,7 @@ class World:
         self.patches    = []
         self.objects    = []
         self.walls      = []
-        self.arena_round = False
+        self.arena_round = True
         self.sky        = {"enabled": False, "angle": 0.0}
         self.floor_texture = None   # filename in textures/, or None = default floor
 

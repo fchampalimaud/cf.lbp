@@ -20,9 +20,10 @@ class BaseSensor(DynamicsBase):
     The simulator calls sample() each tick and stores the result as brain.<name>.
 
     Shared parameters:
-        tau_rise     : rise time constant. None = no filtering (pass-through).
-        tau_decay    : decay time constant. None = rise-and-hold (never decays) —
-                       the same rule as layers (neurons_base.leaky_step).
+        tau_rise     : rise time constant. None = instant rise.
+        tau_decay    : decay time constant. None = instant decay — both unset
+                       means no filtering at all (pass-through); the same rule
+                       as layers (neurons_base.leaky_step).
         activation   : 'linear' (default), 'relu', 'sigmoid', or 'tanh'.
         output_mode  : 'none' (default) / 'derivative' / 'integral' — applied to the
                        raw (post-noise) reading BEFORE the leaky filter/activation
@@ -83,7 +84,9 @@ class BaseSensor(DynamicsBase):
     def _apply_output_mode(self, out, dt):
         """Transform *out* per self.output_mode: 'none' passthrough,
         'derivative' (rate-of-change, zeros on the first tick), or
-        'integral' (running ∫out dt, forward-Euler accumulation)."""
+        'integral' (running ∫out dt, forward-Euler accumulation — each tick
+        adds `out * dt`, not `out` itself, so a smaller `dt` means smaller
+        per-tick increments for the same reading)."""
         if self.output_mode == 'derivative':
             prev = self._prev_output
             if prev is None or prev.shape != out.shape:
@@ -155,13 +158,14 @@ class BaseSensor(DynamicsBase):
         if not self._noise_applied_in_sample:
             raw = self._apply_noise(raw, sim_cfg.dt)
         raw = self._apply_output_mode(raw, sim_cfg.dt)
-        # Same rule as layers (leaky_step): tau_rise unset = no filtering;
-        # tau_decay unset = rise-and-hold.
+        # Same rule as layers (leaky_step): either tau unset makes that side
+        # instantaneous; only fully off (pass-through) when both are unset.
         tr = getattr(self, 'tau_rise', None)
-        if tr:
+        td = getattr(self, 'tau_decay', None)
+        if tr or td:
             if self._x is None or self._x.shape != np.shape(raw):
                 self._x = np.zeros_like(raw, dtype=float)
-            self._x = leaky_step(self._x, raw, tr, getattr(self, 'tau_decay', None), sim_cfg.dt)
+            self._x = leaky_step(self._x, raw, tr, td, sim_cfg.dt)
             out = self._x.copy()
         else:
             out = raw
@@ -176,8 +180,8 @@ class BaseSensor(DynamicsBase):
         return [
             ('noise_std',     float, 0.0,      'Gaussian noise σ added each tick (0 = off)'),
             ('noise_tau',     float, 0.0,      'OU correlation time (0 = white noise)'),
-            ('tau_rise',      float, '',        'rise τ in seconds (0 / empty = passthrough)'),
-            ('tau_decay',     float, '',        'decay τ in seconds (0 / empty = rise-and-hold, never decays)'),
+            ('tau_rise',      float, '',        'rise τ in seconds (0 / empty = instant rise)'),
+            ('tau_decay',     float, '',        'decay τ in seconds (0 / empty = instant decay)'),
             ('activation',    str,   'linear',  'nonlinearity applied after dynamics',
              ACTIVATIONS),
             ('output_mode',   str,   'none',    'output transform: none / derivative (dV/dt) / integral (∫V dt)',
@@ -311,7 +315,7 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
 2. `u = r_i + bias`
 3. add noise to `u` (if `noise_std > 0`)
 4. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
-5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (passthrough if no τ set)
+5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (instant on whichever side is unset; passthrough only if neither τ is set)
 6. `output = activation(x) × scale`
 
 ---
@@ -362,8 +366,8 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
             ('gradient',      str,   'A',              'label A–F or empty for all'),
             ('scale',         float, 1.0,      'output scale'),
             ('bias',          float, 0.0,      'constant offset added after scale'),
-            ('tau_rise',      float, '',       'rise τ (0 / empty = passthrough)'),
-            ('tau_decay',     float, '',       'decay τ (0 / empty = rise-and-hold, never decays)'),
+            ('tau_rise',      float, '',       'rise τ (0 / empty = instant rise)'),
+            ('tau_decay',     float, '',       'decay τ (0 / empty = instant decay)'),
             ('activation',    str,   'linear', 'output activation', ACTIVATIONS),
             ('output_mode',   str,   'none',   'none / derivative / integral', OUTPUT_MODES),
         ]
@@ -412,7 +416,7 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
 2. `u = r_i + bias`
 3. add noise to `u` (if `noise_std > 0`)
 4. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
-5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (passthrough if no τ set)
+5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (instant on whichever side is unset; passthrough only if neither τ is set)
 6. `output = activation(x) × scale`
 
 ---
@@ -458,8 +462,8 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
             ('color_channel', str,   '',               'R, G, B or empty for all'),
             ('scale',         float, 1.0,              'output scale'),
             ('bias',          float, 0.0,      'constant offset added after scale'),
-            ('tau_rise',      float, '',       'rise τ (0 / empty = passthrough)'),
-            ('tau_decay',     float, '',       'decay τ (0 / empty = rise-and-hold, never decays)'),
+            ('tau_rise',      float, '',       'rise τ (0 / empty = instant rise)'),
+            ('tau_decay',     float, '',       'decay τ (0 / empty = instant decay)'),
             ('activation',    str,   'linear', 'output activation', ACTIVATIONS),
             ('output_mode',   str,   'none',   'none / derivative / integral', OUTPUT_MODES),
         ]
@@ -529,7 +533,7 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
 2. `o_i = h_i + h_i × noise_std × ε_i` — noise gated on a hit, added directly to the raw signal (no separate noise stage below)
 3. `u = o_i + bias`
 4. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
-5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (passthrough if no τ set)
+5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (instant on whichever side is unset; passthrough only if neither τ is set)
 6. `output = activation(x) × scale`
 
 - `n` — number of arc sectors (outputs).
@@ -595,8 +599,8 @@ In multi-agent sessions, sectors also fire on contact with other agents' bodies 
             ('scale',         float, 1.0,      'output scale'),
             ('bias',          float, 0.0,      'constant offset added after scale'),
             ('noise_std',      float, 0.0,      'Gaussian noise std added on collision (zero otherwise)'),
-            ('tau_rise',      float, '',       'rise τ (0 / empty = passthrough)'),
-            ('tau_decay',     float, '',       'decay τ (0 / empty = rise-and-hold, never decays)'),
+            ('tau_rise',      float, '',       'rise τ (0 / empty = instant rise)'),
+            ('tau_decay',     float, '',       'decay τ (0 / empty = instant decay)'),
             ('activation',    str,   'linear', 'output activation', ACTIVATIONS),
             ('output_mode',   str,   'none',   'none / derivative / integral', OUTPUT_MODES),
         ]
@@ -726,7 +730,7 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
 2. `u = r_i + bias`
 3. add noise to `u` (if `noise_std > 0`)
 4. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
-5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (passthrough if no τ set)
+5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (instant on whichever side is unset; passthrough only if neither τ is set)
 6. `output = activation(x) × scale`
 
 - `angle_spread` — total angular fan width in degrees.
@@ -772,8 +776,8 @@ In multi-agent sessions, rays also hit other agents' bodies (treated as circles 
             ('max_range',     float, 1.0,      'maximum detection range'),
             ('scale',         float, 1.0,      'output scale'),
             ('bias',          float, 0.0,      'constant offset added after scale'),
-            ('tau_rise',      float, '',       'rise τ (0 / empty = passthrough)'),
-            ('tau_decay',     float, '',       'decay τ (0 / empty = rise-and-hold, never decays)'),
+            ('tau_rise',      float, '',       'rise τ (0 / empty = instant rise)'),
+            ('tau_decay',     float, '',       'decay τ (0 / empty = instant decay)'),
             ('activation',    str,   'linear', 'output activation', ACTIVATIONS),
             ('output_mode',   str,   'none',   'none / derivative / integral', OUTPUT_MODES),
         ]
@@ -978,7 +982,7 @@ $$\\tau = \\begin{cases}\\tau_{rise} & s_{\\text{target}} > s \\\\ \\tau_{decay}
         target = float(self._apply_output_mode(np.array([target]), sim_cfg.dt)[0])
         # Hunger/satiety state: the shared leaky filter (same tau rules as every
         # sensor and layer), clipped to [0, max_val].
-        if self.tau_rise:
+        if self.tau_rise or self.tau_decay:
             self._state = float(leaky_step(np.float64(self._state), target,
                                            self.tau_rise, self.tau_decay, sim_cfg.dt))
         else:
@@ -1001,7 +1005,7 @@ class ProprioceptiveSensor(BaseSensor):
     joint_id     : motor_layer_name of the joint group to read
     use_velocity : read angular velocity instead of angle
     scale        : output multiplier
-    tau_rise     : rise time constant (s). Empty = passthrough.
+    tau_rise     : rise time constant (s). Empty = instant rise.
     tau_decay    : decay time constant (s). Defaults to tau_rise.
     activation   : output nonlinearity
     """
@@ -1028,7 +1032,7 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
 2. `u = r_i + bias`
 3. add noise to `u` (if `noise_std > 0`)
 4. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
-5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (passthrough if no τ set)
+5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (instant on whichever side is unset; passthrough only if neither τ is set)
 6. `output = activation(x) × scale`
 
 - `joint_id` — `motor_layer_name` of the joint group. A mirrored wheel pair → `n=2`; a single head joint → `n=1`.
@@ -1069,8 +1073,8 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
             ('use_velocity',   bool,  False,    'read angular velocity instead of angle'),
             ('scale',          float, 1.0,      'output multiplier'),
             ('bias',           float, 0.0,      'constant offset added after scale'),
-            ('tau_rise',       float, '',       'rise τ (0 / empty = passthrough)'),
-            ('tau_decay',      float, '',       'decay τ (0 / empty = rise-and-hold, never decays)'),
+            ('tau_rise',       float, '',       'rise τ (0 / empty = instant rise)'),
+            ('tau_decay',      float, '',       'decay τ (0 / empty = instant decay)'),
             ('activation',     str,   'linear', 'output activation', ACTIVATIONS),
             ('output_mode',    str,   'none',   'none / derivative / integral', OUTPUT_MODES),
         ]
@@ -1151,7 +1155,7 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
 2. `u = r + bias`
 3. add noise to `u` (if `noise_std > 0`)
 4. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
-5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (passthrough if no τ set)
+5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (instant on whichever side is unset; passthrough only if neither τ is set)
 6. `output = activation(x) × scale`
 """
 
@@ -1185,8 +1189,8 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
             ('n',            int,   1,         'number of neurons'),
             ('scale',        float, 1.0,       'output scale'),
             ('bias',         float, 0.0,       'constant offset added after scale'),
-            ('tau_rise',     float, '',        'rise τ (0 / empty = passthrough)'),
-            ('tau_decay',    float, '',        'decay τ (0 / empty = rise-and-hold, never decays)'),
+            ('tau_rise',     float, '',        'rise τ (0 / empty = instant rise)'),
+            ('tau_decay',    float, '',        'decay τ (0 / empty = instant decay)'),
             ('activation',   str,   'linear',  'output activation', ACTIVATIONS),
             ('output_mode',  str,   'none',    'none / derivative / integral', OUTPUT_MODES),
         ]
@@ -1299,7 +1303,7 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
 2. `u = r_k + bias`
 3. add noise to `u` (if `noise_std > 0`)
 4. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
-5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (passthrough if no τ set)
+5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (instant on whichever side is unset; passthrough only if neither τ is set)
 6. `output = activation(x) × scale`
 
 - `n` — number of DRA neurons (heading directions sampled).
@@ -1343,8 +1347,8 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
             ('scale',          float, 1.0,      'output multiplier'),
             ('bias',           float, 0.0,      'constant offset added after scale'),
             ('phase',          float, 0.0,      'phase offset (rad) — aligns neuron 0 to field direction'),
-            ('tau_rise',       float, '',       'rise τ (0 / empty = passthrough)'),
-            ('tau_decay',      float, '',       'decay τ (0 / empty = rise-and-hold, never decays)'),
+            ('tau_rise',       float, '',       'rise τ (0 / empty = instant rise)'),
+            ('tau_decay',      float, '',       'decay τ (0 / empty = instant decay)'),
             ('activation',     str,   'relu',   'output activation', ACTIVATIONS),
             ('noise_std',      float, 0.0,      'noise amplitude'),
             ('noise_tau',      float, 0.0,      'OU correlation time (0 = white noise)'),
@@ -1407,7 +1411,7 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
 2. `u = r_k + bias`
 3. add noise to `u` (if `noise_std > 0`)
 4. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
-5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (passthrough if no τ set)
+5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (instant on whichever side is unset; passthrough only if neither τ is set)
 6. `output = activation(x) × scale`
 
 - `n` — number of neurons around the bump.
@@ -1444,8 +1448,8 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
     def param_defs(cls):
         return [
             ('n',              int,   8,        'number of neurons around the bump'),
-            ('tau_rise',       float, '',       'rise τ (0 / empty = passthrough)'),
-            ('tau_decay',      float, '',       'decay τ (0 / empty = rise-and-hold, never decays)'),
+            ('tau_rise',       float, '',       'rise τ (0 / empty = instant rise)'),
+            ('tau_decay',      float, '',       'decay τ (0 / empty = instant decay)'),
             ('activation',     str,   'relu',   'output activation', ACTIVATIONS),
             ('scale',          float, 1.0,      'output multiplier'),
             ('bias',           float, 0.0,      'constant offset added after scale'),
@@ -1512,7 +1516,7 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
 2. `u = r + bias`
 3. add noise to `u` (if `noise_std > 0`)
 4. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
-5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (passthrough if no τ set)
+5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (instant on whichever side is unset; passthrough only if neither τ is set)
 6. `output = activation(x) × scale`
 
 - `key` — single keyboard character that drives this sensor (case-insensitive).
@@ -1559,8 +1563,8 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
     def param_defs(cls):
         return [
             ('key',            str,   'R',      'keyboard key that drives this sensor (held = 1)'),
-            ('tau_rise',       float, '',       'rise τ (0 / empty = passthrough)'),
-            ('tau_decay',      float, '',       'decay τ (0 / empty = rise-and-hold, never decays)'),
+            ('tau_rise',       float, '',       'rise τ (0 / empty = instant rise)'),
+            ('tau_decay',      float, '',       'decay τ (0 / empty = instant decay)'),
             ('activation',     str,   'linear', 'output activation', ACTIVATIONS),
             ('scale',          float, 1.0,      'output multiplier'),
             ('bias',           float, 0.0,      'constant offset added after scale'),
@@ -1678,8 +1682,8 @@ class CameraSensor(BaseSensor):
             ('lateralized',    bool,  False, 'split output into left/right halves ({name}_L, {name}_R)'),
             ('overlap',        int,   0,     'pixels past midline included in each half (negative = gap)'),
             ('noise_std',      float, 0.0,   'Gaussian noise σ added to pixel values each tick (0 = off)'),
-            ('tau_rise',       float, '',    'rise τ in seconds per pixel (0 / empty = passthrough)'),
-            ('tau_decay',      float, '',    'decay τ in seconds per pixel (0 / empty = rise-and-hold, never decays)'),
+            ('tau_rise',       float, '',    'rise τ in seconds per pixel (0 / empty = instant rise)'),
+            ('tau_decay',      float, '',    'decay τ in seconds per pixel (0 / empty = instant decay)'),
             ('output_mode',    str,   'none', 'none / derivative / integral', OUTPUT_MODES),
         ]
 

@@ -384,18 +384,25 @@ def generate_bonsai_xml(circuit, model_name='SimulatorModel'):
                 extra = f'          <p1:NegativeSlope>0.01</p1:NegativeSlope>\n'
             elif act_str == 'ELU':
                 extra = f'          <p1:ELUAlpha>1.0</p1:ELUAlpha>\n'
-            td = lyr.tau_decay
-            if td is None:
+            tr, td = lyr.tau_rise, lyr.tau_decay
+            if tr is None and td is None:
                 warnings.append(
-                    f"'{lyr.name}' has tau_decay=None (no-decay/hold mode) — "
-                    f"LBP.Torch's LeakyLayer has no equivalent; exporting with "
-                    f"TauDecay=TauRise (symmetric) instead.")
-                td = lyr.tau_rise
+                    f"'{lyr.name}' has tau_rise and tau_decay both None (no "
+                    f"filtering) — LBP.Torch's LeakyLayer has no equivalent; "
+                    f"exporting with a near-instant TauRise=TauDecay=0.001 instead.")
+                tr = td = 0.001
+            elif tr is None or td is None:
+                warnings.append(
+                    f"'{lyr.name}' has tau_rise/tau_decay=None (instant on one "
+                    f"side) — LBP.Torch's LeakyLayer has no equivalent; exporting "
+                    f"with the unset side matching the set one (symmetric) instead.")
+                tr = tr if tr is not None else td
+                td = td if td is not None else tr
             ll_i = node(
                 f'      <Expression xsi:type="Combinator">\n'
                 f'        <Combinator xsi:type="p1:LeakyLayer">\n'
                 f'          <p1:Name>{cap(lyr.name)}</p1:Name>\n'
-                f'          <p1:TauRise>{lyr.tau_rise}</p1:TauRise>\n'
+                f'          <p1:TauRise>{tr}</p1:TauRise>\n'
                 f'          <p1:TauDecay>{td}</p1:TauDecay>\n'
                 f'          <p1:Activation>{act_str}</p1:Activation>\n'
                 f'{extra}'

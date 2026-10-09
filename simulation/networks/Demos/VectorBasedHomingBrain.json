@@ -6,7 +6,7 @@
   "disabled_cols": [],
   "container_labels": {
     "TL": "Compass sensors (TL)",
-    "layer3": "Ring Attractor (CL1)",
+    "CL1": "Ring Attractor (CL1)",
     "sensor2": "Wheel Proprioception",
     "TB": "TB",
     "TBGate": "TB-Gate",
@@ -66,7 +66,7 @@
     },
     {
       "type": "RingAttractorLayer",
-      "name": "layer3",
+      "name": "CL1",
       "layer": 3,
       "n": 8,
       "tau_rise": 0.1,
@@ -119,19 +119,18 @@
       "viz_span": 3
     },
     {
-      "type": "RingAttractorLayer",
+      "type": "LeakyLayer",
       "name": "CPU4",
       "layer": 6,
-      "n": 16,
       "tau_rise": 0.0,
       "tau_decay": 0.0,
-      "activation": "hard_sigmoid",
       "bias": 0.0,
+      "activation": "hard_sigmoid",
+      "n": 16,
       "noise_std": 0.0,
       "noise_tau": 0.0,
-      "viz_layout": "linear",
-      "x0": 0.5,
       "scale": 1.0,
+      "x0": 0.5,
       "output_mode": "integral",
       "alpha": 1.0,
       "viz_row": 0
@@ -294,8 +293,8 @@
   ],
   "connections": [
     {
-      "src": "layer3",
-      "tgt": "layer3",
+      "src": "CL1",
+      "tgt": "CL1",
       "W": [
         [
           0.0,
@@ -381,7 +380,7 @@
     },
     {
       "src": "TL",
-      "tgt": "layer3",
+      "tgt": "CL1",
       "W": [
         [
           1.0,
@@ -3352,7 +3351,7 @@
       }
     },
     {
-      "src": "layer3",
+      "src": "CL1",
       "tgt": "TB",
       "W": [
         [

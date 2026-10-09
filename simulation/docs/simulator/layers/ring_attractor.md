@@ -9,8 +9,8 @@ Recurrent connectivity is defined by a **self-connection** — use the Mexican h
 | Parameter | Description |
 |---|---|
 | `n` | Number of neurons on the ring; default 8 |
-| `tau_rise` | Rise time constant (s); default 0.1 |
-| `tau_decay` | Decay time constant (s); 0 or blank = no decay, holds value |
+| `tau_rise` | Rise time constant (s); 0 or blank = instant rise; default 0.1 |
+| `tau_decay` | Decay time constant (s); 0 or blank = instant decay |
 | `activation` | `relu`, `sigmoid`, `tanh`, `linear`; default `relu` |
 | `bias` | Constant tonic drive per neuron (replaces a ConstantLayer); default 0.0 |
 | `noise_std` / `noise_tau` | Same as LeakyLayer |

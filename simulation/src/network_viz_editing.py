@@ -879,7 +879,8 @@ class NetworkEditing:
         self.win.renderer.clear_edge_selection()
         self._select_node(node_hit)
         event.accept()
-        layer_obj = next((l for l in circuit.layers if l.name == lname), None)
+        layer_obj  = next((l for l in circuit.layers if l.name == lname), None)
+        sensor_obj = next((s for s in circuit.sensors if s.name == lname), None)
         is_muted  = getattr(layer_obj, 'muted', False)
         is_body   = getattr(layer_obj, '_is_joint_motor', False)
         menu = QMenu(self.win)
@@ -908,7 +909,8 @@ class NetworkEditing:
         in_osc  = osc_key in self.win.gui.tracked_osc_items()
         osc_act = menu.addAction("Remove from oscilloscope" if in_osc else "Add to oscilloscope")
         osc_act.triggered.connect(lambda _checked, k=osc_key: self.win.gui.toggle_osc_layer(k))
-        if layer_obj is not None:
+        activation_target = layer_obj if layer_obj is not None else sensor_obj
+        if activation_target is not None and not getattr(activation_target, 'is_image_node', False):
             activation_act = menu.addAction(
                 "Remove from activation panel" if lname in self.win._activation_pinned
                 else "Add to activation panel")

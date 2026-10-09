@@ -160,7 +160,7 @@ class LearningLayerBase(DynamicsBase, LayerBase):
         if self.reward_modulator:   # legacy field — default is now None, not 'dopamine'
             parts.append(f'reward_modulator={self.reward_modulator!r}')
         parts += self._base_code_parts()
-        if self.tau_rise:
+        if self.tau_rise or self.tau_decay:
             parts.append(f'tau_rise={self.tau_rise}')
             if self.tau_decay != self.tau_rise:
                 parts.append(f'tau_decay={self.tau_decay}')
@@ -220,7 +220,7 @@ $$V = \\sum_i W_i \\, s_i, \\quad \\delta = r + \\gamma V - V_{\\text{prev}}, \\
 **Order of operations** (`step_td`, per tick):
 1. `V = Σ_conn W_conn · s_conn` — weighted sum over incoming connections
 2. apply `output_mode` transform to `V` — derivative/integral (if not `none`)
-3. `V += bias`, then the optional leaky filter `V = leaky(V)` (only if `tau_rise > 0`)
+3. `V += bias`, then the optional leaky filter `V = leaky(V)` (only if `tau_rise` or `tau_decay` is set)
 4. `δ = r + γ·V − V_prev` (`r` = current reward signal from the modulator bus)
 5. sanitize `δ` (replace NaN/±Inf with 0)
 6. `mask = competition_mask(V)` (`none` → all ones; `wta` → top-k one-hot; `softmax` → softmax(V))
@@ -339,7 +339,7 @@ $$V = \\sum_i W_i \\, s_i, \\quad \\delta = r - V, \\quad \\Delta W_i = \\alpha_
 **Order of operations** (`step_td`, per tick):
 1. `V = Σ_conn W_conn · s_conn` — weighted sum over incoming connections
 2. apply `output_mode` transform to `V` — derivative/integral (if not `none`)
-3. `V += bias`, then the optional leaky filter `V = leaky(V)` (only if `tau_rise > 0`)
+3. `V += bias`, then the optional leaky filter `V = leaky(V)` (only if `tau_rise` or `tau_decay` is set)
 4. `δ = r − V` (`r` = current reward signal from the modulator bus)
 5. sanitize `δ` (replace NaN/±Inf with 0)
 6. `mask = competition_mask(V)` (`none` → all ones; `wta` → top-k one-hot; `softmax` → softmax(V))
@@ -429,7 +429,7 @@ acquisition rate and decay rate — infrequently rewarded associations fade natu
 **Order of operations** (`step_td`, per tick):
 1. `V = Σ_conn W_conn · s_conn` — weighted sum over incoming connections
 2. apply `output_mode` transform to `V` — derivative/integral (if not `none`)
-3. `V += bias`, then the optional leaky filter `V = leaky(V)` (only if `tau_rise > 0`)
+3. `V += bias`, then the optional leaky filter `V = leaky(V)` (only if `tau_rise` or `tau_decay` is set)
 4. `δ = r · V` (`r` = current reward signal from the modulator bus)
 5. sanitize `δ` (replace NaN/±Inf with 0)
 6. `mask = competition_mask(V)` (`none` → all ones; `wta` → top-k one-hot; `softmax` → softmax(V))
@@ -575,7 +575,7 @@ toward it gradually.
 1. split incoming connections by `src`: the **teach connection** (`src == teach_source`) vs. everything else (**gate connection(s)**)
 2. `V = Σ_conn W_conn · s_conn` over the gate connections only — the teach connection's value is *not* summed into `V`
 3. apply `output_mode` transform to `V` — derivative/integral (if not `none`)
-4. `V += bias`, then the optional leaky filter `V = leaky(V)` (only if `tau_rise > 0`)
+4. `V += bias`, then the optional leaky filter `V = leaky(V)` (only if `tau_rise` or `tau_decay` is set)
 5. `mask = competition_mask(V)`
 6. `output = activation(V) × scale × mask`
 7. for each outgoing connection: if `self._reward` is nonzero *and* a teach value was found, hard-overwrite `W_outgoing ← −teach_source.output` (every output column set to the same negated vector)

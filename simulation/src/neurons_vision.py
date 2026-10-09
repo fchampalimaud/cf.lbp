@@ -25,8 +25,8 @@ class Conv2dLayer(DynamicsBase, LayerBase):
     padding     : str   'same' — zero-pad to preserve H×W. 'valid' — no padding.
     pool        : str   'global_avg', 'global_max', or 'none'.
     activation  : str   Nonlinearity applied to feature maps BEFORE pooling (relu/sigmoid/tanh/linear).
-    tau_rise    : float Rise τ for optional leaky dynamics on pooled output (0 = instantaneous).
-    tau_decay   : float Decay τ. None = no decay (holds value).
+    tau_rise    : float Rise τ for optional leaky dynamics on pooled output (0 = instant rise).
+    tau_decay   : float Decay τ. None = instant decay.
     bias        : float Constant added to pooled output.
     """
 
@@ -44,7 +44,7 @@ Each filter is a `(in_ch, kH, kW)` kernel; `in_ch` is inferred from camera mode.
 - `pool` — `global_avg`, `global_max`, or `none`; default `global_avg`
 - `activation` (f) — nonlinearity applied to feature maps before pooling; default `relu`
 - `tau_rise` (τ_rise) — leaky dynamics rise τ on pooled output (0 = off); default 0.0
-- `tau_decay` (τ_decay) — leaky dynamics decay τ; blank/None = no decay (holds value)
+- `tau_decay` (τ_decay) — leaky dynamics decay τ; blank/None = instant decay
 - `tau_a` (τ_a) — adaptation time constant (0 = off); default 0.0
 - `beta` (β) — adaptation strength; 0 = no adaptation; default 0.0
 - `bias` (b) — constant added to each pooled output; default 0.0
@@ -60,7 +60,7 @@ $$M = f(\\text{conv2d}(I,\\, W)), \\quad \\text{pooled} = \\text{pool}(M) + b$$
 
 $$\\frac{dx}{dt} = \\frac{\\text{pooled} - x}{\\tau}, \\quad \\text{output} = x \\times \\text{scale}$$
 
-If `tau_rise = 0`: output = pooled × scale directly.
+If both `tau_rise = 0` and `tau_decay = 0`: output = pooled × scale directly (no filtering).
 
 **Optional adaptation** (when `beta > 0` and `tau_a > 0`):
 
@@ -77,7 +77,7 @@ applied anywhere in this layer's per-tick update:
 1. `u = pooled + bias`
 2. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
 3. subtract adaptation: `u -= β × a` (if `tau_a > 0` and `beta > 0`)
-4. `x = leaky(u)` — τ_rise/τ_decay (passthrough when `tau_rise = 0`)
+4. `x = leaky(u)` — τ_rise/τ_decay (instant on whichever side is 0; passthrough only if both are 0)
 5. update adaptation from the pre-scale `x`: `a += (x − a) / τ_a × dt` (if `tau_a > 0` and `beta > 0`)
 6. `output = x × scale`
 
@@ -136,8 +136,8 @@ applied anywhere in this layer's per-tick update:
              ['global_avg', 'global_max', 'none']),
             ('activation',  str,   'relu',        'nonlinearity applied to feature maps before pooling',
              ACTIVATIONS),
-            ('tau_rise',    float, '0.0',         'leaky rise τ on pooled output (0 = instantaneous)'),
-            ('tau_decay',   float, '0.0',         'leaky decay τ (blank/None = no decay, holds value)'),
+            ('tau_rise',    float, '0.0',         'leaky rise τ on pooled output (0 = instant rise)'),
+            ('tau_decay',   float, '0.0',         'leaky decay τ (blank/None = instant decay)'),
             ('tau_a',       float, '0.0',         'adaptation time constant (0 = off)'),
             ('beta',        float, '0.0',         'adaptation strength (0 = off)'),
             ('bias',        float, '0.0',         'constant added to pooled output'),
@@ -270,7 +270,7 @@ Downstream `Conv2dLayer` nodes can use this as their source.
 **Parameters:**
 - `lateralized` — create mirrored _L/_R pair for split-camera input
 - `tau_rise` (τ_rise) — rise time constant (s); default 0.1
-- `tau_decay` (τ_decay) — decay τ (s); blank/None = no decay (holds value)
+- `tau_decay` (τ_decay) — decay τ (s); blank/None = instant decay
 - `activation` (f) — nonlinearity per pixel: `linear`, `relu`, `sigmoid`, `tanh`; default `linear`
 - `output_mode` — `none` / `derivative` / `integral` (per pixel); default `none`
 - `bias` (b) — constant added to each pixel before integration; default 0.0
@@ -337,7 +337,7 @@ reads positive.
         return [
             ('lateralized', bool,  False,    'create mirrored _L/_R pair for split-camera input'),
             ('tau_rise',   float, '0.1',    'rise τ (s)'),
-            ('tau_decay',  float, '0.1',    'decay τ (s; blank/None = no decay, holds value)'),
+            ('tau_decay',  float, '0.1',    'decay τ (s; blank/None = instant decay)'),
             ('activation', str,   'linear', 'per-pixel nonlinearity', ACTIVATIONS),
             ('bias',       float, '0.0',    'constant added to each pixel input'),
             ('scale',      float, '1.0',    'output multiplier'),
@@ -470,8 +470,8 @@ class Reichardt2dLayer(DynamicsBase, LayerBase):
     pool       : str   'global_avg', 'global_max', or 'none'. Default 'global_avg'.
     activation : str   Nonlinearity applied after pooling (global_avg/global_max)
                        or per-pixel (pool='none').
-    tau_rise   : float Rise τ for optional leaky dynamics on pooled output (0 = off).
-    tau_decay  : float Decay τ. None = no decay (holds value).
+    tau_rise   : float Rise τ for optional leaky dynamics on pooled output (0 = instant rise).
+    tau_decay  : float Decay τ. None = instant decay.
     tau_a      : float Adaptation τ (0 = off). Default 0.0.
     beta       : float Adaptation strength. Default 0.0.
     bias       : float Constant added to pooled output. Default 0.0.
@@ -507,7 +507,7 @@ Positive output → motion in the preferred direction. Negative → opposite dir
 - `activation` (f) — nonlinearity applied **after** pooling for `global_avg`/`global_max`
   (see note below), or per-pixel for `pool='none'`; default `relu`
 - `tau_rise` (τ_rise) — leaky rise τ on pooled output (0 = off); default 0.0
-- `tau_decay` (τ_decay) — leaky decay τ; blank/None = no decay (holds value); default 0.0
+- `tau_decay` (τ_decay) — leaky decay τ; blank/None = instant decay; default 0.0
 - `tau_a` (τ_a) — adaptation time constant (0 = off); default 0.0
 - `beta` (β) — adaptation strength (0 = off); default 0.0
 - `bias` (b) — constant added to each pooled output; default 0.0
@@ -647,8 +647,8 @@ problem either way — every built-in activation is monotonic, so
              ['global_avg', 'global_max', 'none']),
             ('activation',  str,   'relu',       'nonlinearity applied to correlation maps before pooling',
              ACTIVATIONS),
-            ('tau_rise',    float, '0.0',        'leaky rise τ on pooled output (0 = instantaneous)'),
-            ('tau_decay',   float, '0.0',        'leaky decay τ (blank/None = no decay, holds value)'),
+            ('tau_rise',    float, '0.0',        'leaky rise τ on pooled output (0 = instant rise)'),
+            ('tau_decay',   float, '0.0',        'leaky decay τ (blank/None = instant decay)'),
             ('tau_a',       float, '0.0',        'adaptation time constant (0 = off)'),
             ('beta',        float, '0.0',        'adaptation strength (0 = off)'),
             ('bias',        float, '0.0',        'constant added to pooled output'),

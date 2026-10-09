@@ -9,8 +9,8 @@ sum before these dynamics run.
 | Parameter | Description |
 |---|---|
 | `n` | Number of neurons |
-| `tau_rise` | Rise time constant (s); default 0.1 |
-| `tau_decay` | Decay time constant (s); 0 or blank = no decay, holds value |
+| `tau_rise` | Rise time constant (s); 0 or blank = instant rise; default 0.1 |
+| `tau_decay` | Decay time constant (s); 0 or blank = instant decay |
 | `bias` | Constant added to the product each step; default 0.0 |
 | `activation` | `relu`, `sigmoid`, `tanh`, `linear`; default `relu` |
 | `scale` | Output multiplier; default 1.0 |

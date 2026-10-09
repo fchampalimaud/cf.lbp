@@ -7,8 +7,8 @@ First-order low-pass filter neurons. Output approaches input with time constant 
 | Parameter | Description |
 |---|---|
 | `n` | Number of neurons |
-| `tau_rise` | Rise time constant (s); default 0.1 |
-| `tau_decay` | Decay time constant (s); 0 or blank = no decay, holds value |
+| `tau_rise` | Rise time constant (s); 0 or blank = instant rise; default 0.1 |
+| `tau_decay` | Decay time constant (s); 0 or blank = instant decay |
 | `bias` | Constant added to each input sum; default 0.0 |
 | `activation` | `relu`, `sigmoid`, `tanh`, `linear`; default `relu` |
 | `scale` | Output multiplier; default 1.0 |
@@ -28,7 +28,9 @@ $$\text{output} = f(x) \times s$$
 | `tau_rise = tau_decay` | Symmetric smoothing |
 | `tau_rise < tau_decay` | Fast rise, slow decay — memory trace |
 | `tau_rise > tau_decay` | Slow rise, fast decay — transient detector |
-| `tau_decay` = 0 or blank | No decay — x rises toward u but holds when u drops |
+| `tau_rise` = 0 or blank | Instant rise — x jumps straight to u while rising, then eases toward u with `tau_decay` while falling (fast-attack/slow-decay envelope follower) |
+| `tau_decay` = 0 or blank | Instant decay — x eases toward u with `tau_rise` while rising, then jumps straight down to u while falling |
+| both 0 or blank | No filtering at all — output just follows input |
 
 !!! warning "Keep every tau ≥ dt"
     The dynamics are integrated one tick at a time (explicit Euler). A time constant shorter than the time step overshoots (dt/τ > 1) and blows up to huge values or NaN (dt/τ > 2). The simulator warns you — a dialog when you set such a tau, a status-bar message when a network loads or dt changes — but doesn't change anything: use a longer tau or a smaller dt (Physics tab).

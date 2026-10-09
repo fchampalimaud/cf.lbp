@@ -94,17 +94,39 @@ def test_hard_sigmoid_matches_torch_and_numpy_paths():
     assert torch.allclose(torch_out, torch.as_tensor(numpy_out, dtype=torch.float32))
 
 
-def test_leaky_tau_decay_none_holds_value():
-    """tau_decay=None must disable decay entirely: value holds when input drops."""
+def test_leaky_tau_decay_none_is_instant():
+    """tau_decay=None must snap straight to 0 the instant input drops (no hold, no lag)."""
     from neurons import LeakyLayer
     layer = LeakyLayer(name='t', n=1, tau_rise=0.05, tau_decay=None, activation='linear')
     layer._ensure_n(1)
     for _ in range(200):
         layer.step(torch.tensor([1.0]), dt=0.01)
     assert layer.output.item() == pytest.approx(1.0, abs=0.01)
-    for _ in range(200):
-        layer.step(torch.tensor([0.0]), dt=0.01)
-    assert layer.output.item() == pytest.approx(1.0, abs=0.01)   # held, not decayed
+    layer.step(torch.tensor([0.0]), dt=0.01)
+    assert layer.output.item() == pytest.approx(0.0, abs=1e-6)   # instant, not held
+
+
+def test_leaky_tau_rise_none_is_instant():
+    """tau_rise=None must snap straight to the target the instant input rises,
+    then decay normally with tau_decay — a fast-attack/slow-decay envelope."""
+    from neurons import LeakyLayer
+    layer = LeakyLayer(name='t', n=1, tau_rise=None, tau_decay=0.2, activation='linear')
+    layer._ensure_n(1)
+    layer.step(torch.tensor([1.0]), dt=0.01)
+    assert layer.output.item() == pytest.approx(1.0, abs=1e-6)   # instant, not eased
+    layer.step(torch.tensor([0.0]), dt=0.01)
+    assert 0.9 < layer.output.item() < 1.0   # now decaying with tau_decay=0.2
+
+
+def test_leaky_both_taus_none_is_full_passthrough():
+    """Both unset: no state tracking at all, output equals input exactly."""
+    from neurons import LeakyLayer
+    layer = LeakyLayer(name='t', n=1, tau_rise=None, tau_decay=None, activation='linear')
+    layer._ensure_n(1)
+    layer.step(torch.tensor([3.0]), dt=0.01)
+    assert layer.output.item() == pytest.approx(3.0, abs=1e-6)
+    layer.step(torch.tensor([-2.0]), dt=0.01)
+    assert layer.output.item() == pytest.approx(-2.0, abs=1e-6)
 
 
 def test_leaky_asymmetric_tau_rise_and_decay_differ():
@@ -1025,6 +1047,32 @@ def test_activation_panel_pin_and_update(qtbot):
 
     win._toggle_activation_entry('l1')
     assert 'l1' not in win._activation_pinned
+
+    win.close()
+
+
+@pytest.mark.skipif(not _HAS_PYTEST_QT, reason='pytest-qt not installed')
+def test_activation_panel_supports_sensors(qtbot):
+    """Sensors (not just layers) can be pinned to the activation panel. A
+    sensor has no .output attribute — its current reading lives on
+    brain.<sensor.name> (set each tick by sim_engine.step_agents), so
+    update_activation_panel must read it from there instead."""
+    from types import SimpleNamespace
+    from network_viz import NetworkVisualizerWindow
+
+    circuit = _make_circuit()
+    gui = _FakeGui(circuit)
+    gui.brain = SimpleNamespace(light=np.array([0.4, 0.6]))
+    win = NetworkVisualizerWindow(gui)
+    qtbot.addWidget(win)
+    win.build()
+
+    win._toggle_activation_entry('light')
+    assert 'light' in win._activation_pinned
+
+    win.renderer.update_activation_panel()
+    entry = win._activation_pinned['light']
+    assert list(entry._bars.opts['height']) == pytest.approx([0.4, 0.6])
 
     win.close()
 
@@ -2289,8 +2337,8 @@ def test_freshness_check_satisfied_after_resave():
 def test_sensors_and_layers_share_dynamics():
     """Sensors and layers use the same leaky filter and tau rules
     (neurons_base.leaky_step): a sensor and a LeakyLayer fed the same input
-    produce the same output; tau_decay unset = rise-and-hold; tau_rise unset =
-    no filtering (even with tau_decay set)."""
+    produce the same output; either tau unset makes that side instantaneous;
+    both unset means no filtering at all."""
     from types import SimpleNamespace
     from sensors import GradientSensor
     from neurons import LeakyLayer
@@ -2307,10 +2355,20 @@ def test_sensors_and_layers_share_dynamics():
 
     np.testing.assert_allclose(run_sensor(tau_rise=0.05, tau_decay=0.2),
                                run_layer(tau_rise=0.05, tau_decay=0.2), atol=1e-6)
-    hold = run_sensor(tau_rise=0.05, tau_decay=None)
-    assert hold[-1] == pytest.approx(hold[29]) and hold[29] > 0.9   # rises, then holds
-    np.testing.assert_allclose(hold, run_layer(tau_rise=0.05, tau_decay=None), atol=1e-6)
-    assert run_sensor(tau_rise=None, tau_decay=0.2) == inputs          # no filtering
+
+    instant_decay = run_sensor(tau_rise=0.05, tau_decay=None)
+    assert instant_decay[29] > 0.9                              # risen by the time input drops
+    assert instant_decay[30] == pytest.approx(0.0, abs=1e-6)    # instant, not held
+    np.testing.assert_allclose(instant_decay, run_layer(tau_rise=0.05, tau_decay=None), atol=1e-6)
+
+    instant_rise = run_sensor(tau_rise=None, tau_decay=0.2)
+    assert instant_rise[0] == pytest.approx(1.0, abs=1e-6)       # instant, not eased
+    assert 0.0 < instant_rise[-1] < 1.0                          # now decaying with tau_decay
+    np.testing.assert_allclose(instant_rise, run_layer(tau_rise=None, tau_decay=0.2), atol=1e-6)
+
+    passthrough = run_sensor(tau_rise=None, tau_decay=None)
+    assert passthrough == inputs                                 # no filtering at all
+    np.testing.assert_allclose(passthrough, run_layer(tau_rise=None, tau_decay=None), atol=1e-6)
 
 
 def test_derivative_output_mode_is_zero_on_first_step():

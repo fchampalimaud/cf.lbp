@@ -65,6 +65,8 @@ Two columns: **▶ Run**, **⏭ Step** and **↺ Reset** stacked on the right; o
 
 **Ctrl+Space** runs / pauses, **Ctrl+→** steps one tick and **Ctrl+R** resets — from any window of the app (main window, network visualizer, oscilloscope). The small **?** next to the *Simulation* title — or **F1** from any window — opens a panel with every keyboard and mouse interaction, one tab per scope: **Everywhere**, **Arena** (tools, drags, right-click delete, zoom), **Network** (connect by dragging a node onto another, Alt+drag to move, palette, undo / copy / paste) and **Side view**. Keys are unique across the app — while ⌨ Manual is on, W/A/D drive the robot and don't pick world tools.
 
+Next to **?** is **🔄**, shown only in a copy installed from the public repository: hover for the current version, click to check for updates. It checks quietly at start-up too, turning green with the new version number in its tooltip when one is available. An update replaces the app's own files and leaves your folder alone; restart afterwards.
+
 ---
 
 ## Brain tab { #brain-tab }
@@ -171,8 +173,6 @@ Solid circles that the robot physically cannot pass through. Added the same way 
 Everything you make — sessions, networks, worlds, motifs, brains, logs and videos — lives in **your files folder**, `~/LBPSimulator` by default (`LBPSimulator` in your home folder). Updates never touch it. The **My files** row at the top of the Sessions group shows where it is (hover for the full path); **📂** opens it in the file explorer, **…** picks another folder and **↺** goes back to the default.
 
 The simulator also ships **built-in** sessions and networks (Tutorials, Demos, Default). The folder pickers list them under **🔒 Simulator**, next to **My files**; they are read-only: open and run them freely; saving one writes a copy into your folder instead (same subfolder name). Updates replace the built-in files.
-
-**Updates** — in a copy installed from the public repository, a **Simulator vX** row shows the version and **Check for updates** (it checks quietly at start-up and turns into **Update to vY** when there is a newer one). An update replaces the app's own files and leaves your folder alone; restart afterwards.
 
 ### Sessions { #sessions }
 

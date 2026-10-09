@@ -47,7 +47,9 @@ nav:
     - Overview: index.md
     - Install: simulator/install.md
     - Simulator: simulator/tour.md
-    - Getting Started: simulator/tutorials/first-braitenberg.md
+  - Tutorials:
+    - Your First Braitenberg Vehicle: simulator/tutorials/first-braitenberg.md
+    - Vector-Based Homing: simulator/tutorials/vector-navigation.md
   - Creating Worlds: simulator/creating-worlds.md
   - Coding Brains: simulator/coding-brains.md
   - Wiring Brains:

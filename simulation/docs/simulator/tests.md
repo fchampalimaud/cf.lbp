@@ -22,7 +22,9 @@ Core layer math, serialisation, and visualiser smoke tests.
 | `test_leaky_converges_to_input` | `LeakyLayer` output converges to a constant target under linear activation |
 | `test_leaky_relu_clamps_negative` | Default relu activation clamps negative output to zero |
 | `test_hard_sigmoid_matches_torch_and_numpy_paths` | `hard_sigmoid` matches PyTorch's own `F.hardsigmoid` on the torch path and agrees exactly with the numpy path used by sensors — `_activate`'s two branches never silently diverge |
-| `test_leaky_tau_decay_none_holds_value` | `tau_decay=None` disables decay entirely — value holds when input drops |
+| `test_leaky_tau_decay_none_is_instant` | `tau_decay=None` snaps the value straight to the target the instant input drops (no hold, no lag) |
+| `test_leaky_tau_rise_none_is_instant` | `tau_rise=None` snaps straight to the target the instant input rises, then decays normally with `tau_decay` — a fast-attack/slow-decay envelope |
+| `test_leaky_both_taus_none_is_full_passthrough` | Both taus unset: no state tracking at all, output equals input exactly |
 | `test_layer_output_mode_derivative_is_rate_of_change` | `output_mode='derivative'` (the generic `DynamicsBase` mechanism shared by every layer/sensor) replaces the raw summed input u with the finite-difference rate of change between consecutive ticks' raw input, before the leaky filter/activation run; layers don't special-case the first tick (`_prev_out` starts at a zero buffer), unlike sensors |
 | `test_layer_output_mode_integral_accumulates` | `output_mode='integral'` replaces the raw summed input u with the running ∫u dt (forward-Euler), before the leaky filter/activation run |
 | `test_output_mode_transforms_raw_input_not_leaky_filtered_output` | Regression: `output_mode` must transform the raw input u before the leaky filter, not the layer's final output — with a real leaky lag (`tau_rise=tau_decay=0.1`), the internal `_integral` buffer must stop growing the instant the raw input hits zero, even though the leaky filter's own state is still decaying |
@@ -67,6 +69,7 @@ Core layer math, serialisation, and visualiser smoke tests.
 | `test_build_no_crash` | `NetworkVisualizerWindow.build()` doesn't raise on a minimal circuit |
 | `test_weight_matrix_cosine_pattern_is_circulant` | `WeightMatrixDialog`'s Cosine pattern produces a circulant (rotation-invariant) matrix, constant along i-j diagonals like its Gaussian/Mexican-hat siblings — regression for a sign bug that banded along i+j anti-diagonals instead (visually "rotated perpendicular") |
 | `test_activation_panel_pin_and_update` | Pinning a layer via `_toggle_activation_entry` shows the Activations panel and adds an `ActivationEntryWidget`; `_update_activation_panel` populates its bar chart with the layer's current per-neuron `output`, indexed 0..n-1; unpinning removes it |
+| `test_activation_panel_supports_sensors` | A sensor (which has no `.output` attribute) can be pinned too — `update_activation_panel` reads its current reading from `brain.<sensor.name>`, set each tick by `sim_engine.step_agents` |
 | `test_side_view_drag_preserves_sensor_z` | Dragging a sensor container in the side view updates its `z`, not just its column (regression: cross-column and same-column drag handlers used to leave `sensor.z` frozen) |
 | `test_paste_selection_bumps_connections_identity` | `_paste_selection` gives `circuit.connections` a fresh list identity after appending, so the `conn_id`-gated caches in `step_network` don't silently miss pasted connections (regression: `.append()` alone doesn't change `id()`) |
 | `test_world_serializer_round_trip` | `save_world_file` → `load_world_file` preserves world state, including per-object/per-wall/floor texture assignments |
@@ -97,7 +100,7 @@ Core layer math, serialisation, and visualiser smoke tests.
 | `test_new_layer_type_needs_only_its_own_file` | A layer type defined only in the test file (params, step, reset — nothing else) saves/loads, runs in `step_network` and renders in the network window, with default capabilities — no other module needs to know it exists |
 | `test_lateral_helpers` | `lateral.py`: side/base/mirror/half names, `partner_layer`, `parent_sensor`, camera vs body-pair halves, `is_lateral_half` |
 | `test_load_syncs_every_lateral_pair_param` | Loading an L/R pair copies the `_L` side's params to `_R` for every pair-capable layer type (Leaky2dLayer used to be skipped) |
-| `test_sensors_and_layers_share_dynamics` | A sensor and a LeakyLayer fed the same input give the same output; blank `tau_decay` = rise-and-hold and blank `tau_rise` = no filtering, for sensors as for layers |
+| `test_sensors_and_layers_share_dynamics` | A sensor and a LeakyLayer fed the same input give the same output; either blank tau makes that side instantaneous, and both blank means no filtering at all — for sensors as for layers |
 | `test_derivative_output_mode_is_zero_on_first_step` | `output_mode='derivative'` outputs 0 on the first step (and after reset) for layers and sensors alike |
 | `test_freshness_check_satisfied_after_resave` | The "Network file outdated" check doesn't report settings that saving leaves out by design (e.g. `GradientSensor.gradient` unset), but still reports genuinely missing ones |
 | `test_engines_satisfy_engine_protocol` | `MuJoCoEngine` and the test stand-in engine both provide every method `step_agents` needs (`sim_engine.Engine`), so the stand-in can't drift from the real engine |
