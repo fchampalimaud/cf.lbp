@@ -1,7 +1,7 @@
 @echo off
 setlocal enabledelayedexpansion
 
-:: install.bat — standalone bootstrapper: download this file alone (no git, no
+:: lbp_install.bat — standalone bootstrapper: download this file alone (no git, no
 :: prior clone) and double-click it. It fetches the simulator into INSTALL_DIR
 :: on first run, then hands off to start.bat there. Re-running later (e.g. the
 :: next time you double-click it) just launches the existing install — updates
