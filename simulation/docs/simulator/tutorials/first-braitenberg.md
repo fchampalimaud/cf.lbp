@@ -1,4 +1,4 @@
-# Your First Braitenberg Vehicle
+# Braitenberg Vehicle II
 
 This tutorial builds a complete, working robot behaviour from scratch — world, sensors, and motor wiring — entirely through the simulator's **graphical network editor**. No Python file, no code.
 
@@ -141,32 +141,29 @@ Press **▶ Run** again. The robot now **moves away** from the patch. When the p
 
 ---
 
-## Step 8 — Experiment
+## Step 8 — Keep it moving
 
-**Blend the behaviours**
+Switch back to attraction (Step 5's crossed matrix) and let the robot actually reach the patch. Watch closely: it drives straight through, the patch slides out of the sensor's forward-facing rays, and `light_0`/`light_1` both drop to `0`. Since `motor_0` and `motor_1` are driven directly by those two numbers, both wheels get a flat-zero command — the robot stops dead, wherever the signal happened to run out. Nothing in this circuit gives it a reason to move once there's nothing left to react to. That's not a bug; it's the defining limit of a purely reactive vehicle like this one.
 
-In the weight matrix, intermediate values produce intermediate behaviours. Try:
+!!! tip "The world updates live"
+    You don't need to stop the simulation to fix this. World edits — placing a patch, dragging it, resizing it — take effect the instant you make them, even while **▶ Run** is active. Watch the robot stall, then drop a new `A` patch a little ahead of it: it should pick the pull back up immediately, no pause or reload required.
 
-$$\mathbf{W} = \begin{pmatrix} 0.2 & 0.8 \\ 0.8 & 0.2 \end{pmatrix}$$
+**Try it**
 
-The off-diagonal entries (0.8) dominate, so the robot still trends toward the patch — but more hesitantly. Reverse the values (0.8 on the diagonal) for a robot that mostly avoids but occasionally drifts back.
+1. With the robot stalled on an exhausted patch, go to the **World** tab and click the **A** button again.
+2. Drag out a fresh patch somewhere ahead of the robot — close enough that its sensor rays can reach it from where it's currently sitting.
+3. Watch it take off again the moment the patch exists. Repeat a few times, dropping each new patch just ahead of wherever the robot ends up, and you can lead it all the way across the arena without ever touching Run/Stop.
+4. Once you've got the hang of it, place four or five `A` patches around the arena *before* pressing Run, spaced so each one's radius slightly overlaps the next one's sensing range. The robot should now wander from patch to patch indefinitely instead of stalling on the first one.
 
-**Adjust the sensor scale**
+Scattering patches works, but it only ever patches the problem over from the *outside* — the robot itself still has no will of its own. **[Braitenberg Vehicle III](second-braitenberg.md)** tackles the same stopping problem from the inside instead: one small addition to the circuit that gives the robot a reason to keep moving even with no patches in the arena at all.
 
-Right-click the `light` node → **Properties…** and change `scale`. A smaller scale means weaker motor commands and a slower, less decisive robot. A larger scale can cause over-steering and oscillation.
-
-**Add a second patch and sensor**
-
-In the World tab, click the **B** button (green) and place a second patch. In the network editor, add a second `GradientSensor` with `name=light2`, `gradient=B`, `scale=60`. Wire it to `motor` with the identity matrix (avoidance). Now the robot is attracted to red and repelled by green simultaneously.
-
-**Save the session**
-
-Click the **Session** tab → **Save** to snapshot both the world layout and the brain wiring. The file lands in **My files** (your files folder, `~/LBPSimulator/configs/` by default) and reloads exactly on the next run.
+Click the **Session** tab → **Save** before moving on, to snapshot both the world layout and the brain wiring you've built here.
 
 ---
 
 ## What to try next
 
+- **[Braitenberg Vehicle III](second-braitenberg.md)** — give the robot an intrinsic drive so it keeps moving on its own, instead of relying on a trail of patches.
 - **[Creating Worlds](../creating-worlds.md)** — all gradient, obstacle, and wall types in detail.
-- **[Wiring Brains](../wiring-brains.md)** — Vehicle 3 (inhibition + constant drive), adding a `LeakyLayer` for smooth motor responses, and more wiring patterns.
+- **[Wiring Brains](../wiring-brains.md)** — the full Vehicle 3 math, adding a `LeakyLayer` for smooth motor responses, and more wiring patterns.
 - **[Coding Brains](../coding-brains.md)** — if you want to express the same circuits in Python code instead.
