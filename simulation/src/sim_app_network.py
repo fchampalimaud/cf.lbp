@@ -198,7 +198,9 @@ class _NetworkMixin:
                         else f"slot {idx}"
                     )
                     state_tag = " ✓ready" if s.ready else ""
-                    heartbeat_ok = idle < 4.0   # 2× the 2 s heartbeat interval
+                    # Warn once idle time crosses halfway to the actual prune
+                    # threshold, so the dot can go amber before the slot is pruned.
+                    heartbeat_ok = idle < (self._sim_ctrl.network.disconnect_timeout * 0.5)
                     hb_dot = "●"
                     hb_color = C['success'] if heartbeat_ok else C['warning']
                     self._net_client_list.addItem(

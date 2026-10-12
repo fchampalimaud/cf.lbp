@@ -522,12 +522,13 @@ class _UiBuilderMixin:
         self._net_host_timeout_spin = QDoubleSpinBox()
         self._net_host_timeout_spin.setRange(0.5, 30.0)
         self._net_host_timeout_spin.setSingleStep(0.5)
-        self._net_host_timeout_spin.setValue(2.0)
+        self._net_host_timeout_spin.setValue(6.0)
         self._net_host_timeout_spin.setSuffix(" s")
         self._net_host_timeout_spin.setToolTip(
             "Seconds a client can go quiet before its agent is dropped.\n"
-            "Clients heartbeat every 2s — very low values may prune a client\n"
-            "on a single missed/delayed heartbeat.")
+            "Clients heartbeat every 2s — values close to that leave no\n"
+            "margin for jitter/packet loss and will prune a client on a\n"
+            "single missed/delayed heartbeat.")
         self._net_host_timeout_spin.valueChanged.connect(
             lambda v: setattr(self._sim_ctrl.network, 'disconnect_timeout', v)
         )

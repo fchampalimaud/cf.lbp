@@ -623,7 +623,10 @@ class LayoutEngine:
             min_ds  = min(b - a for a, b in zip(container_ids, container_ids[1:]))
             x_unit  = (2 * panel_hw + container_gap) / min_ds
         else:
-            x_unit  = 1.0
+            # Single column (e.g. a brand-new network with only `motor`): match the
+            # same one-column-apart spacing a second column would get, so the
+            # new-column drag preview lands right next to it, not roughly twice as far.
+            x_unit  = 2 * panel_hw + container_gap
 
         container_span_map = {}   # container → span  (only entries with span > 1)
 
@@ -827,10 +830,13 @@ class LayoutEngine:
             if a < mouse_x < b:
                 return (a + b) / 2
         # Beyond the edge columns — allow creating a new column outside the existing range.
+        # Track the cursor while it's still further out than that new column's slot, then
+        # lock to the slot once close enough: otherwise the preview jumps straight to a
+        # fixed position with no visible connection to wherever the drag actually is.
         if mouse_x < col_xs[0]:
-            return col_xs[0] - self.win._lay.x_unit
+            return min(mouse_x, col_xs[0] - self.win._lay.x_unit)
         if mouse_x > col_xs[-1]:
-            return col_xs[-1] + self.win._lay.x_unit
+            return max(mouse_x, col_xs[-1] + self.win._lay.x_unit)
         return nearest
 
     def snap_is_existing(self, snap_x):

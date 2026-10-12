@@ -35,15 +35,17 @@ def apply_session_world(d, world, sim_cfg):
 
 
 def session_groups(d):
-    """The session's agent groups as dicts (module, name, color, n, brain_params).
-    Older single-agent sessions (no 'agents' list) become one group."""
+    """The session's agent groups as dicts (module, name, color, n, brain_params,
+    init_pos). Older single-agent sessions (no 'agents' list) become one group."""
     saved = d.get('agents') or [{'name': 'Group 1', 'color': None, 'n': 1, **d}]
     groups = []
     for i, sg in enumerate(saved):
         module, params = brain_from_file(sg)   # code brain or network, new or old format
+        n = max(1, int(sg.get('n', 1)))
+        init_pos = sg.get('init_pos') or [None] * n
         groups.append({'module': module, 'name': sg.get('name', f'Group {i + 1}'),
-                       'color': sg.get('color'), 'n': max(1, int(sg.get('n', 1))),
-                       'brain_params': params})
+                       'color': sg.get('color'), 'n': n,
+                       'brain_params': params, 'init_pos': init_pos})
     return groups
 
 
@@ -112,6 +114,8 @@ def build_simulation(path, start_engine=True):
                                                      first_agent_id=agent_id)
                 else:
                     registry.add_agent_to_group(group_id, agent_id)
+            ip = g['init_pos'][k]
+            agent.init_pos = list(ip) if ip else None
             if not g['module']:
                 continue
             # Later members copy the group's first brain's params, as in the app.

@@ -143,6 +143,7 @@ Owns the Session/Task/Logger tab builders, `_save_session` / `_load_session`, an
 | `brain_mgr` | Its `BrainManager` |
 | `name`, `color` | Display identity |
 | `remote` | `True` if motors come from a connected `SimNetClient` rather than a local brain |
+| `init_pos` | `[x, y, theta]` Reset() restores to, set by dragging this agent in the World editor; `None` (default) uses the auto-spacing formula (`Simulation.reset`) |
 
 **`AgentGroup`** (dataclass) — a row in the agent table: `id`, `module` (brain filename, or `None` for a remote group), `color`, `name`, and `member_ids` (agent ids sharing this brain; `member_ids[0]` is the template used when growing the group or saving).
 

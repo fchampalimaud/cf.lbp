@@ -25,6 +25,9 @@ class RobotAgent:
     name:      str    = ""
     color:     str    = ""
     remote:    bool   = False                # True → motors come from a SimNetHost client
+    init_pos:  list   = None                 # [x, y, theta] Reset() restores to, once set by
+                                              # dragging this agent in the World editor; None
+                                              # means "use the auto-spacing formula" (default)
 
 
 @dataclass

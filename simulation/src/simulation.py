@@ -116,8 +116,11 @@ class Simulation:
         self.time_index = 0
         self.sim_time   = 0.0
         for i, agent in enumerate(self.agents):
-            offset_x = i * 0.5 if i > 0 else 0.0
-            agent.bot_pos[:] = [self.sim_cfg.init_x + offset_x, self.sim_cfg.init_y, 0.0]
+            if agent.init_pos is not None:
+                agent.bot_pos[:] = list(agent.init_pos)
+            else:
+                offset_x = i * 0.5 if i > 0 else 0.0
+                agent.bot_pos[:] = [self.sim_cfg.init_x + offset_x, self.sim_cfg.init_y, 0.0]
             agent.trail_xy.clear()
             for joint in agent.circuit.joints:
                 joint.angle = 0.0

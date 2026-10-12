@@ -251,23 +251,32 @@ class SimNetClient:
             try:
                 raw, _addr = self._sock.recvfrom(_MAX_PACKET)
             except socket.timeout:
-                now = time.monotonic()
-                if self.status in ('connected', 'ready', 'running') \
-                        and now - self._last_seen > _TIMEOUT_S:
-                    print(f'[SimNetClient] connection lost (no packet for {_TIMEOUT_S:.0f}s)')
-                    self.status = 'lost'
-                # Re-send register if still connecting and retry interval elapsed
-                if self.status in ('connecting', 'lost') and now - self._last_reg > _RETRY_S:
-                    self._go_received = False
-                    self._send_register()
-                # Heartbeat while connected (motors only flow after 'go', so we need
-                # a separate keep-alive so the host can detect ungraceful disconnects)
-                if self.status in ('connected', 'ready', 'running') \
-                        and now - self._last_heartbeat > _HEARTBEAT_S:
-                    self._send_heartbeat()
-                continue
+                raw = None
             except OSError:
                 break
+
+            # Time-based housekeeping runs every iteration, not just on an idle
+            # socket timeout — a busy inbound stream (e.g. sensors at 50 Hz)
+            # means recvfrom() almost never times out, which previously starved
+            # the heartbeat/lost-detection checks for as long as traffic kept
+            # arriving.
+            now = time.monotonic()
+            if self.status in ('connected', 'ready', 'running') \
+                    and now - self._last_seen > _TIMEOUT_S:
+                print(f'[SimNetClient] connection lost (no packet for {_TIMEOUT_S:.0f}s)')
+                self.status = 'lost'
+            # Re-send register if still connecting and retry interval elapsed
+            if self.status in ('connecting', 'lost') and now - self._last_reg > _RETRY_S:
+                self._go_received = False
+                self._send_register()
+            # Heartbeat while connected (motors only flow after 'go', so we need
+            # a separate keep-alive so the host can detect ungraceful disconnects)
+            if self.status in ('connected', 'ready', 'running') \
+                    and now - self._last_heartbeat > _HEARTBEAT_S:
+                self._send_heartbeat()
+
+            if raw is None:
+                continue
             try:
                 raw = zlib.decompress(raw)
             except zlib.error:
@@ -296,7 +305,9 @@ class SimNetClient:
                 self._on_go()
         elif t == 'sensors':
             self._last_seen = time.monotonic()
-            if self.status != 'connected':
+            # Only promote out of 'lost' here — don't clobber 'ready'/'running'
+            # back down to 'connected' just because a sensor packet arrived.
+            if self.status == 'lost':
                 self.status = 'connected'
             data = pkt.get('data', {})
             dt   = float(pkt.get('dt', 0.02))

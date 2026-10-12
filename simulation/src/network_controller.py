@@ -50,7 +50,10 @@ class NetworkController(QObject):
         self._net_host       = None   # type: SimNetHost | None
         self._net_client     = None   # type: SimNetClient | None
         self.frame_rate         = 50    # target Hz for sensor sends to clients
-        self.disconnect_timeout = 2.0   # seconds idle before a stale client is pruned
+        self.disconnect_timeout = 6.0   # seconds idle before a stale client is pruned
+                                         # (3x the client's 2s heartbeat — tolerates a
+                                         # couple of missed/delayed heartbeats from
+                                         # jitter or packet loss without flapping)
         self._net_send_times: dict = {}  # slot_idx → last wall-clock send time
         self._net_send_dts:   dict = {}  # slot_idx → accumulated sim dt since last send
 

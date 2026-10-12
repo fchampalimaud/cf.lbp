@@ -74,6 +74,8 @@ Next to **?** is **↻**, shown only in a copy installed from the public reposit
 
 One row per group of agents. The **Brain** column shows what the group runs: the code brain's name, or **⬡ file.json** for a network.
 
+**Positioning agents** — new agents line up automatically from the Physics tab's `init_x`/`init_y` (one `0.5` to the right of the previous one). To place an agent anywhere else, drag its disc in the arena (as you would a gradient patch): wherever you drop it becomes that agent's own Reset position from then on, independent of the others and of `init_x`/`init_y` — useful for setting up a fixed formation (e.g. several agents positioned to follow one leader). Saved in the session, so it's restored on reload.
+
 ### Code brain / Network { #brain-mode }
 
 Each group runs either a **Code brain** — a Python class from `brains/` — or a **Network** — a circuit saved as JSON in `networks/` and designed in the [Network visualizer](#network-viz). Both come built-in (🔒, read-only) or from [your files folder](#my-files). The two toggles switch the selected group between them; switching back to Code brain restores the group's last code brain. Old sessions open in the right mode automatically.

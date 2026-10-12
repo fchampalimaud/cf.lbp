@@ -92,6 +92,7 @@ def save_session(path, module_name, brain, sim_cfg, world,
     if groups is not None:
         data['agents'] = [
             {'name': g['name'], 'color': g['color'], 'n': g['n'],
+             'init_pos': g.get('init_pos'),   # list of [x,y,theta]|null, one per member
              **brain_to_file(g['module'], g.get('brain_params', {}))}
             for g in groups
         ]

@@ -525,9 +525,14 @@ class _SessionMixin:
                     if agent is not None and agent.brain:
                         b_params = {k: getattr(agent.brain, k)
                                     for k in agent.brain.get_param_metadata()}
+                init_pos = [
+                    list(a.init_pos) if a is not None and a.init_pos is not None else None
+                    for a in (self._sim_ctrl.registry.agent_by_id(mid) for mid in g.member_ids)
+                ]
                 groups_data.append({
                     'module': g.module, 'name': g.name, 'color': g.color,
                     'n': len(g.member_ids), 'brain_params': b_params,
+                    'init_pos': init_pos,
                 })
             net_cfg = None
             if self._sim_ctrl.network.host is not None:
@@ -645,6 +650,12 @@ class _SessionMixin:
     def _load_session_agents(self, saved_agents):
         """Reconstruct multiagent groups from a saved 'agents' array."""
         from arena_widget import _AGENT_COLORS
+
+        def _apply_init_pos(member_ids, init_pos):
+            for mid, ip in zip(member_ids, init_pos or [None] * len(member_ids)):
+                agent = self._sim_ctrl.registry.agent_by_id(mid)
+                if agent is not None:
+                    agent.init_pos = list(ip) if ip else None
         while len(self._sim_ctrl.registry.agents) > 1:
             last = len(self._sim_ctrl.registry.agents) - 1
             last_id = self._sim_ctrl.registry.agents[last].id
@@ -670,6 +681,7 @@ class _SessionMixin:
                     self.load_brain(mod, external_params=b_params)
                 for _ in range(n - 1):
                     self._add_agent_to_group(0)
+                _apply_init_pos(group0.member_ids, sg.get('init_pos'))
             else:
                 self._add_agent(color=color, name=name)
                 groups = self._sim_ctrl.registry.groups_ordered()
@@ -684,6 +696,7 @@ class _SessionMixin:
                     self._sim_ctrl.registry.select_agent(prev_sel_id)
                 for _ in range(n - 1):
                     self._add_agent_to_group(g_idx)
+                _apply_init_pos(group.member_ids, sg.get('init_pos'))
         self._sim_ctrl.registry.select_agent(agent0_id)
         self._refresh_agent_list()
 

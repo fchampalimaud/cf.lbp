@@ -137,12 +137,15 @@ class WorldEditor:
 
     def _find_drag_item(self, x, y):
         # Any robot under the cursor (looked up now: agents are recreated when a
-        # session loads, so a stored position list would go stale).
+        # session loads, so a stored position list would go stale). Prefer the
+        # RobotAgent itself (not just its bot_pos) so a finished drag can pin the
+        # drop as that agent's own Reset position, not just its current one.
         agents = self._get_agents() if self._get_agents else []
-        positions = [a.bot_pos for a in agents] or [self._bot_pos]
-        for pos in positions:
+        candidates = agents if agents else [self._bot_pos]
+        for candidate in candidates:
+            pos = candidate.bot_pos if agents else candidate
             if np.hypot(x - pos[0], y - pos[1]) < self._sim_cfg.body_radius * 1.5:
-                return ('robot', pos)
+                return ('robot', candidate)
         for p in self._world.patches:
             if p.get('mounted_on') is not None:
                 continue   # mounted patches move with their robot; not independently draggable
@@ -288,14 +291,22 @@ class WorldEditor:
         if self._drag_item[0] is not None and not is_finish:
             kind, item = self._drag_item
             if kind == 'robot':
-                item[0] = x   # item = that robot's bot_pos (MuJoCo is placed from it each step)
-                item[1] = y
+                # item is the RobotAgent (or, with no registry wired up, the raw
+                # [x, y, theta] bot_pos this editor was constructed with).
+                pos = item.bot_pos if hasattr(item, 'bot_pos') else item
+                pos[0] = x   # MuJoCo is placed from this each step
+                pos[1] = y
             elif kind in ('patch', 'object'):
                 item['x'] = x
                 item['y'] = y
             self._setup_world(rebuild=False)
         if is_finish:
-            if self._drag_item[0] is not None:
+            kind, item = self._drag_item
+            if kind is not None:
+                if kind == 'robot' and hasattr(item, 'bot_pos'):
+                    # Pin the drop as this agent's own Reset position — otherwise
+                    # the next Reset would snap it back to the auto-spacing slot.
+                    item.init_pos = list(item.bot_pos)
                 self._setup_world(rebuild=True)
             self._drag_item = (None, None)
 
@@ -305,7 +316,10 @@ class WorldEditor:
             # Snap to robot center if gradient drag starts on a robot body
             cx, cy = x, y
             if self.draw_mode == 'gradient' and self._get_agents is not None:
-                br = self._sim_cfg.body_radius
+                # Same generous hit-test as _find_drag_item's robot pick (1.5x the
+                # body radius) — the exact radius made this the one noticeably
+                # harder-to-hit target in the whole editor.
+                br = self._sim_cfg.body_radius * 1.5
                 for agent in self._get_agents():
                     bx, by = agent.bot_pos[0], agent.bot_pos[1]
                     if np.hypot(x - bx, y - by) < br:
