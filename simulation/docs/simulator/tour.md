@@ -4,9 +4,8 @@ This page is a reference for every panel and control in the window. Other tutori
 
 ## Launching { #launching }
 
-```bash
-python LBPSimulator.py
-```
+Double-click the **LBP Simulator** shortcut on your Desktop, or `start.bat` (`./start.sh` on
+macOS/Linux) in the app folder. See [Installing](install.md) if you haven't set it up yet.
 
 The window opens with the robot centred in an empty arena. Nothing moves until you press [Run](#run-stop).
 
@@ -170,7 +169,7 @@ Solid circles that the robot physically cannot pass through. Added the same way 
 
 ### Your files { #my-files }
 
-Everything you make — sessions, networks, worlds, motifs, brains, logs and videos — lives in **your files folder**, `~/LBPSimulator` by default (`LBPSimulator` in your home folder). Updates never touch it. The **My files** row at the top of the Sessions group shows where it is (hover for the full path); **📂** opens it in the file explorer, **…** picks another folder and **↺** goes back to the default.
+Everything you make — sessions, networks, worlds, motifs, brains, logs and videos — lives in **your files folder**: `lbp_files/`, next to `app/`, for installs set up by `lbp_install.bat`/`.sh`; plain `~/LBPSimulator` for everything else. Updates never touch it. The **My files** row at the top of the Sessions group shows where it is (hover for the full path); **📂** opens it in the file explorer, **…** picks another folder and **↺** goes back to the default.
 
 The simulator also ships **built-in** sessions and networks (Tutorials, Demos, Default). The folder pickers list them under **🔒 Simulator**, next to **My files**; they are read-only: open and run them freely; saving one writes a copy into your folder instead (same subfolder name). Updates replace the built-in files.
 

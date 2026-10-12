@@ -2,10 +2,11 @@
 set -euo pipefail
 
 # lbp_install.sh — standalone bootstrapper: download this file alone (no git, no
-# prior clone) and run it. It fetches the simulator into INSTALL_DIR on first
-# run, then hands off to start.sh there. Re-running later just launches the
-# existing install — updates after that go through the app's own update
-# button, not this script.
+# prior clone) and run it. It fetches the simulator into LBP_DIR/app on first
+# run, then hands off to start.sh there (your own sessions/networks/… land in
+# the sibling LBP_DIR/lbp_files, created by the app itself). Re-running later
+# just launches the existing install — updates after that go through the
+# app's own update button, not this script.
 #
 # Downloaded files aren't executable by default: run it as
 #   bash lbp_install.sh
@@ -16,17 +17,18 @@ echo "=== LBP Simulator Installer ==="
 echo
 
 REPO_ZIP="https://github.com/fchampalimaud/cf.lbp/archive/refs/heads/main.zip"
-DEFAULT_DIR="$HOME/LBP-Simulator"
-read -rp "Install location (press Enter to use $DEFAULT_DIR): " INSTALL_DIR
-INSTALL_DIR="${INSTALL_DIR:-$DEFAULT_DIR}"
-INSTALL_DIR="${INSTALL_DIR/#\~/$HOME}"   # expand a leading ~ (read doesn't do this itself)
-INSTALL_DIR="${INSTALL_DIR%/}"
+DEFAULT_DIR="$HOME/LBPSimulator"
+read -rp "Install location (press Enter to use $DEFAULT_DIR): " LBP_DIR
+LBP_DIR="${LBP_DIR:-$DEFAULT_DIR}"
+LBP_DIR="${LBP_DIR/#\~/$HOME}"   # expand a leading ~ (read doesn't do this itself)
+LBP_DIR="${LBP_DIR%/}"
+APP_DIR="$LBP_DIR/app"
 echo
 
-if [ -f "$INSTALL_DIR/LBPSimulator.py" ]; then
-    echo "Found an existing install at $INSTALL_DIR."
+if [ -f "$APP_DIR/LBPSimulator.py" ]; then
+    echo "Found an existing install at $LBP_DIR."
 else
-    echo "Downloading the simulator to $INSTALL_DIR (one-time, needs internet)..."
+    echo "Downloading the simulator to $LBP_DIR (one-time, needs internet)..."
 
     TMP_ZIP="$(mktemp -t lbp_simulator.XXXXXX).zip"
     if command -v curl &>/dev/null; then
@@ -50,17 +52,20 @@ else
     rm -f "$TMP_ZIP"
 
     REPO_ROOT="$(find "$TMP_EXTRACT" -mindepth 1 -maxdepth 1 -type d)"
-    mkdir -p "$INSTALL_DIR"
-    cp -R "$REPO_ROOT/simulation/." "$INSTALL_DIR/"
+    mkdir -p "$APP_DIR"
+    cp -R "$REPO_ROOT/simulation/." "$APP_DIR/"
     rm -rf "$TMP_EXTRACT"
 
-    echo "Installed to $INSTALL_DIR."
+    echo "Installed to $LBP_DIR."
     echo
 fi
 
 echo "To run the simulator again later, without this installer, run start.sh in:"
-echo "  $INSTALL_DIR"
+echo "  $APP_DIR"
+echo
+echo "Your own sessions, networks and brains are saved in:"
+echo "  $LBP_DIR/lbp_files"
 echo
 
-cd "$INSTALL_DIR"
+cd "$APP_DIR"
 bash start.sh

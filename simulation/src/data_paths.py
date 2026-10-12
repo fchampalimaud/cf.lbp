@@ -10,9 +10,13 @@ brains/, textures/, logs/:
   user_dir()  the user's own files. Writable; updates never touch it.
               Set in the Session tab (stored in settings_file(), outside the
               folder itself); default: APP_DIR/private/ when it exists (the
-              private development repo, where it is committed), otherwise
-              ~/LBPSimulator. The LBP_USER_DIR environment variable overrides
-              both (tests, scripts).
+              private development repo, where it is committed); otherwise, a
+              public install done via lbp_install.bat/.sh puts the app in
+              .../LBPSimulator/app/ (APP_DIR), sibling to .../LBPSimulator/
+              lbp_files/ (the default here); any other layout (older installs,
+              manual clones not named "app") falls back to ~/LBPSimulator
+              itself, as before. The LBP_USER_DIR environment variable
+              overrides all of the above (tests, scripts).
 
 References between files (a session naming its network, …) are paths
 relative to the kind's folder, e.g. "Tutorials/T02 - DistanceBrain.json".
@@ -59,7 +63,11 @@ def save_settings(settings):
 
 def default_user_dir():
     private = APP_DIR / 'private'
-    return private if private.is_dir() else Path.home() / 'LBPSimulator'
+    if private.is_dir():
+        return private
+    if APP_DIR.name == 'app':   # lbp_install.bat/.sh layout: <root>/app + <root>/lbp_files
+        return APP_DIR.parent / 'lbp_files'
+    return Path.home() / 'LBPSimulator'
 
 
 def user_dir():

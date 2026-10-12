@@ -21,8 +21,9 @@ Download one file and run it — no git, no manual Python install.
     ```
 
 First run downloads the simulator and installs everything it needs (including Python itself) into
-an isolated environment, into a folder you choose. **To run it again later**, go to that folder and
-double-click `start.bat` (`./start.sh` on macOS/Linux) — no need to download anything again. See
+an isolated environment, into a folder you choose (`app/` for the program, `lbp_files/` for
+everything you make). **To run it again later**, use the Desktop shortcut it creates, or double-click
+`start.bat` (`./start.sh` on macOS/Linux) inside `app/` — no need to download anything again. See
 [Installing](simulator/install.md) for the git-clone alternative or a fully manual install.
 
 ## Where to start

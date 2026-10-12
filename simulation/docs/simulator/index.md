@@ -4,10 +4,8 @@
 
 ## Running it
 
-```bash
-cd simulation/2d
-python LBPSimulator.py
-```
+Double-click the **LBP Simulator** shortcut on your Desktop, or `start.bat` (`./start.sh` on
+macOS/Linux) in the app folder. See [Installing](install.md) if you haven't set it up yet.
 
 ## Key concepts
 

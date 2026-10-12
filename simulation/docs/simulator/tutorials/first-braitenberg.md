@@ -30,11 +30,8 @@ That is the whole secret. No computation, no memory, no planning — just which 
 
 ## Step 1 — Launch the simulator
 
-Open a terminal, go to `simulation/2d/`, and run:
-
-```bash
-python LBPSimulator.py
-```
+Double-click the **LBP Simulator** shortcut on your Desktop, or `start.bat` (`./start.sh` on
+macOS/Linux) in the app folder. See [Installing](../install.md) if you haven't set it up yet.
 
 The main window opens. You will see a **Controls panel** on the left with a *Brain / World / Session / Physics / Robot / Network* tab bar, and the **arena** — the large circular area on the right — with the robot disc sitting near the centre.
 

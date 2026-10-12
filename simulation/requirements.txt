@@ -13,6 +13,7 @@ mujoco>=3.0
 
 # Developer tools (scripts/)
 libcst>=1.1
+Pillow>=10.0
 
 # Testing (tests/)
 pytest>=7.0

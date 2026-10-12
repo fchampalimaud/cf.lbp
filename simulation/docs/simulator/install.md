@@ -26,18 +26,25 @@ environment, and launches the app.
 
 ## Running it again
 
-The installer asked you to pick a folder (default `LBP-Simulator` in your home folder) and put the
-whole simulator there, including a launcher:
+The easiest way: the first run adds an **LBP Simulator** shortcut (with the app's icon) to your
+Desktop — double-click that from now on.
+
+If you'd rather not rely on the shortcut, the installer asked you to pick a folder (default
+`LBPSimulator` in your home folder) with two subfolders inside it:
+
+- `app/` — the program itself; replaced whenever you update
+- `lbp_files/` — everything you make (sessions, networks, brains, logs); copy or back up this one
+  folder and nothing else
 
 === "Windows"
 
-    Open that folder and double-click `start.bat`.
+    Open the `app` folder and double-click `start.bat`.
 
 === "macOS / Linux"
 
-    Open a terminal in that folder and run `./start.sh`.
+    Open a terminal in the `app` folder and run `./start.sh`.
 
-No need to download or run the installer again — that launcher is all you need from now on. After
+No need to download or run the installer again — either of those is all you need from now on. After
 that, updates go through the **↻** button in the app itself, not this script.
 
 ---
@@ -137,4 +144,10 @@ Either way, re-run `start.bat`/`start.sh` (or `pip install -r requirements.txt` 
 
 ## Your files
 
-Everything you create — sessions, networks, worlds, motifs, brains, logs, videos — is saved in **`~/LBPSimulator`** (the `LBPSimulator` folder in your home folder), never inside the app's folder, so updates can't touch it. Session tab → **My files** shows the folder, opens it, or moves it somewhere else. The sessions and networks that ship with the simulator (Tutorials, Demos, Default) are marked 🔒 and are read-only; saving one writes your own copy. If you used the simulator before this folder existed, your files are moved there automatically the first time a new version starts.
+Everything you create — sessions, networks, worlds, motifs, brains, logs, videos — is saved in
+**`lbp_files/`**, the sibling folder next to `app/` that the installer set up (an older install
+without that split keeps using **`~/LBPSimulator`** directly) — never inside the app's own folder,
+so updates can't touch it. Session tab → **My files** shows the folder, opens it, or moves it
+somewhere else. The sessions and networks that ship with the simulator (Tutorials, Demos, Default)
+are marked 🔒 and are read-only; saving one writes your own copy. If you used the simulator before
+this folder existed, your files are moved there automatically the first time a new version starts.
