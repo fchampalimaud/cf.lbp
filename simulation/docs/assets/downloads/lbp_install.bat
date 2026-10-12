@@ -13,7 +13,8 @@ echo.
 set "REPO_ZIP=https://github.com/fchampalimaud/cf.lbp/archive/refs/heads/main.zip"
 set "DEFAULT_DIR=%USERPROFILE%\LBP-Simulator"
 set "INSTALL_DIR="
-set /p "INSTALL_DIR=Install location [%DEFAULT_DIR%]: "
+echo Install location (press Enter to use %DEFAULT_DIR%):
+set /p "INSTALL_DIR=> "
 if "%INSTALL_DIR%"=="" set "INSTALL_DIR=%DEFAULT_DIR%"
 call set "INSTALL_DIR=%INSTALL_DIR%"
 if "%INSTALL_DIR:~-1%"=="\" set "INSTALL_DIR=%INSTALL_DIR:~0,-1%"
@@ -55,5 +56,9 @@ echo Installed to "%INSTALL_DIR%".
 echo.
 
 :run
+echo To run the simulator again later, without this installer, double-click
+echo start.bat in:
+echo   "%INSTALL_DIR%"
+echo.
 cd /d "%INSTALL_DIR%"
 call start.bat

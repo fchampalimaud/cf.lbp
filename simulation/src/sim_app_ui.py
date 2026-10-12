@@ -306,13 +306,16 @@ class _UiBuilderMixin:
         run_vl.addStretch()
 
         # "?" right after the group title: opens the keyboard & mouse panel (also F1).
+        # Shared size for both small circular header buttons ("?" and the update check).
+        _hdr_btn_size = 20
         btn_help = QPushButton("?", gb)
-        btn_help.setFixedSize(16, 16)
+        btn_help.setFixedSize(_hdr_btn_size, _hdr_btn_size)
         btn_help.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         btn_help.setToolTip("Keyboard and mouse (F1)")
         btn_help.setStyleSheet(
             f"QPushButton {{ background:{C['surface']}; color:{C['dark']}; font-weight:bold;"
-            f" border:1px solid {C['border']}; border-radius:8px; padding:0; font-size:8pt; }}"
+            f" border:1px solid {C['border']}; border-radius:{_hdr_btn_size // 2}px; padding:0;"
+            f" font-size:10pt; }}"
             f"QPushButton:hover {{ background:{C['primary']}; }}")
         btn_help.clicked.connect(self._show_shortcuts)
         title_w = QFontMetrics(gb.font()).horizontalAdvance(gb.title())
@@ -324,17 +327,19 @@ class _UiBuilderMixin:
         import updater
         if updater.release_info() is not None:
             from app_version import get_app_version
-            btn_update = QPushButton("⟳", gb)
-            btn_update.setFixedSize(16, 16)
+            btn_update = QPushButton("↻", gb)
+            btn_update.setFixedSize(_hdr_btn_size, _hdr_btn_size)
             btn_update.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             btn_update.setToolTip(f"Check for updates (current: v{get_app_version()})")
             self._update_btn_style_normal = (
                 f"QPushButton {{ background:{C['surface']}; color:{C['dark']}; font-weight:bold;"
-                f" border:1px solid {C['border']}; border-radius:8px; padding:0; font-size:8pt; }}"
+                f" border:1px solid {C['border']}; border-radius:{_hdr_btn_size // 2}px; padding:0;"
+                f" font-size:12pt; }}"
                 f"QPushButton:hover {{ background:{C['primary']}; }}")
             self._update_btn_style_available = (
                 f"QPushButton {{ background:{C['success']}; color:{C['dark']}; font-weight:bold;"
-                f" border:1px solid {C['border']}; border-radius:8px; padding:0; font-size:8pt; }}"
+                f" border:1px solid {C['border']}; border-radius:{_hdr_btn_size // 2}px; padding:0;"
+                f" font-size:12pt; }}"
                 f"QPushButton:hover {{ background:{C['primary']}; }}")
             btn_update.setStyleSheet(self._update_btn_style_normal)
             btn_update.clicked.connect(self._on_update_clicked)

@@ -21,8 +21,9 @@ Download one file and run it — no git, no manual Python install.
     ```
 
 First run downloads the simulator and installs everything it needs (including Python itself) into
-an isolated environment. Later runs just relaunch it. See [Installing](simulator/install.md) for
-the git-clone alternative or a fully manual install.
+an isolated environment, into a folder you choose. **To run it again later**, go to that folder and
+double-click `start.bat` (`./start.sh` on macOS/Linux) — no need to download anything again. See
+[Installing](simulator/install.md) for the git-clone alternative or a fully manual install.
 
 ## Where to start
 

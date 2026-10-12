@@ -17,7 +17,7 @@ echo
 
 REPO_ZIP="https://github.com/fchampalimaud/cf.lbp/archive/refs/heads/main.zip"
 DEFAULT_DIR="$HOME/LBP-Simulator"
-read -rp "Install location [$DEFAULT_DIR]: " INSTALL_DIR
+read -rp "Install location (press Enter to use $DEFAULT_DIR): " INSTALL_DIR
 INSTALL_DIR="${INSTALL_DIR:-$DEFAULT_DIR}"
 INSTALL_DIR="${INSTALL_DIR/#\~/$HOME}"   # expand a leading ~ (read doesn't do this itself)
 INSTALL_DIR="${INSTALL_DIR%/}"
@@ -57,6 +57,10 @@ else
     echo "Installed to $INSTALL_DIR."
     echo
 fi
+
+echo "To run the simulator again later, without this installer, run start.sh in:"
+echo "  $INSTALL_DIR"
+echo
 
 cd "$INSTALL_DIR"
 bash start.sh

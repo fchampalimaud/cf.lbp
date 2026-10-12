@@ -65,7 +65,7 @@ Two columns: **▶ Run**, **⏭ Step** and **↺ Reset** stacked on the right; o
 
 **Ctrl+Space** runs / pauses, **Ctrl+→** steps one tick and **Ctrl+R** resets — from any window of the app (main window, network visualizer, oscilloscope). The small **?** next to the *Simulation* title — or **F1** from any window — opens a panel with every keyboard and mouse interaction, one tab per scope: **Everywhere**, **Arena** (tools, drags, right-click delete, zoom), **Network** (connect by dragging a node onto another, Alt+drag to move, palette, undo / copy / paste) and **Side view**. Keys are unique across the app — while ⌨ Manual is on, W/A/D drive the robot and don't pick world tools.
 
-Next to **?** is **⟳**, shown only in a copy installed from the public repository: hover for the current version, click to check for updates. It checks quietly at start-up too, turning green with the new version number in its tooltip when one is available. An update replaces the app's own files and leaves your folder alone; restart afterwards.
+Next to **?** is **↻**, shown only in a copy installed from the public repository: hover for the current version, click to check for updates. It checks quietly at start-up too, turning green with the new version number in its tooltip when one is available. An update replaces the app's own files and leaves your folder alone; restart afterwards.
 
 ---
 

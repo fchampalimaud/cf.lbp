@@ -22,8 +22,23 @@ No git, no terminal commands to remember — just one file.
 
 First run downloads the simulator (no git required), installs [uv](https://docs.astral.sh/uv/) if
 needed, then uses it to install the right Python version and all dependencies into an isolated
-environment, and launches the app. Later runs just relaunch it — after that, updates go through the
-**⟳** button in the app itself, not this script.
+environment, and launches the app.
+
+## Running it again
+
+The installer asked you to pick a folder (default `LBP-Simulator` in your home folder) and put the
+whole simulator there, including a launcher:
+
+=== "Windows"
+
+    Open that folder and double-click `start.bat`.
+
+=== "macOS / Linux"
+
+    Open a terminal in that folder and run `./start.sh`.
+
+No need to download or run the installer again — that launcher is all you need from now on. After
+that, updates go through the **↻** button in the app itself, not this script.
 
 ---
 
@@ -110,7 +125,7 @@ pip install imageio imageio-ffmpeg
 
 ## Updating
 
-**From the app** — click the **⟳** next to the *Simulation* title (the simulator also checks quietly at start-up; the icon turns green with the new version in its tooltip when one is available). It downloads the latest version from the public repository, replaces the app's own files and restarts. Your files are not touched.
+**From the app** — click the **↻** next to the *Simulation* title (the simulator also checks quietly at start-up; the icon turns green with the new version in its tooltip when one is available). It downloads the latest version from the public repository, replaces the app's own files and restarts. Your files are not touched.
 
 **With git** — if you cloned the repository:
 

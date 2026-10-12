@@ -254,7 +254,7 @@ class _SessionMixin:
         print(f"[Video] Saved {n} frames → " + ", ".join(paths))
 
     # ── Updates (public copies only: release.json, see updater.py) ──────────
-    # The ⟳ button lives in the Simulation group header (sim_app_ui._build_sim_group,
+    # The ↻ button lives in the Simulation group header (sim_app_ui._build_sim_group,
     # next to the "?" help button); it only gets built there when release.json is present.
 
     def _start_update_check(self):
@@ -281,7 +281,7 @@ class _SessionMixin:
         if latest and updater.is_newer(latest, get_app_version()):
             self._update_btn.setToolTip(f"Update available: v{latest} (current: v{get_app_version()})")
             self._update_btn.setStyleSheet(self._update_btn_style_available)
-            self._status_bar.showMessage(f"Simulator v{latest} is available — click ⟳ to update", 10000)
+            self._status_bar.showMessage(f"Simulator v{latest} is available — click ↻ to update", 10000)
 
     def _on_update_clicked(self):
         import sys
