@@ -324,7 +324,7 @@ class _UiBuilderMixin:
         import updater
         if updater.release_info() is not None:
             from app_version import get_app_version
-            btn_update = QPushButton("🔄", gb)
+            btn_update = QPushButton("⟳", gb)
             btn_update.setFixedSize(16, 16)
             btn_update.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             btn_update.setToolTip(f"Check for updates (current: v{get_app_version()})")
