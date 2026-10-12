@@ -4,5 +4,6 @@ logs/
 data/
 site/
 *.layout
+*.lnk
+_scratch/_tmp/
 _update/
-latest_session.json

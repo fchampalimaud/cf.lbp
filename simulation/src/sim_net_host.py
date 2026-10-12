@@ -8,17 +8,25 @@ recent motor commands from each client for use in the next tick.
 Protocol (all packets UTF-8 JSON, max ~65 KB):
 
   Client → Host:
-    {"type": "register", "slot": <int>, "port": <int>}
-    {"type": "motors",   "slot": <int>, "mL": <float>, "mR": <float>}
+    {"type": "register",   "port": <int>, "name": <str>, "circuit": {...}}
+    {"type": "heartbeat",  "slot": <int>}
+    {"type": "motors",     "slot": <int>, "mL": <float>, "mR": <float>}
+    {"type": "disconnect", "slot": <int>}
 
   Host → Client:
-    {"type": "ack",     "slot": <int>}
+    {"type": "ack",          "slot": <int>}
+    {"type": "go"}
+    {"type": "host_closing"}
     {"type": "sensors", "slot": <int>, "dt": <float>,
      "data": {"sensor_name": [v0, v1, ...], "sensor_name_L": [...], ...}}
 
-The host runs at its own pace. Clients that lag just reuse their stale cached
-motor command, which is biologically meaningful (a sluggish brain = sluggish
-body). No blocking on remote replies.
+Joining is a single round trip: 'register' gets an immediate 'ack' and creates
+the agent on the host, no separate "ready" handshake. 'go' follows right away
+if the host sim is already running (late joiner); otherwise it arrives once
+the host starts (broadcast to every connected slot). The host runs at its own
+pace. Clients that lag just reuse their stale cached motor command, which is
+biologically meaningful (a sluggish brain = sluggish body). No blocking on
+remote replies.
 """
 
 import json
@@ -44,7 +52,7 @@ class _RemoteSlot:
         self.name        = name
         self.mL          = 0.0
         self.mR          = 0.0
-        self.ready       = False   # True after client sends {"type":"ready"}
+        self.active      = False   # True once a 'go' has been sent to this slot
         self._lock       = threading.Lock()
         self.last_seen   = time.monotonic()
         self._send_times = collections.deque(maxlen=_RATE_WINDOW)
@@ -103,23 +111,19 @@ class SimNetHost:
             self._net_host.send_sensors(i, data, self.sim_cfg.dt)
     """
 
-    def __init__(self, port=SIM_NET_PORT, on_register=None, on_ready=None,
-                 on_disconnect=None):
+    def __init__(self, port=SIM_NET_PORT, on_register=None, on_disconnect=None):
         """
         Parameters
         ----------
         port        : int       UDP port to bind.
         on_register : callable  Optional callback(slot_idx, name) fired when a new
                                 client registers. Called from the receiver thread.
-        on_ready    : callable  Optional callback(slot_idx) fired when a client
-                                sends a 'ready' packet. Called from the receiver thread.
 
         Note: on_register is called as on_register(slot_idx, name, circuit_json)
         where circuit_json is the dict the client sent (may be None for old clients).
         """
         self._port          = port
         self._on_register   = on_register
-        self._on_ready      = on_ready
         self._on_disconnect = on_disconnect
         self._slots         = {}          # slot_idx → _RemoteSlot
         self._slots_lock  = threading.Lock()
@@ -165,10 +169,10 @@ class SimNetHost:
         with self._slots_lock:
             return list(self._slots.keys())
 
-    def ready_slots(self):
-        """Return list of slot indices whose clients have sent a 'ready' packet."""
+    def active_slots(self):
+        """Return list of slot indices that have already received a 'go'."""
         with self._slots_lock:
-            return [idx for idx, s in self._slots.items() if s.ready]
+            return [idx for idx, s in self._slots.items() if s.active]
 
     def prune_stale(self, timeout_s=5.0):
         """Remove slots that have not sent any packet within *timeout_s* seconds.
@@ -195,22 +199,37 @@ class SimNetHost:
             return
         go_pkt = json.dumps({'type': 'go'}, separators=(',', ':')).encode('utf-8')
         if self._send(go_pkt, (s.client_addr, s.client_port)):
+            s.active = True
             print(f'[SimNetHost] go → slot {slot_idx} ({s.client_addr}:{s.client_port})')
 
     def broadcast_go(self):
         """Send a 'go' packet to every connected client, starting simultaneous execution."""
         go_pkt = json.dumps({'type': 'go'}, separators=(',', ':')).encode('utf-8')
         with self._slots_lock:
-            targets = [(idx, s.client_addr, s.client_port)
-                       for idx, s in self._slots.items()]
+            targets = [(idx, s) for idx, s in self._slots.items()]
         if self._sock is None:
             return
         if not targets:
             print('[SimNetHost] broadcast go — no clients connected')
             return
-        for idx, host_addr, port in targets:
-            if self._send(go_pkt, (host_addr, port)):
-                print(f'[SimNetHost] go → slot {idx} ({host_addr}:{port})')
+        for idx, s in targets:
+            if self._send(go_pkt, (s.client_addr, s.client_port)):
+                s.active = True
+                print(f'[SimNetHost] go → slot {idx} ({s.client_addr}:{s.client_port})')
+
+    def broadcast_shutdown(self):
+        """Tell every connected client the host is closing deliberately, so
+        they can show a clear message instead of waiting out a timeout."""
+        if self._sock is None:
+            return
+        with self._slots_lock:
+            targets = [(s.client_addr, s.client_port) for s in self._slots.values()]
+        if not targets:
+            return
+        pkt = json.dumps({'type': 'host_closing'}, separators=(',', ':')).encode('utf-8')
+        for addr, port in targets:
+            self._send(pkt, (addr, port))
+        print(f'[SimNetHost] shutdown notice sent to {len(targets)} client(s)')
 
     # ── Internal send helper ──────────────────────────────────────────────────
 
@@ -326,17 +345,6 @@ class SimNetHost:
                 print(f'[SimNetHost] slot {slot} disconnected gracefully')
                 if self._on_disconnect:
                     self._on_disconnect(slot)
-        elif t == 'ready':
-            slot = int(pkt.get('slot', 0))
-            with self._slots_lock:
-                s = self._slots.get(slot)
-            if s is not None:
-                s.ready = True
-                print(f'[SimNetHost] slot {slot} ready')
-                if self._on_ready:
-                    self._on_ready(slot)
-            else:
-                print(f'[SimNetHost] ready from unknown slot {slot} — ignored')
         elif t == 'motors':
             slot = int(pkt.get('slot', 0))
             with self._slots_lock:

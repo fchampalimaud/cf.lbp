@@ -24,7 +24,8 @@ Protocol: see sim_net_host.py.
         client.send_motors(mL, mR)
 
     # Check connection state for status bar:
-    client.status   # 'disconnected' | 'connecting' | 'connected' | 'lost'
+    client.status   # 'disconnected' | 'connecting' | 'connected' | 'running' |
+                     # 'lost' | 'closed'
 
     client.stop()
 
@@ -43,9 +44,10 @@ import numpy as np
 
 
 _MAX_PACKET    = 65507
-_TIMEOUT_S     = 5.0   # seconds without a packet before status → 'lost'
-_RETRY_S       = 1.0   # re-send register if still connecting
-_HEARTBEAT_S   = 2.0   # interval between heartbeat packets while connected
+_TIMEOUT_S     = 5.0    # seconds without a packet before status → 'lost'
+_GIVE_UP_S     = 15.0   # seconds spent 'lost' before giving up and going 'closed'
+_RETRY_S       = 1.0    # re-send register if still connecting
+_HEARTBEAT_S   = 2.0    # interval between heartbeat packets while connected
 SIM_NET_PORT   = 9001
 
 
@@ -88,8 +90,11 @@ class SimNetClient:
         self._go_received    = False  # set when host sends 'go'
         self._last_heartbeat = 0.0
 
-        # 'disconnected' | 'connecting' | 'connected' | 'ready' | 'running' | 'lost'
-        self.status = 'disconnected'
+        # 'disconnected' | 'connecting' | 'connected' | 'running' | 'lost' | 'closed'
+        # 'closed' is terminal: either the host told us it's shutting down, or
+        # we gave up retrying after a prolonged 'lost'. See close_reason.
+        self.status       = 'disconnected'
+        self.close_reason = ''   # human-readable reason once status == 'closed'
 
         # Latest unread sensor packet; pop_sensors() swaps this to None
         self._pending      = None       # (data_dict, dt) or None
@@ -136,24 +141,6 @@ class SimNetClient:
         if val is None:
             return None, None
         return val
-
-    def arm(self):
-        """Signal the host that this client is ready to start.
-
-        Sends a 'ready' packet and transitions to 'ready' status.  The tick
-        loop will not process sensor data until the host sends back 'go'.
-        """
-        if self._sock is None or self.status not in ('connected', 'ready'):
-            print(f'[SimNetClient] arm() called in invalid state: {self.status!r}')
-            return
-        self.status       = 'ready'
-        self._go_received = False
-        pkt = json.dumps(
-            {'type': 'ready', 'slot': self._slot},
-            separators=(',', ':'),
-        ).encode('utf-8')
-        if self._send(pkt):
-            print(f'[SimNetClient] ready → host (slot {self._slot}), waiting for go...')
 
     def send_motors(self, mL, mR):
         """Send (mL, mR) motor commands to the host. Safe to call from any thread."""
@@ -261,17 +248,24 @@ class SimNetClient:
             # the heartbeat/lost-detection checks for as long as traffic kept
             # arriving.
             now = time.monotonic()
-            if self.status in ('connected', 'ready', 'running') \
+            if self.status in ('connected', 'running') \
                     and now - self._last_seen > _TIMEOUT_S:
                 print(f'[SimNetClient] connection lost (no packet for {_TIMEOUT_S:.0f}s)')
                 self.status = 'lost'
+            # Give up after a prolonged 'lost' instead of retrying forever —
+            # lets the UI stop showing a hopeful "lost, reconnecting..." state
+            # and fall back to something the user can act on.
+            if self.status == 'lost' and now - self._last_seen > _GIVE_UP_S:
+                print(f'[SimNetClient] giving up after {_GIVE_UP_S:.0f}s with no response')
+                self.close_reason = 'host not responding — gave up reconnecting'
+                self.status = 'closed'
             # Re-send register if still connecting and retry interval elapsed
             if self.status in ('connecting', 'lost') and now - self._last_reg > _RETRY_S:
                 self._go_received = False
                 self._send_register()
             # Heartbeat while connected (motors only flow after 'go', so we need
             # a separate keep-alive so the host can detect ungraceful disconnects)
-            if self.status in ('connected', 'ready', 'running') \
+            if self.status in ('connected', 'running') \
                     and now - self._last_heartbeat > _HEARTBEAT_S:
                 self._send_heartbeat()
 
@@ -303,10 +297,14 @@ class SimNetClient:
             print(f'[SimNetClient] go received — starting (slot {self._slot})')
             if self._on_go:
                 self._on_go()
+        elif t == 'host_closing':
+            print(f'[SimNetClient] host is closing the session (slot {self._slot})')
+            self.close_reason = 'host closed the session'
+            self.status       = 'closed'
         elif t == 'sensors':
             self._last_seen = time.monotonic()
-            # Only promote out of 'lost' here — don't clobber 'ready'/'running'
-            # back down to 'connected' just because a sensor packet arrived.
+            # Only promote out of 'lost' here — don't clobber 'running' back
+            # down to 'connected' just because a sensor packet arrived.
             if self.status == 'lost':
                 self.status = 'connected'
             data = pkt.get('data', {})

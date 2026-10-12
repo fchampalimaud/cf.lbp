@@ -18,12 +18,14 @@ class _NetworkMixin:
         self._net_cli_panel.setVisible(False)
         self._sim_ctrl.disable_network_host()
         self._sim_ctrl.disconnect_from_host()
+        self._btn_run_stop.setEnabled(True)
 
     def _on_net_mode_host(self, checked):
         if not checked:
             return
         self._net_cli_panel.setVisible(False)
         self._net_host_panel.setVisible(True)
+        self._btn_run_stop.setEnabled(True)
         # Host starts with no local brain: enable_network_host() below clears
         # the agents/groups (the arena follows); refresh the table afterwards.
         port = self._net_host_port_spin.value()
@@ -62,16 +64,30 @@ class _NetworkMixin:
         if idx >= 0:
             self._net_host_ip_combo.setCurrentIndex(idx)
 
+    def _on_net_reset_clicked(self):
+        """Unconditionally tear down networking and return to Off, regardless
+        of whatever state host/client got stuck in — a recovery escape hatch
+        that doesn't require diagnosing which step is wrong."""
+        self._sim_ctrl.disable_network_host()
+        self._sim_ctrl.disconnect_from_host()
+        self._net_cli_conn_btn.setText("Connect")
+        self._net_off_rb.setChecked(True)
+        self._refresh_agent_list()
+
     def _on_net_mode_client(self, checked):
         if not checked:
             return
         self._net_host_panel.setVisible(False)
         self._net_cli_panel.setVisible(True)
+        # Not connected yet — Run would otherwise silently fall through to
+        # driving the local agent with its own brain instead of doing nothing.
+        self._btn_run_stop.setEnabled(False)
 
     def _on_net_connect_clicked(self):
         if self._sim_ctrl.network.client is not None:
             self._sim_ctrl.disconnect_from_host()
             self._net_cli_conn_btn.setText("Connect")
+            self._btn_run_stop.setEnabled(False)
         else:
             local_port = self._net_cli_lport_spin.value()
             from brain_serializer import serialize_network_json as _ser_net
@@ -95,6 +111,10 @@ class _NetworkMixin:
                                     f"Could not bind local port {local_port}:\n{exc}")
                 return
             self._net_cli_conn_btn.setText("Disconnect")
+            # Joining now starts the client the moment the host sends 'go'
+            # (immediately if already running) — Run/Pause just controls this
+            # client's own participation from here on.
+            self._btn_run_stop.setEnabled(True)
 
     def _on_client_registered(self, info):
         """Main-thread handler: create a physics agent from the client's circuit JSON."""
@@ -197,7 +217,7 @@ class _NetworkMixin:
                         if pos is not None
                         else f"slot {idx}"
                     )
-                    state_tag = " ✓ready" if s.ready else ""
+                    state_tag = " ✓live" if s.active else ""
                     # Warn once idle time crosses halfway to the actual prune
                     # threshold, so the dot can go amber before the slot is pruned.
                     heartbeat_ok = idle < (self._sim_ctrl.network.disconnect_timeout * 0.5)
@@ -221,10 +241,19 @@ class _NetworkMixin:
         client = self._sim_ctrl.network.client
         if client is not None:
             status = client.status
+            if status == 'closed':
+                # Host closed the session, or we gave up after a prolonged
+                # 'lost' — make it unmissable and fall back to Off automatically
+                # instead of leaving the user staring at a stale status label.
+                reason = client.close_reason or 'disconnected from host'
+                print(f'[SimNet] {reason} — switching network to Off')
+                self._net_cli_conn_btn.setText("Connect")
+                self._sim_ctrl.sig_status_changed.emit(f"⚠  {reason.upper()}", C['danger'])
+                self._net_off_rb.setChecked(True)   # also disconnects + hides the panel
+                return
             colors = {
                 'connecting': C['warning'],
                 'connected':  C['success'],
-                'ready':      C['warning'],
                 'running':    C['success'],
                 'lost':       C['danger'],
             }

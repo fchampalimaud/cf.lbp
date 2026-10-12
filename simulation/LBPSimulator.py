@@ -219,7 +219,6 @@ class SimulatorApp(_UiBuilderMixin, _BrainMixin, _SessionMixin, _AgentsMixin,
         )
         self._sim_ctrl.sig_status_changed.connect(self._on_status_changed)
         self._sim_ctrl.sig_timing_updated.connect(self._timing_label.setText)
-        self._sim_ctrl.network.sig_client_ready.connect(self._update_net_status)
         self._sim_ctrl.network.sig_client_disconnect.connect(self._update_net_status)
         self._sim_ctrl.network.sig_client_registered.connect(
             self._on_client_registered, type=Qt.ConnectionType.QueuedConnection)

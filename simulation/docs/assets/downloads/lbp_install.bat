@@ -60,7 +60,7 @@ echo.
 
 :run
 echo To run the simulator again later, without this installer, double-click
-echo start.bat in:
+echo LBPSimulator in:
 echo   "%APP_DIR%"
 echo.
 echo Your own sessions, networks and brains are saved in:

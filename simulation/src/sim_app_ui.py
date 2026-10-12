@@ -480,6 +480,11 @@ class _UiBuilderMixin:
             self._net_mode_group.addButton(rb)
             mode_hl.addWidget(rb)
         mode_hl.addStretch()
+        self._net_reset_btn = self._make_btn("⟲ Reset", C['surface'])
+        self._net_reset_btn.setToolTip(
+            "Fully tear down networking and return to Off,\n"
+            "regardless of whatever state it's currently stuck in.")
+        mode_hl.addWidget(self._net_reset_btn)
         vl.addWidget(mode_row)
 
         # ── Host sub-panel ────────────────────────────────────────────────────
@@ -579,6 +584,7 @@ class _UiBuilderMixin:
         self._net_host_rb.toggled.connect(self._on_net_mode_host)
         self._net_cli_rb.toggled.connect(self._on_net_mode_client)
         self._net_cli_conn_btn.clicked.connect(self._on_net_connect_clicked)
+        self._net_reset_btn.clicked.connect(self._on_net_reset_clicked)
 
         # ── Status refresh timer (1 Hz) ───────────────────────────────────────
         self._net_status_timer = QTimer(self)

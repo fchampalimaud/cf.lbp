@@ -27,7 +27,8 @@ environment, and launches the app.
 ## Running it again
 
 The easiest way: the first run adds an **LBP Simulator** shortcut (with the app's icon) to your
-Desktop — double-click that from now on.
+Desktop, and an **LBPSimulator** launcher with the same icon right inside the `app` folder —
+double-click either one from now on.
 
 If you'd rather not rely on the shortcut, the installer asked you to pick a folder (default
 `LBPSimulator` in your home folder) with two subfolders inside it:
@@ -38,7 +39,7 @@ If you'd rather not rely on the shortcut, the installer asked you to pick a fold
 
 === "Windows"
 
-    Open the `app` folder and double-click `start.bat`.
+    Open the `app` folder and double-click `LBPSimulator` (or `start.bat`, which it just launches).
 
 === "macOS / Linux"
 

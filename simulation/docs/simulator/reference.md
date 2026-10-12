@@ -202,18 +202,19 @@ This is unrelated to the real-robot OSC protocol (see below) — it's a JSON-ove
 
 `sim_net_host.py`
 
-One UDP socket plus one receiver thread. Tracks a `_RemoteSlot` per connected client (motor cache, `ready` flag, Hz stats). All messages are JSON, zlib-compressed on the wire (falls back to reading them as uncompressed for backward compatibility):
+One UDP socket plus one receiver thread. Tracks a `_RemoteSlot` per connected client (motor cache, `active` flag — set once a `go` has been sent to it, Hz stats). All messages are JSON, zlib-compressed on the wire (falls back to reading them as uncompressed for backward compatibility):
 
 | Direction | Message | Payload |
 |---|---|---|
 | client → host | `register` | `slot` request, client `name`, full circuit JSON |
-| client → host | `heartbeat` / `ready` / `disconnect` | keep-alive and lifecycle |
+| client → host | `heartbeat` / `disconnect` | keep-alive and lifecycle |
 | client → host | `motors` | `{mL, mR}` |
 | host → client | `ack` | assigned `slot` |
 | host → client | `sensors` | `{slot, dt, data}` |
 | host → client | `go` | tick-synchronised start signal |
+| host → client | `host_closing` | deliberate shutdown notice |
 
-`prune_stale()` drops clients that go quiet without a clean disconnect.
+Joining is a single round trip — `register` gets an immediate `ack`, and `go` follows right away if the host is already running (late joiner) or once it starts (broadcast to every connected slot). There's no separate "ready" handshake to arm first. `prune_stale()` drops clients that go quiet without a clean disconnect; a deliberate host shutdown sends `host_closing` first so clients don't have to wait out that timeout to find out.
 
 ### `SimNetClient`
 

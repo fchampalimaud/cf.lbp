@@ -132,6 +132,10 @@ class SimController(QObject):
             self.network.sig_go_received.disconnect(self._on_go_received)
         except RuntimeError:
             pass
+        # Leaving client mode must always land in a clean, inert state —
+        # otherwise the tick loop keeps running with is_client now False and
+        # silently falls through to driving the local agent with its own brain.
+        self.stop()
 
     def _on_go_received(self):
         """Called on the Qt main thread when the host sends 'go'. Starts the
@@ -216,11 +220,10 @@ class SimController(QObject):
         # Host mode needs no local brain — agents arrive dynamically as clients connect.
         if not self.network.is_hosting and not self.registry.brain:
             return
-        # Client mode: arm (send 'ready') and wait for host 'go' before ticking.
-        if self.network.is_client:
-            self.network.client.arm()
-            self.sig_status_changed.emit("●  READY", C['warning'])
-            return
+        # Client mode: joining already starts the loop via _on_go_received as
+        # soon as the host sends 'go' (immediately if it's already running,
+        # otherwise once it starts) — no separate arm step needed. Run/Pause
+        # here just pauses/resumes this client's own participation locally.
         self.running = True
         self.sig_status_changed.emit("●  RUNNING", C['success'])
         if self.robot.enabled:

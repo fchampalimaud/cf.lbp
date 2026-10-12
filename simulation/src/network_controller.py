@@ -6,8 +6,8 @@ Two things it deliberately does NOT own, because they're core simulation-loop
 state, not networking state: the `running` flag and the QTimer — see
 SimController._on_go_received, which is networking-triggered but mutates core
 run-state, and SimController.get_running wiring below, which lets
-_on_remote_ready check whether the loop is running without this class storing
-that flag itself.
+_on_remote_register check whether the loop is running (to 'go' a late joiner
+immediately) without this class storing that flag itself.
 """
 
 import time
@@ -38,7 +38,6 @@ class NetworkController(QObject):
     are keyed by RobotAgent.id (not list position) so entries never need to be
     shifted when an unrelated agent is added/removed elsewhere in the list."""
 
-    sig_client_ready      = Signal(int)        # slot_idx — a remote client sent 'ready'
     sig_client_disconnect = Signal(int)        # slot_idx — a remote client disconnected
     sig_go_received       = Signal()           # host sent 'go'; client should start ticking
     sig_client_registered = Signal(object)     # dict {slot_idx, name, circuit_json}
@@ -61,7 +60,7 @@ class NetworkController(QObject):
         self._slot_to_agent_id: dict = {}   # slot_idx → agent_id
         self._agent_id_to_slot: dict = {}   # agent_id → slot_idx
 
-        # Wired by SimController after construction so _on_remote_ready can
+        # Wired by SimController after construction so _on_remote_register can
         # check the core run-state without this class owning it.
         self.get_running = None   # callable() -> bool
 
@@ -126,7 +125,6 @@ class NetworkController(QObject):
         host = SimNetHost(
             port=port or _DEFAULT_PORT,
             on_register=self._on_remote_register,
-            on_ready=self._on_remote_ready,
             on_disconnect=self._on_remote_disconnect,
         )
         try:
@@ -143,6 +141,7 @@ class NetworkController(QObject):
         flags afterward — that needs the agent registry, which this class
         doesn't own."""
         if self._net_host is not None:
+            self._net_host.broadcast_shutdown()   # tell clients before the socket dies
             self._net_host.stop()
             self._net_host = None
         self._net_send_times.clear()
@@ -201,21 +200,22 @@ class NetworkController(QObject):
     def _on_remote_register(self, slot_idx, name="", circuit_json=None):
         """Called from the SimNetHost receiver thread when a client registers.
 
-        Emits sig_client_registered so the main thread (LBPSimulator) can create
-        the agent from the circuit JSON and update the UI.
+        Joining is a single round trip: no separate 'ready' handshake. If the
+        host sim is already running, this is a late joiner — send 'go' right
+        away so the client starts immediately instead of waiting on a click
+        nobody will make. Otherwise it'll get 'go' later via broadcast_go()
+        when the host starts.
+
+        Also emits sig_client_registered so the main thread (LBPSimulator) can
+        create the agent from the circuit JSON and update the UI.
         """
+        if self.get_running is not None and self.get_running() and self._net_host is not None:
+            self._net_host.send_go_to_slot(slot_idx)
         self.sig_client_registered.emit({
             'slot_idx':     slot_idx,
             'name':         name,
             'circuit_json': circuit_json,
         })
-
-    def _on_remote_ready(self, slot_idx):
-        """Called from the SimNetHost receiver thread when a client sends 'ready'."""
-        self.sig_client_ready.emit(slot_idx)
-        # If the host sim is already running, send 'go' directly to this late joiner.
-        if self.get_running is not None and self.get_running() and self._net_host is not None:
-            self._net_host.send_go_to_slot(slot_idx)
 
     def _on_remote_disconnect(self, slot_idx):
         """Called from the SimNetHost receiver thread when a client disconnects.
