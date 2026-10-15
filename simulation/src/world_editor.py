@@ -7,6 +7,8 @@ back to request a display refresh. No dependency on Qt main window or the
 simulation loop.
 """
 
+import copy
+
 import numpy as np
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
@@ -51,6 +53,8 @@ class WorldEditor:
         self._drag_item      = (None, None)
         self._hover_pos      = (0.0, 0.0)
         self._pending_mount  = None   # agent id (RobotAgent.id) if current drag will mount a gradient
+        self._alt_moving     = False  # True for the duration of an Alt-drag reposition started outside Move mode
+        self._ctrl_duplicating = False  # True for the duration of a Ctrl-drag duplicate
 
     # ── Public mode setters (called by main window button handlers) ───────────
 
@@ -102,10 +106,22 @@ class WorldEditor:
             self._right_click(x, y)
 
     def handle_drag(self, x, y, is_start, is_finish):
-        if self.draw_mode == 'sky':
-            self._drag_sky(x, y, is_start, is_finish)
-        elif self.draw_mode == 'move':
+        if is_start:
+            mods = QApplication.keyboardModifiers()
+            hit_kind = self._find_drag_item(x, y)[0] if mods & (Qt.AltModifier | Qt.ControlModifier) else None
+            self._ctrl_duplicating = bool(mods & Qt.ControlModifier) and hit_kind in ('patch', 'object')
+            self._alt_moving = (not self._ctrl_duplicating and self.draw_mode != 'move'
+                                 and bool(mods & Qt.AltModifier) and hit_kind is not None)
+        if self._ctrl_duplicating:
+            self._drag_duplicate(x, y, is_start, is_finish)
+            if is_finish:
+                self._ctrl_duplicating = False
+        elif self.draw_mode == 'move' or self._alt_moving:
             self._drag_move(x, y, is_start, is_finish)
+            if is_finish:
+                self._alt_moving = False
+        elif self.draw_mode == 'sky':
+            self._drag_sky(x, y, is_start, is_finish)
         elif self.draw_mode == 'wall_paint':
             if is_finish:
                 self._paint_nearest_element(x, y)
@@ -130,6 +146,14 @@ class WorldEditor:
         angle   = np.arctan2(dy, dx)
         snapped = round(angle / (np.pi / 4)) * (np.pi / 4)
         return lx + dist * np.cos(snapped), ly + dist * np.sin(snapped)
+
+    def _snap_grid(self, x, y):
+        """Shift held: snap to a grid anchored at the arena centre (0, 0),
+        spaced `sim_cfg.grid_size` apart (Physics tab)."""
+        if not (QApplication.keyboardModifiers() & Qt.ShiftModifier):
+            return x, y
+        step = self._sim_cfg.grid_size
+        return round(x / step) * step, round(y / step) * step
 
     def _cancel_poly_wall(self):
         self._poly_vertices = []
@@ -289,6 +313,7 @@ class WorldEditor:
         if is_start:
             self._drag_item = self._find_drag_item(x, y)
         if self._drag_item[0] is not None and not is_finish:
+            x, y = self._snap_grid(x, y)
             kind, item = self._drag_item
             if kind == 'robot':
                 # item is the RobotAgent (or, with no registry wired up, the raw
@@ -307,6 +332,25 @@ class WorldEditor:
                     # Pin the drop as this agent's own Reset position — otherwise
                     # the next Reset would snap it back to the auto-spacing slot.
                     item.init_pos = list(item.bot_pos)
+                self._setup_world(rebuild=True)
+            self._drag_item = (None, None)
+
+    def _drag_duplicate(self, x, y, is_start, is_finish):
+        """Ctrl-drag: clone the patch/object under the cursor and drag the
+        clone, leaving the original untouched. Robots are never duplicated
+        this way — spawning an agent is a separate workflow."""
+        if is_start:
+            kind, item = self._find_drag_item(x, y)
+            clone = copy.deepcopy(item)
+            (self._world.patches if kind == 'patch' else self._world.objects).append(clone)
+            self._drag_item = (kind, clone)
+        if self._drag_item[0] is not None and not is_finish:
+            x, y = self._snap_grid(x, y)
+            self._drag_item[1]['x'] = x
+            self._drag_item[1]['y'] = y
+            self._setup_world(rebuild=False)
+        if is_finish:
+            if self._drag_item[0] is not None:
                 self._setup_world(rebuild=True)
             self._drag_item = (None, None)
 

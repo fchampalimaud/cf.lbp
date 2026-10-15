@@ -1,16 +1,6 @@
 {
- "configs/Demos/VectorBasedHomingSession.json": {
-  "hash": "679b67c80a86d5e0",
-  "poses": [
-   [
-    -0.7783786417959617,
-    0.0065645251397510734,
-    0.08760868661550367
-   ]
-  ]
- },
- "configs/Tutorials/T02 - DistanceSession.json": {
-  "hash": "d8bb3bcb75bac0dc",
+ "configs/Demos/D02 - DistanceSession.json": {
+  "hash": "6868f66cfd768508",
   "poses": [
    [
     -0.6921239199482057,
@@ -19,8 +9,8 @@
    ]
   ]
  },
- "configs/Tutorials/T03 - ColisionSession.json": {
-  "hash": "f6a668711c9d0fe7",
+ "configs/Demos/D03 - ColisionSession.json": {
+  "hash": "92005ff35f5c9570",
   "poses": [
    [
     -0.722910704661098,
@@ -29,8 +19,8 @@
    ]
   ]
  },
- "configs/Tutorials/T04 - MatsuokaSession.json": {
-  "hash": "0becf76ef734ca6c",
+ "configs/Demos/D04 - MatsuokaSession.json": {
+  "hash": "b1e98ef8c8c454ac",
   "poses": [
    [
     -0.7233833663626313,
@@ -39,8 +29,8 @@
    ]
   ]
  },
- "configs/Tutorials/T05 - VisionSession.json": {
-  "hash": "63accc4315c7513e",
+ "configs/Demos/D05 - VisionSession.json": {
+  "hash": "d55d9e4b8ebf81d3",
   "poses": [
    [
     -0.6607688348402184,
@@ -49,8 +39,8 @@
    ]
   ]
  },
- "configs/Tutorials/T06 - FeedingSession.json": {
-  "hash": "3e883e57f6732cc6",
+ "configs/Demos/D06 - FeedingSession.json": {
+  "hash": "1f6d5e27a771e520",
   "poses": [
    [
     -0.6921239199482057,
@@ -59,8 +49,8 @@
    ]
   ]
  },
- "configs/Tutorials/T07 - WhiskerSession.json": {
-  "hash": "34747656be4f8d9b",
+ "configs/Demos/D07 - WhiskerSession.json": {
+  "hash": "57ea70d68c18e294",
   "poses": [
    [
     -0.6921239199482057,
@@ -69,8 +59,8 @@
    ]
   ]
  },
- "configs/Tutorials/T08 - MultiAgentMultiSession.json": {
-  "hash": "fde9603368249d58",
+ "configs/Demos/D08 - MultiAgentMultiSession.json": {
+  "hash": "df15e7b1581fab7f",
   "poses": [
    [
     -0.8398370496798745,
@@ -86,6 +76,16 @@
     0.23046516352612134,
     0.019536264929779633,
     0.1682870532372231
+   ]
+  ]
+ },
+ "configs/Demos/D09 - VectorBasedHomingSession.json": {
+  "hash": "a1e6cbde618feea0",
+  "poses": [
+   [
+    -0.7783786417758616,
+    0.006564523135565544,
+    0.08760866841146604
    ]
   ]
  },
@@ -239,18 +239,8 @@
    ]
   ]
  },
- "networks/Demos/VectorBasedHomingBrain.json": {
-  "hash": "7fd659c78dc01a5f",
-  "poses": [
-   [
-    0.22174516443693604,
-    0.003353002994639556,
-    0.04490577743017578
-   ]
-  ]
- },
- "networks/Tutorials/T01 - AttractionBrain.json": {
-  "hash": "4214fb8c3d75e41e",
+ "networks/Demos/D01 - AttractionBrain.json": {
+  "hash": "b1f75489c6aa3234",
   "poses": [
    [
     0.0,
@@ -259,8 +249,8 @@
    ]
   ]
  },
- "networks/Tutorials/T01 - AvoidanceBrain.json": {
-  "hash": "b20e24d331794113",
+ "networks/Demos/D01 - AvoidanceBrain.json": {
+  "hash": "8bc7cebdd24e554c",
   "poses": [
    [
     0.0,
@@ -269,8 +259,8 @@
    ]
   ]
  },
- "networks/Tutorials/T02 - DistanceBrain.json": {
-  "hash": "851b55dbf0938baa",
+ "networks/Demos/D02 - DistanceBrain.json": {
+  "hash": "1d7ee982d5ba0eb9",
   "poses": [
    [
     0.30787608005179984,
@@ -279,8 +269,8 @@
    ]
   ]
  },
- "networks/Tutorials/T03 - CollisionBrain.json": {
-  "hash": "c04d6ec17dfbfb36",
+ "networks/Demos/D03 - CollisionBrain.json": {
+  "hash": "28e96adc56cb9bda",
   "poses": [
    [
     0.27708929533890236,
@@ -289,8 +279,8 @@
    ]
   ]
  },
- "networks/Tutorials/T04 - MatsuokaBrain.json": {
-  "hash": "ee5ade0162584e2d",
+ "networks/Demos/D04 - MatsuokaBrain.json": {
+  "hash": "976368f345aebffe",
   "poses": [
    [
     0.27661663716145163,
@@ -299,8 +289,8 @@
    ]
   ]
  },
- "networks/Tutorials/T05 - VisionBrain.json": {
-  "hash": "ca60c62b370e1cae",
+ "networks/Demos/D05 - VisionBrain.json": {
+  "hash": "51baf4389eb1f6c7",
   "poses": [
    [
     0.30787608005179984,
@@ -309,8 +299,8 @@
    ]
   ]
  },
- "networks/Tutorials/T06 - FeedingBrain.json": {
-  "hash": "b46e350b7a6b1e50",
+ "networks/Demos/D06 - FeedingBrain.json": {
+  "hash": "826170c0facf6196",
   "poses": [
    [
     0.30787608005179984,
@@ -319,8 +309,8 @@
    ]
   ]
  },
- "networks/Tutorials/T07 - WhiskerBrain.json": {
-  "hash": "bf41ce6de6cc6653",
+ "networks/Demos/D07 - WhiskerBrain.json": {
+  "hash": "8576f1bd70ec1fde",
   "poses": [
    [
     0.30787608005179984,
@@ -329,8 +319,8 @@
    ]
   ]
  },
- "networks/Tutorials/T08 - DistanceAndGradientBrain.json": {
-  "hash": "ac9d376be8643bfc",
+ "networks/Demos/D08 - DistanceAndGradientBrain.json": {
+  "hash": "108fdc6e72a60552",
   "poses": [
    [
     0.30787608005179984,
@@ -339,13 +329,23 @@
    ]
   ]
  },
- "networks/Tutorials/T08 - GradientBrain.json": {
-  "hash": "4afdc95ae0b0f5be",
+ "networks/Demos/D08 - GradientBrain.json": {
+  "hash": "50e85095448e3c87",
   "poses": [
    [
     0.4310265120725191,
     0.0,
     0.0
+   ]
+  ]
+ },
+ "networks/Demos/D09 - VectorBasedHomingBrain.json": {
+  "hash": "625f399d5dcc3dd5",
+  "poses": [
+   [
+    0.22174516432144492,
+    0.003353002876602151,
+    0.04490577684294876
    ]
   ]
  },

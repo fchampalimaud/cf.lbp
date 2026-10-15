@@ -41,5 +41,4 @@ $$\text{output} = f(x) \quad (\text{or}\ f(o_i)\ \text{if no dynamics})$$
 
 ## Neuromodulation
 
-- `modulators` — list of `(name, scale, site)` triples. Multiplies the sensor output each tick by `1 + Σ (scale × signal)`.
-  - `scale > 0` → excitatory; `scale < 0` → inhibitory.
+Receptors (`modulators`) and the transmitter act on the sensor's [neuron stage](index.md#neuron-stage) (the **Neuron** tab of its dialog), not on the reading itself.

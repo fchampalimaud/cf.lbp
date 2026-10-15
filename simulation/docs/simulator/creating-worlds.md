@@ -101,7 +101,9 @@ The field consists of a repeating pattern of e-vector bars at angle `sky.angle`.
 ## Tips
 
 - **Right-click** on any placed object to delete it.
-- **Drag** in *Move* mode (select *Move* in the toolbar) to reposition patches and obstacles.
+- **Drag** in *Move* mode (select *Move* in the toolbar) to reposition patches and obstacles — or hold **Alt** and drag one directly, from any tool, without switching to Move mode first.
+- Hold **Ctrl** and drag a patch or obstacle to duplicate it — the clone (same radius, colour, label) follows the cursor; the original stays put. Not available for the robot itself — spawning another agent is a separate workflow.
+- Hold **Shift** while repositioning or duplicating (Move mode, Alt-drag, or Ctrl-drag) to snap to a grid, spaced by the **Grid size** setting in the Physics tab. The grid always lines up with the arena centre `(0, 0)`, whatever the spacing. Combining **Ctrl+Shift**-drag is the quickest way to build a pair of identical, exactly mirrored stimuli.
 - The **Cont.** and **Wall** toggles apply to whichever gradient colour is currently selected.
 - Sessions (brain params + world layout) are saved as JSON in your files folder (`~/LBPSimulator/configs/` by default, see [Your files](tour.md#my-files)). Use Session tab → **Save** to snapshot the current world.
 - Multiple gradient patches of the same label stack by maximum, not sum. Place several overlapping patches to widen a field without increasing peak intensity.

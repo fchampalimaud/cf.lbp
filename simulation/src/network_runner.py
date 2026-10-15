@@ -10,7 +10,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from neurons import _activate
-from lateral import side_of, mirror_name, parent_sensor, is_camera_half, is_body_pair_half
+from lateral import side_of, mirror_name, parent_sensor, is_camera_half, is_body_pair_half, half_names
 
 _DEBUG_LAYER = os.environ.get('LBP_DEBUG_LAYER')   # layer name to trace input/output each tick
 
@@ -135,6 +135,90 @@ def _initial_input(layer, is_product, is_2d):
     if is_product:
         return torch.ones(layer.n)
     return torch.zeros(_image_layer_fan_in(layer) if is_2d else layer.n)
+
+
+def _sensor_output_keys(brain, sensor):
+    """The brain attributes a sensor writes: its name, plus its L/R halves if
+    it publishes them."""
+    keys = [sensor.name]
+    if sensor.is_lateralized():
+        keys += [k for k in half_names(sensor.name) if getattr(brain, k, None) is not None]
+    return keys
+
+
+def _connection_sum(brain, conns):
+    """Σ W @ src over a target's incoming connections (None if none contribute)."""
+    total = None
+    for i, conn in conns:
+        src_val = getattr(brain, conn.src, None)
+        if src_val is not None and hasattr(src_val, 'output'):
+            src_val = src_val.output
+        if src_val is None:
+            continue
+        if not isinstance(src_val, torch.Tensor):
+            src_val = torch.as_tensor(np.atleast_1d(src_val), dtype=torch.float32)
+        if i not in brain._w_cache:
+            arr = np.asarray(conn.W, dtype=np.float32)
+            brain._w_cache[i] = torch.from_numpy(arr.reshape(1, -1) if arr.ndim < 2 else arr.copy())
+        w = brain._w_cache[i]
+        if w.shape[1] != src_val.shape[0]:
+            continue   # stale shape (mid-edit) — skip rather than crash
+        contrib = F.linear(src_val, w)
+        total = contrib if total is None else total + contrib
+    return total
+
+
+def _step_sensor_neurons(brain, sensors, conn_by_tgt, mod_map, dt):
+    """Run each sensor's neuron stage: (sensor output + incoming connections)
+    → modulator pre-gain → LeakyLayer → modulator post-gain, written back as
+    the sensor's output (and per lateral half). A pass-through stage with no
+    connections or modulators is skipped, leaving the sensor output untouched.
+
+    The raw sensor output is remembered per key: cameras and other sensors
+    not re-sampled every tick would otherwise feed the stage its own output.
+    """
+    for sensor in sensors:
+        keys = _sensor_output_keys(brain, sensor)
+        mods = getattr(sensor, 'modulators', None) or []
+        written = sensor.__dict__.setdefault('_neuron_written', {})
+        raws    = sensor.__dict__.setdefault('_neuron_raw', {})
+        active = bool(mods) or not sensor.neuron_is_passthrough() or any(k in conn_by_tgt for k in keys)
+        if not active:
+            for key in keys:   # stage just switched off: restore the raw output
+                if key in written and getattr(brain, key, None) is written[key]:
+                    setattr(brain, key, raws[key])
+            written.clear()
+            continue
+
+        pre_gain = post_gain = 1.0
+        for row in mods:
+            mod_name, scale, site, mode, _dp, _th = _unpack_mod_row(row)
+            if mod_name in mod_map:
+                v = sensor._transform_modulator_value((mod_name, mode), mode, mod_map[mod_name], dt)
+                if site == 'pre':
+                    pre_gain += scale * v
+                elif site == 'post':
+                    post_gain += scale * v
+
+        for key in keys:
+            cur = getattr(brain, key, None)
+            if cur is None:
+                continue
+            if key in written and cur is written[key]:
+                cur = raws[key]        # not re-sampled since last tick
+            raws[key] = cur
+            u = torch.as_tensor(np.atleast_1d(cur), dtype=torch.float32)
+            extra = _connection_sum(brain, conn_by_tgt.get(key, []))
+            if extra is not None and extra.shape == u.shape:
+                u = u + extra
+            if pre_gain != 1.0:
+                u = u * pre_gain
+            out = sensor.neuron_run(key, u.shape[0]).step(u, dt)
+            if post_gain != 1.0:
+                out = out * post_gain
+            out = out.numpy().astype(np.float32)
+            setattr(brain, key, out)
+            written[key] = out
 
 
 @torch.no_grad()
@@ -278,73 +362,9 @@ def step_network(brain, dt):
                 tgt_obj.frame_h = src_sensor.height
                 tgt_obj.frame_w = src_sensor.width
 
-    # Which layers / sensors transmit or receive neuromodulators — topology
-    # (transmitter and receptor edits are edit transactions, which bump it),
-    # so it's found once instead of scanning every element every step.
-    if topology_changed or not hasattr(brain, '_mod_transmitters'):
-        brain._mod_transmitters = (
-            [l for l in active_layers if getattr(l, 'neuromodulator_transmitter', None)],
-            [s for s in sensors if getattr(s, 'neuromodulator_transmitter', None)])
-        brain._mod_sensors = [s for s in sensors if getattr(s, 'modulators', [])]
-    tx_layers, tx_sensors = brain._mod_transmitters
-
-    # Build neuromodulator map from transmitter layers and sensors.
-    mod_map = {}
-    for layer in tx_layers:
-        nt = layer.neuromodulator_transmitter
-        if layer.output is not None:
-            out = layer.output
-            mod_map[nt] = float(out.mean() if isinstance(out, torch.Tensor)
-                                else np.mean(np.atleast_1d(out)))
-    for sensor in tx_sensors:
-        nt = sensor.neuromodulator_transmitter
-        val = getattr(brain, sensor.name, None)
-        if val is not None:
-            mod_map[nt] = float(np.mean(np.atleast_1d(val)))
-
-    # Apply neuromodulation to sensor outputs.
-    for sensor in brain._mod_sensors:
-        mods = getattr(sensor, 'modulators', [])
-        if not mods:
-            continue
-        val = getattr(brain, sensor.name, None)
-        if val is None:
-            continue
-        pre_gain  = 1.0
-        post_gain = 1.0
-        for row in mods:
-            mod_name, scale, site, mode, _dp, _th = _unpack_mod_row(row)
-            if mod_name in mod_map:
-                v = sensor._transform_modulator_value((mod_name, mode), mode, mod_map[mod_name], dt)
-                if site == 'pre':
-                    pre_gain  += scale * v
-                else:
-                    post_gain += scale * v
-        # Pre-site: re-apply activation on gain-scaled pre-activation value so the
-        # activation function (e.g. relu) acts after the gain, not before.
-        # output_mode runs upstream of _pre_activation_output (before the leaky
-        # filter), so any derivative/integral transform is already baked into
-        # it here — no special-casing needed regardless of output_mode.
-        # Must also reapply sensor.scale, since BaseSensor._process() now applies
-        # it after activation (matching LeakyLayer) — recomputing activation alone
-        # would silently drop the sensor's scale factor.
-        pre_act = getattr(sensor, '_pre_activation_output', None)
-        if pre_gain != 1.0 and pre_act is not None:
-            from neurons import _activate as _act
-            activation = getattr(sensor, 'activation', 'linear')
-            sensor_scale = getattr(sensor, 'scale', 1.0)
-            val = np.asarray(_act(pre_act * pre_gain, activation) * sensor_scale, dtype=np.float32)
-            setattr(brain, sensor.name, val)
-        elif pre_gain != 1.0:
-            post_gain *= pre_gain   # fallback: treat as post
-        if post_gain != 1.0:
-            val = np.atleast_1d(getattr(brain, sensor.name, val))
-            setattr(brain, sensor.name, val * post_gain)
-
     # Weight tensor cache — invalidated when the connections list object is replaced.
-    # The target->connections index below is invalidated on the same event (same
-    # conn_id gate computed above) since both only need rebuilding when the
-    # connections list itself is swapped out, not on every tick.
+    # Built before the sensor pass below so sensor-targeting connections can be
+    # resolved there, using the same cache/index layer connections already use.
     if topology_changed:
         brain._w_cache = {}
         brain._conn_meta = {}
@@ -369,6 +389,36 @@ def step_network(brain, dt):
     conn_by_tgt = brain._conn_by_tgt
     conn_by_src = brain._conn_by_src
     layer_meta  = brain._layer_meta
+
+    # Which layers / sensors transmit neuromodulators — topology (transmitter
+    # edits are edit transactions, which bump it), so it's found once instead
+    # of scanning every element every step.
+    if topology_changed or not hasattr(brain, '_mod_transmitters'):
+        brain._mod_transmitters = (
+            [l for l in active_layers if getattr(l, 'neuromodulator_transmitter', None)],
+            [s for s in sensors if getattr(s, 'neuromodulator_transmitter', None)])
+    tx_layers, tx_sensors = brain._mod_transmitters
+
+    # Build neuromodulator map from transmitter layers and sensors.
+    mod_map = {}
+    for layer in tx_layers:
+        nt = layer.neuromodulator_transmitter
+        if layer.output is not None:
+            out = layer.output
+            mod_map[nt] = float(out.mean() if isinstance(out, torch.Tensor)
+                                else np.mean(np.atleast_1d(out)))
+    for sensor in tx_sensors:
+        nt = sensor.neuromodulator_transmitter
+        val = getattr(brain, sensor.name, None)
+        if val is not None:
+            mod_map[nt] = float(np.mean(np.atleast_1d(val)))
+
+    _step_sensor_neurons(brain, sensors, conn_by_tgt, mod_map, dt)
+    # Sensor transmitters publish what the neuron stage produced.
+    for sensor in tx_sensors:
+        val = getattr(brain, sensor.name, None)
+        if val is not None:
+            mod_map[sensor.neuromodulator_transmitter] = float(np.mean(np.atleast_1d(val)))
 
     # Main forward pass: accumulate weighted inputs, step each layer.
     for layer in active_layers:

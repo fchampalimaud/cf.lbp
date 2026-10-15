@@ -1,6 +1,6 @@
 # Vector-Based Homing: Path Integration and Steering
 
-This tutorial builds the compass half of an insect-style **path integration** circuit — the mechanism desert ants and bees use to walk home in a straight line after a long, winding foraging trip, without retracing their steps. You'll build it piece by piece in the network editor, using the exact parameters shipped in the built-in **Demos / VectorBasedHomingBrain** network, and see why each piece has to be there.
+This tutorial builds the compass half of an insect-style **path integration** circuit — the mechanism desert ants and bees use to walk home in a straight line after a long, winding foraging trip, without retracing their steps. You'll build it piece by piece in the network editor, using the exact parameters shipped in the built-in **Demos / D09 - VectorBasedHomingBrain** network, and see why each piece has to be there.
 
 The circuit is based on Stone et al. (2017), *"An Anatomically Constrained Model for Path Integration in the Bee Brain"*, simplified down to the compass-only pathway (no optic-flow speed input — this version reads speed from the wheels instead).
 
@@ -123,7 +123,7 @@ Each cell now integrates `TN2_hemisphere − TBGate[k]`, starting from `x0=0.5`,
 
 Because the accumulator is never clipped internally (only `hard_sigmoid` clips the *output*), this memory has a finite range: travel far enough in one direction and the cells aligned with it saturate, flattening the bump. That's not a bug to fix — real ants and bees have a measurably finite path-integration range too.
 
-You've now built the full **path integration** half. Load the `Demos/VectorBasedHomingBrain` network and compare — `TL → CL1 → TB`, `sensor2 → TN2`, `TBGate`, `CPU4` are wired exactly as above (the rest of that network goes further than this tutorial does — see the end of this page).
+You've now built the full **path integration** half. Load the `Demos/D09 - VectorBasedHomingBrain` network and compare — `TL → CL1 → TB`, `sensor2 → TN2`, `TBGate`, `CPU4` are wired exactly as above (the rest of that network goes further than this tutorial does — see the end of this page).
 
 ### Step 6 — Watch it work: drive manually, watch `CPU4` fill up
 
@@ -184,7 +184,7 @@ $$\text{CPU1}[i] = \text{CPU4}[i+1] - \text{CPU4}[i+8] - \text{TB}[i]$$
 
 ### Step 9 — Read it out (`Steering`, `Fw`, `motor`)
 
-Stone et al.'s own readout is simple: **sum each hemisphere's `CPU1` activity and subtract**. Add a **LeakyLayer** named `Steering` (`n=2`, `bias=0.0`, `activation=relu`, **`scale=40.0`**). Connect `CPU1 → Steering` with a **Manual** matrix that flat-sums each hemisphere separately: `Steering[0]` sums all 8 cells of hemisphere A (weight `1` on `CPU1[0..7]`, `0` on the rest), `Steering[1]` sums hemisphere B the same way — the same flat-sum-per-hemisphere pattern the built-in `Demos/VectorBasedHomingBrain` network uses at its `CPU1 → DNa03` connection.
+Stone et al.'s own readout is simple: **sum each hemisphere's `CPU1` activity and subtract**. Add a **LeakyLayer** named `Steering` (`n=2`, `bias=0.0`, `activation=relu`, **`scale=40.0`**). Connect `CPU1 → Steering` with a **Manual** matrix that flat-sums each hemisphere separately: `Steering[0]` sums all 8 cells of hemisphere A (weight `1` on `CPU1[0..7]`, `0` on the rest), `Steering[1]` sums hemisphere B the same way — the same flat-sum-per-hemisphere pattern the built-in `Demos/D09 - VectorBasedHomingBrain` network uses at its `CPU1 → DNa03` connection.
 
 !!! warning "A flat sum doesn't work with a raw cosine"
     Summing a full-period cosine over evenly-spaced ring cells is **always exactly zero**, for any phase — there is nothing a flat sum could ever pick up from a clean, unclipped sinusoid. This only works because `CPU1`'s own `relu` (Step 7) has already clipped the negative half of the wave away; a half-wave-rectified cosine does not sum to zero. If you ever build a readout from a layer that *hasn't* been rectified, project onto a cosine template instead of summing flat, or you'll get zero regardless of the input.
@@ -192,13 +192,13 @@ Stone et al.'s own readout is simple: **sum each hemisphere's `CPU1` activity an
 Add a second **LeakyLayer** named `Fw` (`n=2`, `bias=40.0`, `activation=relu`) with **no incoming connections at all** — a constant forward-thrust term, completely independent of the vector circuit. Finally, add the **MotorLayer** and wire both `Steering → motor` and `Fw → motor` with **One-to-one**, Amplitude `1.0`, so `motor[i] = Steering[i] + Fw[i]`.
 
 !!! danger "Gain matters more than you'd think"
-    It's tempting to skip `Steering`'s `scale=40` and feed `CPU1`'s hemisphere sums straight into `Fw` alongside its `bias=40`. Don't — a raw hemisphere sum, after `relu`, is typically well under 1; next to a `bias` of 40 that's a difference of a fraction of a percent between the two motor outputs. The robot will look like it's just driving straight, even though the steering signal is technically present and correctly signed — it's just about 50× too small to matter. `Steering`'s `scale` is what makes the vector's influence big enough to show up; tune it by watching how sharply the robot corrects course, not by formula. The built-in `Demos/VectorBasedHomingBrain` network hides this exact amplification inside `DNa02`'s own `scale=50`, several layers downstream of `CPU1` — easy to lose track of if you're simplifying that circuit by hand.
+    It's tempting to skip `Steering`'s `scale=40` and feed `CPU1`'s hemisphere sums straight into `Fw` alongside its `bias=40`. Don't — a raw hemisphere sum, after `relu`, is typically well under 1; next to a `bias` of 40 that's a difference of a fraction of a percent between the two motor outputs. The robot will look like it's just driving straight, even though the steering signal is technically present and correctly signed — it's just about 50× too small to matter. `Steering`'s `scale` is what makes the vector's influence big enough to show up; tune it by watching how sharply the robot corrects course, not by formula. The built-in `Demos/D09 - VectorBasedHomingBrain` network hides this exact amplification inside `DNa02`'s own `scale=50`, several layers downstream of `CPU1` — easy to lose track of if you're simplifying that circuit by hand.
 
 ---
 
 ## Going further
 
-The built-in `Demos/VectorBasedHomingBrain` network implements a fuller version of this pathway — `Pontine`/`CPU1` feed into additional `PFL2`, `DNa03`, `DNa02` layers before reaching `motor`, rather than the direct `Steering`/`Fw` readout built above. Those extra stages come from *later* Drosophila connectome studies (Namiki et al. 2018; Rayshubskiy et al. 2020; Mussells Pires et al. 2024) layered on top of Stone et al.'s original 2017 bee model, not from Stone's paper itself — Stone's own circuit really does stop at `CPU1 → motor` (via one amplifying layer and a forward-drive bias), exactly as built above. Worth comparing both once you've built this version by hand.
+The built-in `Demos/D09 - VectorBasedHomingBrain` network implements a fuller version of this pathway — `Pontine`/`CPU1` feed into additional `PFL2`, `DNa03`, `DNa02` layers before reaching `motor`, rather than the direct `Steering`/`Fw` readout built above. Those extra stages come from *later* Drosophila connectome studies (Namiki et al. 2018; Rayshubskiy et al. 2020; Mussells Pires et al. 2024) layered on top of Stone et al.'s original 2017 bee model, not from Stone's paper itself — Stone's own circuit really does stop at `CPU1 → motor` (via one amplifying layer and a forward-drive bias), exactly as built above. Worth comparing both once you've built this version by hand.
 
 An interactive explorer for the `CPU1` steering computation — sliders for the home-vector and heading cosine waves, live-updating output — lives in this repo's `analysis/vector_navigation/` folder (`cpu1_steering_interactive.py`) if you want to build intuition for Part 2 before wiring it up.
 

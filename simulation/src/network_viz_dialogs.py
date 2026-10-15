@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSpinBox,
     QLineEdit, QCheckBox, QDialog, QFormLayout, QDialogButtonBox, QMessageBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QComboBox, QDoubleSpinBox,
-    QStackedWidget, QTextEdit, QGroupBox, QListWidget, QAbstractItemView,
+    QStackedWidget, QTextEdit, QGroupBox, QListWidget, QAbstractItemView, QTabWidget,
 )
 from PySide6.QtCore import Qt, QPointF, QEvent, QMimeData, QObject
 from PySide6.QtGui import QFont, QDrag
@@ -1398,7 +1398,8 @@ class NetworkDialogs:
         sensor=None: creation mode (title "Add …", fields show defaults).
         sensor=<obj>: edit mode (title "Edit …: name", fields show live values).
         """
-        from sensors import SENSOR_REGISTRY, ProprioceptiveSensor, BaseSensor
+        from sensors import (SENSOR_REGISTRY, ProprioceptiveSensor, BaseSensor,
+                             neuron_param_defs, make_neuron_stage)
         cls = SENSOR_REGISTRY.get(stype)
         if cls is None:
             return
@@ -1412,16 +1413,43 @@ class NetworkDialogs:
         title = f"Edit {stype}: {sensor.name}" if is_edit else f"Add {stype}"
         dlg, form, status_lbl = self._make_param_dialog(title, getattr(cls, 'help_text', None))
 
+        # Two tabs: the sensor (transduction) and its neuron stage, which
+        # receives the sensor output plus any connections drawn onto the sensor.
+        tabs = QTabWidget()
+        sensor_page, neuron_page = QWidget(), QWidget()
+        sensor_form, neuron_form = QFormLayout(sensor_page), QFormLayout(neuron_page)
+        for page_form, text in (
+                (sensor_form, "Transduction: how the sensor reads the world — what it "
+                              "detects, and how the raw reading is shaped (bias, noise, "
+                              "filtering, activation, scale)."),
+                (neuron_form, "First-order neuron: the neuron this sensor drives. It "
+                              "receives the sensor output "
+                              "plus any connections drawn onto the sensor, and is what the "
+                              "rest of the network reads. Modulators act here. "
+                              "Pass-through by default.")):
+            intro = QLabel(text)
+            intro.setWordWrap(True)
+            intro.setStyleSheet("color:#666;font-style:italic;")
+            page_form.addRow(intro)
+        tabs.addTab(sensor_page, "Sensor")
+        neuron_in_use = is_edit and (not sensor.neuron_is_passthrough()
+                                     or getattr(sensor, 'modulators', None)
+                                     or getattr(sensor, 'neuromodulator_transmitter', None))
+        tabs.addTab(neuron_page, "Neuron ●" if neuron_in_use else "Neuron")
+        if neuron_in_use:
+            tabs.setTabToolTip(1, "This sensor's neuron stage is in use")
+        form.addRow(tabs)
+
         default_name = sensor.name if is_edit else f"sensor{len(self.win.gui.circuit.sensors)}"
         name_edit = QLineEdit(default_name)
-        form.addRow("name", name_edit)
+        sensor_form.addRow("name", name_edit)
 
         joints = self.win.gui.circuit.joints if hasattr(self.win.gui.circuit, 'joints') else []
         bodies = self.win.gui.circuit.bodies if hasattr(self.win.gui.circuit, 'bodies') else []
         cur_values = ({p[0]: getattr(sensor, p[0], p[2]) for p in params}
                       if is_edit else {p[0]: p[2] for p in params})
         editors = self._build_param_editors(
-            form, dlg, status_lbl, params, cur_values,
+            sensor_form, dlg, status_lbl, params, cur_values,
             joints=joints, bodies=bodies, is_proprio=is_proprio,
             layers=self.win.gui.circuit.layers)
 
@@ -1429,9 +1457,14 @@ class NetworkDialogs:
         if not is_proprio and bodies:
             cur_body_ids = (getattr(sensor, 'body_ids', None) or ['root']) if is_edit else None
             body_combo = self._make_body_combo(bodies, cur_body_ids)
-            form.addRow("mounted on body", body_combo)
+            sensor_form.addRow("mounted on body", body_combo)
 
-        read_neuromod = self._add_neuromod_fields(form, sensor)
+        neuron_defs = neuron_param_defs()
+        neuron_cur = (sensor.neuron_params() if is_edit
+                      else {p[0]: p[2] for p in neuron_defs})
+        neuron_editors = self._build_param_editors(neuron_form, dlg, status_lbl,
+                                                   neuron_defs, neuron_cur)
+        read_neuromod = self._add_neuromod_fields(neuron_form, sensor)
 
         btns = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -1441,6 +1474,7 @@ class NetworkDialogs:
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         nt, mc, new_mods = read_neuromod()
+        new_neuron = make_neuron_stage(**self._read_param_editors(neuron_editors))
 
         if is_edit:
             # ── Edit mode ─────────────────────────────────────────────────────
@@ -1463,6 +1497,7 @@ class NetworkDialogs:
             self.win.gui.circuit.connections = list(self.win.gui.circuit.connections)
             if body_combo is not None:
                 sensor.body_ids = body_combo.currentData() or ['root']
+            sensor.neuron = new_neuron
             sensor.neuromodulator_transmitter = nt
             sensor.neuromodulator_color = mc
             sensor.modulators = new_mods
@@ -1479,6 +1514,7 @@ class NetworkDialogs:
                 setattr(new_sensor, pname, val)
             if body_combo is not None:
                 new_sensor.body_ids = body_combo.currentData() or ['root']
+            new_sensor.neuron = new_neuron
             new_sensor.neuromodulator_transmitter = nt
             new_sensor.neuromodulator_color = mc
             if new_mods:

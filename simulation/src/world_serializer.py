@@ -1,10 +1,10 @@
 """
 world_serializer.py — JSON serialization for standalone world files.
 
-Worlds live as flat JSON files in `worlds/`, discovered the same way brains are
-discovered in `brains/` (brain_manager.discover_brains). A world file captures
-arena state independent of any session/brain: gradient patches, objects, walls,
-sky, arena shape, and floor texture.
+Worlds live as JSON files in `worlds/`, organized into folders the same way
+sessions and networks are (sim_app_world._WorldMixin, data_paths). A world
+file captures arena state independent of any session/brain: gradient
+patches, objects, walls, sky, arena shape, and floor texture.
 """
 
 import json
@@ -12,12 +12,6 @@ import os
 
 from sim_constants import _NumpyEncoder
 from app_version import get_app_version
-
-
-def discover_worlds():
-    """Sorted names of the world files in both roots' worlds/ (data_paths)."""
-    import data_paths
-    return sorted(name for name, _p in data_paths.files('worlds', '*.json'))
 
 
 def serialize_world_json(world) -> dict:

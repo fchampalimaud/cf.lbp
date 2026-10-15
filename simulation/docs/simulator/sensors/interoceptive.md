@@ -31,7 +31,4 @@ $$\text{output} = \text{clip}(s,\; 0,\; \text{max\_val}) + \text{bias}$$
 
 ## Neuromodulation
 
-- `neuromodulator_transmitter` — if set, publishes the sensor's output to the neuromodulator bus (e.g. `"satiety"`).
-- `neuromodulator_color` — hex color used in the network visualizer.
-- `modulators` — list of `(name, scale, site)` triples. Multiplies the sensor output by `1 + Σ (scale × signal)`.
-  - `scale > 0` → excitatory; `scale < 0` → inhibitory.
+Receptors (`modulators`) and the transmitter act on the sensor's [neuron stage](index.md#neuron-stage) (the **Neuron** tab of its dialog), not on the reading itself.

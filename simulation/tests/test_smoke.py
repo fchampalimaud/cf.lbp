@@ -1919,7 +1919,7 @@ def test_headless_session_loads_all_agents_and_runs():
     cwd = os.getcwd()
     os.chdir(_SIM2D)   # session paths (brains/, networks/) are relative to simulation/2d
     try:
-        sim = build_simulation(os.path.join('configs', 'Tutorials', 'T08 - MultiAgentMultiSession.json'))
+        sim = build_simulation(os.path.join('configs', 'Demos', 'D08 - MultiAgentMultiSession.json'))
         start = [list(a.bot_pos) for a in sim.agents]
         for _ in range(50):
             raws = sim.step()
@@ -2101,13 +2101,13 @@ def test_session_brain_entry_code_and_network_formats():
     form (network brain module + project/file params) still reads the same."""
     from session_io import brain_to_file, brain_from_file, NETWORK_BRAIN_MODULE
     net = brain_to_file(NETWORK_BRAIN_MODULE,
-                        {'network_project': 'Tutorials', 'network_file': 'T06 - FeedingBrain.json'})
-    assert net == {'mode': 'network', 'network': 'Tutorials/T06 - FeedingBrain.json'}
+                        {'network_project': 'Demos', 'network_file': 'D06 - FeedingBrain.json'})
+    assert net == {'mode': 'network', 'network': 'Demos/D06 - FeedingBrain.json'}
     assert brain_from_file(net) == (NETWORK_BRAIN_MODULE,
-                                    {'network_project': 'Tutorials',
-                                     'network_file': 'T06 - FeedingBrain.json'})
+                                    {'network_project': 'Demos',
+                                     'network_file': 'D06 - FeedingBrain.json'})
     old = {'module_name': NETWORK_BRAIN_MODULE,
-           'brain_params': {'network_project': 'Tutorials', 'network_file': 'T06 - FeedingBrain.json'}}
+           'brain_params': {'network_project': 'Demos', 'network_file': 'D06 - FeedingBrain.json'}}
     assert brain_from_file(old) == brain_from_file(net)
     code = brain_to_file('BrainARS', {'speed': 50.0})
     assert code == {'mode': 'code', 'module_name': 'BrainARS', 'brain_params': {'speed': 50.0}}
@@ -2115,6 +2115,36 @@ def test_session_brain_entry_code_and_network_formats():
     no_project = brain_to_file(NETWORK_BRAIN_MODULE, {'network_project': '', 'network_file': 'a.json'})
     assert no_project['network'] == 'a.json'
     assert brain_from_file(no_project)[1] == {'network_project': '', 'network_file': 'a.json'}
+
+
+def test_builtin_folders_writable_only_without_release_marker(tmp_path, monkeypatch):
+    """The development copy (no release.json) can save into the simulator's own
+    folders; a public copy saves only into the user's, offering a built-in
+    folder there by the same name."""
+    import data_paths
+    app, user = tmp_path / 'app', tmp_path / 'user'
+    (app / 'configs' / 'Tutorials').mkdir(parents=True)
+    (user / 'configs' / 'Mine').mkdir(parents=True)
+    shipped = app / 'configs' / 'Tutorials' / 's.json'
+    shipped.write_text('{}')
+    monkeypatch.setattr(data_paths, 'APP_DIR', app)
+    monkeypatch.setattr(data_paths, 'RELEASE', app / 'release.json')
+    monkeypatch.setenv('LBP_USER_DIR', str(user))
+
+    assert data_paths.builtin_writable()
+    assert data_paths.is_builtin(shipped) and not data_paths.is_read_only(shipped)
+    entries, idx = data_paths.save_folders('configs', 'builtin:Tutorials', 'top')
+    assert entries == [('top', ''), ('Mine', 'Mine'), ('✎ Simulator / Tutorials', 'builtin:Tutorials')]
+    assert entries[idx][1] == 'builtin:Tutorials'
+    entries, idx = data_paths.save_folders('configs', 'Tutorials', 'top')   # older plain name
+    assert entries[idx][1] == 'builtin:Tutorials'
+    assert data_paths.folder_for('configs', 'builtin:Tutorials') == shipped.parent
+
+    (app / 'release.json').write_text('{}')
+    assert not data_paths.builtin_writable() and data_paths.is_read_only(shipped)
+    entries, idx = data_paths.save_folders('configs', 'builtin:Tutorials', 'top')
+    assert [k for _l, k in entries] == ['', 'Mine', 'Tutorials']
+    assert entries[idx][1] == 'Tutorials'
 
 
 def test_find_mirror_follows_lateral_pairs_only():
@@ -2600,3 +2630,296 @@ def test_every_dynamics_layer_applies_noise_and_scale():
     base   = run(RingAttractorLayer(name='r1', n=8, tau_rise=0.05))
     scaled = run(RingAttractorLayer(name='r2', n=8, tau_rise=0.05, scale=3.0))
     assert torch.allclose(scaled, 3.0 * base), 'RingAttractorLayer: scale has no effect'
+
+
+# ── World editor: Alt-drag reposition, Shift grid-snap ─────────────────────────
+
+def _make_world_editor(patches=None, objects=None, draw_mode='gradient'):
+    from world import World
+    from world_editor import WorldEditor
+
+    class _Cfg:
+        arena_scale = 5.0
+        body_radius = 0.25
+        grid_size   = 0.25
+        dt = 0.02
+
+    cfg = _Cfg()
+    world = World(cfg)
+    world.patches = patches or []
+    world.objects = objects or []
+    # Keep the fallback robot far from every test position (all within +-2 of
+    # the origin) so its hit-test (checked first in _find_drag_item) never
+    # shadows the patch/object a test is actually trying to drag.
+    editor = WorldEditor(world, cfg, arena=None, bot_pos=[-10.0, -10.0, 0.0],
+                         setup_world_cb=lambda rebuild=True: None)
+    editor.draw_mode = draw_mode
+    return editor, world
+
+
+def test_alt_drag_moves_patch_outside_move_mode(monkeypatch):
+    """Holding Alt while dragging an existing patch repositions it even while
+    a placement tool (not Move) is active — the whole point of the shortcut
+    is not having to switch to Move mode first."""
+    from PySide6.QtCore import Qt
+    import world_editor
+
+    patch = {'x': 1.0, 'y': 1.0, 'r': 0.1}
+    editor, _ = _make_world_editor(patches=[patch], draw_mode='gradient')
+
+    monkeypatch.setattr(world_editor.QApplication, 'keyboardModifiers',
+                        staticmethod(lambda: Qt.AltModifier))
+    editor.handle_drag(1.0, 1.0, is_start=True, is_finish=False)
+    assert editor._alt_moving is True
+    editor.handle_drag(2.0, 2.0, is_start=False, is_finish=False)
+    assert patch['x'] == pytest.approx(2.0) and patch['y'] == pytest.approx(2.0)
+    editor.handle_drag(2.0, 2.0, is_start=False, is_finish=True)
+    assert editor._alt_moving is False
+    assert editor.draw_mode == 'gradient', 'Alt-drag must not change the active tool'
+
+
+def test_plain_drag_without_alt_does_not_move_patch(monkeypatch):
+    """Without Alt, dragging in a placement mode must not reposition an
+    existing patch — it should fall through to the normal placement flow."""
+    from PySide6.QtCore import Qt
+    import world_editor
+
+    class _FakeArena:
+        def show_ghost(self, *a, **kw): pass
+        def update_ghost(self, *a, **kw): pass
+        def clear_ghost(self, *a, **kw): pass
+
+    patch = {'x': 1.0, 'y': 1.0, 'r': 0.1}
+    editor, _ = _make_world_editor(patches=[patch], draw_mode='gradient')
+    editor._arena = _FakeArena()
+
+    monkeypatch.setattr(world_editor.QApplication, 'keyboardModifiers',
+                        staticmethod(lambda: Qt.NoModifier))
+    editor.handle_drag(1.0, 1.0, is_start=True, is_finish=False)
+    assert editor._alt_moving is False
+    editor.handle_drag(2.0, 2.0, is_start=False, is_finish=False)
+    assert patch['x'] == pytest.approx(1.0) and patch['y'] == pytest.approx(1.0), \
+        'patch must stay put — the drag should be placing a new object, not moving this one'
+
+
+def test_shift_snaps_move_to_grid_anchored_at_arena_centre(monkeypatch):
+    """Shift held while moving snaps to a grid spaced `sim_cfg.grid_size` apart.
+    Because the grid is just integer multiples of that step, the arena centre
+    (0, 0) is always exactly on the grid — no separate offset needed."""
+    from PySide6.QtCore import Qt
+    import world_editor
+
+    obj = {'x': 0.0, 'y': 0.0, 'r': 0.1}
+    editor, _ = _make_world_editor(objects=[obj], draw_mode='move')
+
+    monkeypatch.setattr(world_editor.QApplication, 'keyboardModifiers',
+                        staticmethod(lambda: Qt.ShiftModifier))
+    editor.handle_drag(0.0, 0.0, is_start=True, is_finish=False)
+    editor.handle_drag(0.37, 0.64, is_start=False, is_finish=False)
+
+    # step = grid_size = 0.25: 0.37 -> round(1.48) = 1 -> 0.25; 0.64 -> round(2.56) = 3 -> 0.75
+    assert obj['x'] == pytest.approx(0.25)
+    assert obj['y'] == pytest.approx(0.75)
+
+
+def test_shift_grid_snap_leaves_centre_on_grid(monkeypatch):
+    """A drag landing near (but not on) the arena centre, with Shift held,
+    snaps exactly to (0, 0) — confirming the centre is itself a grid point."""
+    from PySide6.QtCore import Qt
+    import world_editor
+
+    obj = {'x': 1.0, 'y': 1.0, 'r': 0.1}
+    editor, _ = _make_world_editor(objects=[obj], draw_mode='move')
+
+    monkeypatch.setattr(world_editor.QApplication, 'keyboardModifiers',
+                        staticmethod(lambda: Qt.ShiftModifier))
+    editor.handle_drag(1.0, 1.0, is_start=True, is_finish=False)
+    editor.handle_drag(0.1, -0.1, is_start=False, is_finish=False)
+
+    assert obj['x'] == pytest.approx(0.0)
+    assert obj['y'] == pytest.approx(0.0)
+
+
+def test_ctrl_drag_duplicates_patch_leaving_original_in_place(monkeypatch):
+    """Ctrl-drag on an existing patch, from any tool, drops a clone at the
+    drag end position and leaves the original completely untouched."""
+    from PySide6.QtCore import Qt
+    import world_editor
+
+    patch = {'x': 1.0, 'y': 1.0, 'r': 0.3, 'color': [1.0, 0.0, 0.0], 'label': 'A'}
+    editor, world = _make_world_editor(patches=[patch], draw_mode='gradient')
+
+    monkeypatch.setattr(world_editor.QApplication, 'keyboardModifiers',
+                        staticmethod(lambda: Qt.ControlModifier))
+    editor.handle_drag(1.0, 1.0, is_start=True, is_finish=False)
+    assert editor._ctrl_duplicating is True
+    editor.handle_drag(2.0, -1.0, is_start=False, is_finish=False)
+    editor.handle_drag(2.0, -1.0, is_start=False, is_finish=True)
+    assert editor._ctrl_duplicating is False
+
+    assert len(world.patches) == 2, 'should have cloned a second patch'
+    assert patch['x'] == pytest.approx(1.0) and patch['y'] == pytest.approx(1.0), \
+        'the original must not move'
+    clone = world.patches[1]
+    assert clone is not patch
+    assert clone['x'] == pytest.approx(2.0) and clone['y'] == pytest.approx(-1.0)
+    assert clone['r'] == pytest.approx(0.3) and clone['label'] == 'A'
+    clone['color'][0] = 0.0
+    assert patch['color'][0] == 1.0, 'clone must not share mutable state with the original'
+
+
+def test_ctrl_drag_duplicates_object(monkeypatch):
+    """Same Ctrl-drag duplicate behaviour for solid objects, not just patches."""
+    from PySide6.QtCore import Qt
+    import world_editor
+
+    obj = {'x': 0.0, 'y': 0.0, 'r': 0.2, 'color': [0.0, 1.0, 0.0]}
+    editor, world = _make_world_editor(objects=[obj], draw_mode='move')
+
+    monkeypatch.setattr(world_editor.QApplication, 'keyboardModifiers',
+                        staticmethod(lambda: Qt.ControlModifier))
+    editor.handle_drag(0.0, 0.0, is_start=True, is_finish=False)
+    editor.handle_drag(1.5, 1.5, is_start=False, is_finish=False)
+    editor.handle_drag(1.5, 1.5, is_start=False, is_finish=True)
+
+    assert len(world.objects) == 2
+    assert obj['x'] == pytest.approx(0.0), 'the original must not move'
+    assert world.objects[1]['x'] == pytest.approx(1.5)
+
+
+def test_ctrl_drag_does_not_duplicate_robot(monkeypatch):
+    """Ctrl-drag must not spawn a new agent — dragging the robot with Ctrl
+    held should fall back to the mode's normal (non-duplicate) behaviour."""
+    from PySide6.QtCore import Qt
+    import world_editor
+
+    editor, world = _make_world_editor(draw_mode='move')
+    editor._bot_pos[0], editor._bot_pos[1] = 0.0, 0.0
+
+    monkeypatch.setattr(world_editor.QApplication, 'keyboardModifiers',
+                        staticmethod(lambda: Qt.ControlModifier))
+    editor.handle_drag(0.0, 0.0, is_start=True, is_finish=False)
+    assert editor._ctrl_duplicating is False
+    editor.handle_drag(3.0, 3.0, is_start=False, is_finish=False)
+    editor.handle_drag(3.0, 3.0, is_start=False, is_finish=True)
+
+    assert world.patches == [] and world.objects == [], 'nothing should have been cloned'
+    assert editor._bot_pos[0] == pytest.approx(3.0), 'move mode should still move the robot normally'
+
+
+def test_ctrl_shift_drag_duplicates_and_snaps_to_grid(monkeypatch):
+    """Ctrl and Shift together: duplicate the patch AND snap the clone's
+    drop position to the grid — the combination the symmetric-stimulus
+    workflow actually needs (exact radius/label match, exact mirrored spot)."""
+    from PySide6.QtCore import Qt
+    import world_editor
+
+    patch = {'x': 1.0, 'y': 1.0, 'r': 0.3}
+    editor, world = _make_world_editor(patches=[patch], draw_mode='gradient')
+
+    monkeypatch.setattr(world_editor.QApplication, 'keyboardModifiers',
+                        staticmethod(lambda: Qt.ControlModifier | Qt.ShiftModifier))
+    editor.handle_drag(1.0, 1.0, is_start=True, is_finish=False)
+    editor.handle_drag(1.0, -0.86, is_start=False, is_finish=False)
+    editor.handle_drag(1.0, -0.86, is_start=False, is_finish=True)
+
+    # step = grid_size = 0.25: round(-0.86/0.25) = round(-3.44) = -3 -> -0.75
+    clone = world.patches[1]
+    assert clone['x'] == pytest.approx(1.0)
+    assert clone['y'] == pytest.approx(-0.75)
+
+
+# ── Sensor neuron stage ───────────────────────────────────────────────────────
+
+def _neuron_brain(sensors, layers, connections):
+    from brain_base import BaseBrain
+    brain = BaseBrain()
+    brain.sensors, brain.layers, brain.connections = sensors, layers, connections
+    for layer in layers:
+        setattr(brain, layer.name, layer)
+    return brain
+
+
+def test_sensor_neuron_stage_sums_connections_before_its_activation():
+    """A connection onto a sensor is summed into its neuron stage, before the
+    stage's activation — a relu stage floors an inhibited channel at 0 instead
+    of letting the connection push the output negative. Stepping again without
+    re-sampling must not feed the stage its own output."""
+    from network_runner import step_network
+    from sensors import GradientSensor, make_neuron_stage
+    from neurons import ConstantLayer
+    from circuit_model import Connection
+
+    s = GradientSensor(n=2, name='light')
+    s.reset()
+    s.neuron = make_neuron_stage(activation='relu')
+    inh = ConstantLayer(name='inh', value=0.0, n=2)
+    inh.output = torch.tensor([1.0, -10.0])
+    brain = _neuron_brain([s], [], [Connection(src='inh', tgt='light', W=np.eye(2))])
+    brain.inh = inh
+    brain.light = np.array([3.0, 3.0], dtype=np.float32)
+    step_network(brain, dt=0.01)
+    assert np.allclose(brain.light, [4.0, 0.0])
+    step_network(brain, dt=0.01)
+    assert np.allclose(brain.light, [4.0, 0.0])
+
+
+def test_sensor_neuron_stage_passthrough_leaves_output_untouched():
+    """A sensor with a default (pass-through) neuron stage, no connections and
+    no modulators keeps the exact array SENSE wrote."""
+    from network_runner import step_network
+    from sensors import GradientSensor
+
+    s = GradientSensor(n=2, name='light')
+    s.reset()
+    brain = _neuron_brain([s], [], [])
+    reading = np.array([0.3, 0.7], dtype=np.float32)
+    brain.light = reading
+    step_network(brain, dt=0.01)
+    assert brain.light is reading
+    assert s.neuron_is_passthrough()
+
+
+def test_sensor_neuron_stage_does_not_compound_a_held_camera_frame():
+    """A camera keeps its last frame between renders; the neuron stage must
+    keep integrating that raw frame, not its own previous output."""
+    from network_runner import step_network
+    from sensors import GrayCameraSensor, make_neuron_stage
+
+    cam = GrayCameraSensor(width=3, height=1, name='cam')
+    cam.reset()
+    cam.neuron = make_neuron_stage(tau_rise=0.05, tau_decay=0.05)
+    brain = _neuron_brain([cam], [], [])
+    brain.cam = np.ones(3, dtype=np.float32)
+    got = []
+    for _ in range(3):
+        step_network(brain, dt=0.01)
+        got.append(float(brain.cam[0]))
+    assert got == pytest.approx([1 - 0.8 ** k for k in (1, 2, 3)], abs=1e-5)
+
+
+def test_sensor_from_dict_migrates_pre_modulator_activation_exactly():
+    """Pre-neuron-stage files applied a 'pre' modulator inside the sensor's
+    activation: relu(x · g) · scale. Loading such a sensor moves activation
+    and scale to the neuron stage, reproducing that exactly — including a
+    negative gain, where relu(x) · scale · g would differ."""
+    from network_runner import step_network
+    from brain_serializer import _sensor_from_dict, _sensor_to_dict
+    from neurons import LeakyLayer
+
+    s = _sensor_from_dict({'type': 'GradientSensor', 'name': 'food', 'n': 2,
+                           'activation': 'relu', 'scale': 40.0,
+                           'modulators': [['insulin', -1.0, 'pre']]})
+    s.reset()
+    assert (s.activation, s.scale) == ('linear', 1.0)
+    assert (s.neuron.activation, s.neuron.scale) == ('relu', 40.0)
+    tx = LeakyLayer(n=1, name='sac', activation='linear', tau_rise=None,
+                    neuromodulator_transmitter='insulin')
+    tx.output = torch.tensor([1.5])                      # gain 1 - 1.5 = -0.5
+    brain = _neuron_brain([s], [tx], [])
+    x = np.array([0.8, 0.3], dtype=np.float32)
+    brain.food = x.copy()
+    step_network(brain, dt=0.01)
+    assert np.allclose(brain.food, np.maximum(x * -0.5, 0) * 40.0)
+    reloaded = _sensor_from_dict(_sensor_to_dict(s))     # saved form round-trips
+    assert (reloaded.activation, reloaded.neuron.activation, reloaded.neuron.scale) == ('linear', 'relu', 40.0)

@@ -13,7 +13,7 @@ from app_version import get_app_version
 # A group runs either a code brain (a brains/*.py module) or a network (a
 # networks/*.json circuit). In a session file that reads:
 #   code:    {"mode": "code", "module_name": "BrainARS", "brain_params": {...}}
-#   network: {"mode": "network", "network": "Tutorials/T06 - FeedingBrain.json"}
+#   network: {"mode": "network", "network": "Demos/D06 - FeedingBrain.json"}
 # Internally a network runs in the network brain module, with the project and
 # file as its brain params. Older files ({"module_name": "BrainGUI",
 # "brain_params": {"network_project": ..., "network_file": ...}}) still load.

@@ -4,12 +4,13 @@ setup / clear, world save / load and textures.
 """
 
 import os
+import glob
 
-from PySide6.QtWidgets import QColorDialog, QMessageBox
+from PySide6.QtWidgets import QColorDialog, QMessageBox, QLabel
 from PySide6.QtGui import QColor
 
 from sim_constants import C, GRADIENT_COLORS, OBJECT_COLORS
-from world_serializer import discover_worlds, save_world_file, load_world_file
+from world_serializer import save_world_file, load_world_file
 import data_paths
 
 
@@ -141,40 +142,137 @@ class _WorldMixin:
         self.world.objects = []
         self._setup_world()
 
-    # ── World save/load (mirrors _BrainMixin's brain combo pattern) ────────────
+    # ── World directory (mirrors _SessionMixin's session directory pattern) ────
+
+    def _current_world_dir(self):
+        """Folder of the selected entry: 'builtin:Tutorials' → the app's
+        worlds/Tutorials, 'X' → the user's worlds/X, '' → the user's worlds/
+        (data_paths)."""
+        return str(data_paths.folder_for('worlds', self._world_dir_combo.currentData() or ""))
+
+    def _refresh_world_dirs(self, select=None):
+        """Root (My files / 🔒 Simulator) and its folders; *select* is a folder
+        key ('builtin:Tutorials', 'Mine', '' = your top level)."""
+        if select is None:
+            select = self._world_dir_combo.currentData() if self._world_dir_combo.count() else ""
+        builtin = self._fill_folder_picker(self._world_root_combo, self._world_dir_combo,
+                                           'worlds', select or "")
+        self._btn_new_world_dir.setEnabled(not builtin or data_paths.builtin_writable())
+        self._refresh_world_list()
+
+    def _new_world_dir(self):
+        from PySide6.QtWidgets import QInputDialog
+        name, ok = QInputDialog.getText(self, "New Directory", "Directory name:")
+        if not ok or not name.strip():
+            return
+        name = name.strip()
+        key = data_paths.BUILTIN + name if self._world_root_combo.currentData() == 'builtin' else name
+        data_paths.folder_for('worlds', key).mkdir(parents=True, exist_ok=True)
+        self._refresh_world_dirs(select=key)
+
+    # ── World save/load ──────────────────────────────────────────────────────
 
     def _save_world(self):
-        from PySide6.QtWidgets import QInputDialog
-        current = self._world_combo.currentText()
-        default = current[:-5] if current.endswith('.json') else current
-        raw, ok = QInputDialog.getText(self, "Save World", "Name:", text=default)
-        if not ok or not raw:
+        """Ask for a directory (as for saving a session) and a name, then write.
+        Folders as data_paths.save_folders: the user's, plus the simulator's
+        own in the development copy."""
+        from PySide6.QtWidgets import (
+            QDialog, QFormLayout, QComboBox, QLineEdit, QDialogButtonBox, QPushButton,
+            QHBoxLayout, QInputDialog,
+        )
+
+        entries, current_idx = data_paths.save_folders(
+            'worlds', self._world_dir_combo.currentData() or "", '(My Worlds)')
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle('Save World')
+        form = QFormLayout(dlg)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+
+        note = QLabel()
+        note.setWordWrap(True)
+        note.setStyleSheet(f"color:{C['muted']}; font-style:italic;")
+        form.addRow(note)
+
+        dir_row = QHBoxLayout()
+        dir_combo = QComboBox()
+        for label, key in entries:
+            dir_combo.addItem(label, key)
+        dir_combo.setCurrentIndex(current_idx)
+        btn_new_dir = QPushButton('+')
+        btn_new_dir.setFixedWidth(24)
+        btn_new_dir.setToolTip('Create a new folder in your files')
+        def _new_dir():
+            name_d, ok = QInputDialog.getText(dlg, 'New directory', 'Directory name:')
+            if not ok or not name_d.strip():
+                return
+            name_d = name_d.strip()
+            data_paths.user_path('worlds', name_d).mkdir(parents=True, exist_ok=True)
+            if dir_combo.findData(name_d) < 0:
+                dir_combo.addItem(name_d, name_d)
+            dir_combo.setCurrentIndex(dir_combo.findData(name_d))
+        btn_new_dir.clicked.connect(_new_dir)
+        dir_row.addWidget(dir_combo, 1)
+        dir_row.addWidget(btn_new_dir)
+        form.addRow('Directory:', dir_row)
+
+        current_name = self._world_combo.currentText()
+        default_name = current_name[:-5] if current_name.endswith('.json') else current_name
+        name_edit = QLineEdit(default_name)
+        form.addRow('Name:', name_edit)
+
+        preview = QLabel()
+        preview.setWordWrap(True)
+        preview.setStyleSheet(f"color:{C['muted']};")
+        form.addRow('Saves to:', preview)
+
+        def _update_preview():
+            chosen = dir_combo.currentData() or ""
+            raw    = name_edit.text().strip()
+            clean  = "".join(x for x in raw if x.isalnum() or x in "._- ") or "world"
+            preview.setText(str(data_paths.folder_for('worlds', chosen) / f"{clean}.json"))
+            note.setText(data_paths.save_note(chosen))
+        dir_combo.currentIndexChanged.connect(_update_preview)
+        name_edit.textChanged.connect(_update_preview)
+        _update_preview()
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        form.addRow(buttons)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
             return
-        name = "".join(c for c in raw if c.isalnum() or c in "._- ") or "world"
-        if not name.endswith('.json'):
-            name += '.json'
-        path = data_paths.user_path('worlds', name)   # always the user's folder
-        save_world_file(self.world, str(path))
-        self._refresh_world_list()
-        self._world_combo.setCurrentText(name)
+
+        chosen_dir = dir_combo.currentData() or ""
+        raw_name   = name_edit.text().strip()
+        clean_name = "".join(x for x in raw_name if x.isalnum() or x in "._- ") or "world"
+        world_dir  = data_paths.folder_for('worlds', chosen_dir)
+        world_dir.mkdir(parents=True, exist_ok=True)
+        path = os.path.join(str(world_dir), f"{clean_name}.json")
+        save_world_file(self.world, path)
+        self._refresh_world_dirs(select=chosen_dir)
+        self._world_combo.setCurrentText(f"{clean_name}.json")
         print(f"World saved to {path}")
 
     def _refresh_world_list(self):
+        world_dir = self._current_world_dir()
+        files = sorted(os.path.basename(f) for f in glob.glob(os.path.join(world_dir, "*.json")))
         current = self._world_combo.currentText()
         self._world_combo.blockSignals(True)
         self._world_combo.clear()
-        self._world_combo.addItems(discover_worlds())
-        if current in discover_worlds():
+        self._world_combo.addItems(files)
+        if current in files:
             self._world_combo.setCurrentText(current)
         self._world_combo.blockSignals(False)
 
     def _load_world(self, name):
         if not name:
             return
-        path = data_paths.resolve('worlds', name)
-        if path is None:
+        path = os.path.join(self._current_world_dir(), name)
+        if not os.path.exists(path):
             return
-        load_world_file(str(path), self.world)
+        load_world_file(path, self.world)
         self._arena_round_rb.setChecked(self.world.arena_round)
         self._arena_square_rb.setChecked(not self.world.arena_round)
         self._sky_cb.setChecked(bool(self.world.sky.get("enabled", False)))

@@ -22,7 +22,7 @@ import zipfile
 
 import data_paths
 
-RELEASE = data_paths.APP_DIR / 'release.json'
+RELEASE = data_paths.RELEASE
 STAGING = data_paths.APP_DIR / '_update'
 
 

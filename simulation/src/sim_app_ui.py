@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QWidget, QDockWidget, QScrollArea, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QComboBox, QSlider, QSpinBox, QDoubleSpinBox, QCheckBox,
     QStatusBar, QLineEdit, QRadioButton, QFormLayout, QAbstractItemView,
-    QButtonGroup, QListWidget,
+    QButtonGroup, QListWidget, QSizePolicy,
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFontMetrics
@@ -22,7 +22,6 @@ from PySide6.QtGui import QFontMetrics
 from sim_constants import C, GRADIENT_COLORS, OBJECT_COLORS
 from arena_widget import ArenaWidget
 from sim_widgets import OscilloscopeWidget, ControlPanel
-from world_serializer import discover_worlds
 from texture_manager import discover_textures
 import data_paths
 
@@ -135,11 +134,21 @@ class _UiBuilderMixin:
     # ── Folder pickers: first the root, then its folders ──────────────────────
 
     def _make_root_combo(self):
-        """'My files' / '🔒 Simulator' — which root a folder picker lists."""
+        """'My files' / '🔒 Simulator' — which root a folder picker lists
+        ('✎ Simulator' in the development copy, where the simulator's files are writable)."""
         combo = QComboBox()
         combo.addItem("My files", "user")
-        combo.addItem("🔒 Simulator", "builtin")
-        combo.setToolTip("Your own files, or the read-only ones that ship with the simulator")
+        if data_paths.builtin_writable():
+            combo.addItem("✎ Simulator", "builtin")
+            combo.setToolTip("Your own files, or the ones that ship with the simulator "
+                             "(editable in this development copy)")
+        else:
+            combo.addItem("🔒 Simulator", "builtin")
+            combo.setToolTip("Your own files, or the read-only ones that ship with the simulator")
+        # The folder combo beside it takes the spare width; keep the root's label whole.
+        # sizeHint() under-measures the ✎ (a fallback-font glyph) by a few pixels.
+        combo.setSizePolicy(QSizePolicy.Policy.Fixed, combo.sizePolicy().verticalPolicy())
+        combo.setMinimumWidth(combo.sizeHint().width() + combo.fontMetrics().horizontalAdvance('  '))
         return combo
 
     @staticmethod
@@ -451,7 +460,7 @@ class _UiBuilderMixin:
     def _build_physics_group(self, panel_vl=None):
         gb, vl = self._panel.add_group("Physics", panel_vl)
         self._phys_widgets = {}
-        phys_params = ['dt', 'motor_gain', 'body_radius', 'arena_scale',
+        phys_params = ['dt', 'motor_gain', 'body_radius', 'grid_size', 'arena_scale',
                        'sense_radius', 'init_x', 'init_y']
         meta = self.sim_cfg.get_param_metadata()
         for k in phys_params:
@@ -601,9 +610,25 @@ class _UiBuilderMixin:
     def _build_world_group(self, panel_vl=None):
         gb, vl = self._panel.add_group("World", panel_vl)
 
+        dir_row = QWidget(); dl = QHBoxLayout(dir_row); dl.setContentsMargins(0, 0, 0, 0)
+        dl.addWidget(QLabel("Directory:"))
+        self._world_root_combo = self._make_root_combo()
+        dl.addWidget(self._world_root_combo)
+        self._world_dir_combo = QComboBox()
+        dl.addWidget(self._world_dir_combo, 1)
+        self._btn_new_world_dir = self._make_btn("+", C['muted'])
+        self._btn_new_world_dir.setFixedWidth(24)
+        self._btn_new_world_dir.setToolTip("Create a new folder in your files")
+        self._btn_new_world_dir.clicked.connect(self._new_world_dir)
+        dl.addWidget(self._btn_new_world_dir)
+        vl.addWidget(dir_row)
+        self._world_root_combo.currentIndexChanged.connect(
+            lambda _i: self._refresh_world_dirs(
+                select=self._first_folder_key('worlds', self._world_root_combo.currentData())))
+        self._world_dir_combo.currentIndexChanged.connect(self._refresh_world_list)
+
         world_row = QWidget(); wrl = QHBoxLayout(world_row); wrl.setContentsMargins(0, 0, 0, 0)
         self._world_combo = QComboBox()
-        self._world_combo.addItems(discover_worlds())
         self._world_combo.currentTextChanged.connect(self._load_world)
         btn_save_world = self._make_btn("Save", C['primary'])
         btn_save_world.setFixedWidth(44)

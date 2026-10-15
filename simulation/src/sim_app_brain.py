@@ -116,7 +116,7 @@ class _BrainMixin:
         phl.addWidget(self._net_project_combo, 1)
         self._btn_new_proj = self._make_btn("+", C['primary'])
         self._btn_new_proj.setFixedWidth(28)
-        self._btn_new_proj.setToolTip("Create a new project folder in your files")
+        self._btn_new_proj.setToolTip("Create a new project folder in the root shown")
         self._btn_new_proj.clicked.connect(self._new_network_project)
         phl.addWidget(self._btn_new_proj)
         nvl.addWidget(proj_row)
@@ -217,7 +217,7 @@ class _BrainMixin:
         current = getattr(brain, 'network_file', '') or ''
         # Root (My files / 🔒 Simulator), then that root's projects.
         builtin = self._fill_folder_picker(self._net_root_combo, self._net_project_combo, 'networks', key)
-        self._btn_new_proj.setEnabled(not builtin)   # the simulator's projects are read-only
+        self._btn_new_proj.setEnabled(not builtin or data_paths.builtin_writable())
         folder = data_paths.folder_for('networks', key)
         files = sorted(f for f in os.listdir(folder) if f.endswith('.json')) \
             if folder.is_dir() else []
@@ -301,8 +301,9 @@ class _BrainMixin:
         if not ok or not name.strip():
             return
         name = name.strip()
-        data_paths.user_path('networks', name).mkdir(parents=True, exist_ok=True)
-        self.brain.network_project = name
+        key = data_paths.BUILTIN + name if self._net_root_combo.currentData() == 'builtin' else name
+        data_paths.folder_for('networks', key).mkdir(parents=True, exist_ok=True)
+        self.brain.network_project = key
         self.brain.network_file = ''
         self._refresh_network_panel()
 
@@ -315,13 +316,13 @@ class _BrainMixin:
         name = name.strip()
         if not name.endswith('.json'):
             name += '.json'
-        # New networks always go to the user's folder; a built-in project is
-        # mirrored there by name.
+        # Where the simulator's folders are read-only, a built-in project is
+        # mirrored in the user's folder by name.
         project = getattr(self.brain, 'network_project', '') or ''
-        if project.startswith(data_paths.BUILTIN):
+        if project.startswith(data_paths.BUILTIN) and not data_paths.builtin_writable():
             project = project[len(data_paths.BUILTIN):]
             self.brain.network_project = project
-        net_dir = data_paths.user_path('networks', project)
+        net_dir = data_paths.folder_for('networks', project)
         net_dir.mkdir(parents=True, exist_ok=True)
         motor = MotorLayer(activation='linear', name='motor', n=2, layer=4)
         path  = os.path.join(net_dir, name)
@@ -448,7 +449,7 @@ class _BrainMixin:
         if reply == QMessageBox.StandardButton.Save:
             from brain_serializer import save_network_file
             path = data_paths.resolve('networks', net_name)
-            if path is None or data_paths.is_builtin(path):
+            if path is None or data_paths.is_read_only(path):
                 QMessageBox.information(
                     self, 'Built-in network',
                     'This network ships with the simulator and is read-only. Use Save in '

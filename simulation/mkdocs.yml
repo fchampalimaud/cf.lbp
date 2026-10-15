@@ -50,6 +50,7 @@ nav:
   - Tutorials:
     - Braitenberg Vehicle II: simulator/tutorials/first-braitenberg.md
     - Braitenberg Vehicle III: simulator/tutorials/second-braitenberg.md
+    - Surviving in Buridan's World: simulator/tutorials/buridans-world.md
     - Vector-Based Homing: simulator/tutorials/vector-navigation.md
   - Creating Worlds: simulator/creating-worlds.md
   - Coding Brains: simulator/coding-brains.md

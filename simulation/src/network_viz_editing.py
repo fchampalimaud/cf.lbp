@@ -714,6 +714,8 @@ class NetworkEditing:
         edge = self._edge_at(view_pt)
         if edge is not None:
             self._select_edge(edge)
+            if event.double() and not self.win._locked:
+                self._show_edge_edit(*edge)
             return
         # Empty canvas click — deselect everything (Shift keeps the
         # multi-selection, so a missed Shift+click doesn't lose it).

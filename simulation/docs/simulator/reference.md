@@ -342,6 +342,8 @@ Holds knobs global to a session: timestep `dt`, arena size, robot body radius, m
 
 `BaseSensor` defines the contract every sensor satisfies: `sample(x, y, theta, world, sim_cfg)` maps the robot's pose and world state to a numpy array, stored on the brain as `brain.<sensor.name>`. All sensors share an optional output pipeline: Gaussian noise → asymmetric leaky dynamics (`tau_rise` / `tau_decay`) → activation function → `output_mode` (none / derivative / integral).
 
+Each sensor also owns a **neuron stage** (`sensor.neuron`, a pass-through `LeakyLayer` built by `make_neuron_stage`, params listed by `neuron_param_defs`). `network_runner._step_sensor_neurons` runs it each step on (sensor output + connections targeting the sensor or one of its halves), applies the sensor's `modulators` around it (pre / post), and writes the result back as `brain.<sensor.name>`. Runtime state is kept per output key (`neuron_run`), and the raw output is remembered so a camera frame that wasn't re-rendered isn't fed its own output. `brain_serializer` saves the stage as a `neuron` dict only when it isn't pass-through.
+
 ```mermaid
 %%{init: {'themeVariables': {'fontSize': '13px'}}}%%
 graph LR
@@ -428,7 +430,7 @@ graph LR
 
 Two pure functions, `save_session` and `load_session`, serialise and deserialise the full simulator state (agents, brain params, world patches, sim config, oscilloscope multipliers) as JSON.
 
-Each agent group says what it runs: `{"mode": "code", "module_name": "BrainARS", "brain_params": {...}}` for a code brain, or `{"mode": "network", "network": "Tutorials/T06 - FeedingBrain.json"}` for a network (a circuit in `networks/`). `brain_to_file` / `brain_from_file` convert between that and the brain module + params used internally (a network runs in the `BrainGUI` module with `network_project` / `network_file` params); older files that name `BrainGUI` directly still load.
+Each agent group says what it runs: `{"mode": "code", "module_name": "BrainARS", "brain_params": {...}}` for a code brain, or `{"mode": "network", "network": "Demos/D06 - FeedingBrain.json"}` for a network (a circuit in `networks/`). `brain_to_file` / `brain_from_file` convert between that and the brain module + params used internally (a network runs in the `BrainGUI` module with `network_project` / `network_file` params); older files that name `BrainGUI` directly still load.
 
 ### `brain_serializer` — code generation
 

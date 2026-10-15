@@ -421,16 +421,51 @@ class NetworkRenderer:
 
     def _draw_collected_arcs(self, by_target, tgt_hem_map, positions):
         """Draw the arcs collected by _collect_arcs, fanned out per target node."""
+        # Pairs with a connection in both directions (A->B and B->A) need a
+        # direction-independent bow key — see the comment at its use below.
+        reciprocal_pairs = {(sn, tn) for tn, lst in by_target.items() for sn, *_ in lst}
         for tn, incoming in by_target.items():
             p1      = positions[tn]
             k       = len(incoming)
             tgt_hem = tgt_hem_map[tn]
-            incoming_sorted = sorted(incoming, key=lambda t: positions[t[0]][1], reverse=True)
+            # Sorting by source y descending already fans mirrored targets correctly
+            # when the incoming y-values are distinct: reflecting a target to the
+            # other hemisphere reflects its sources' y too, which naturally reverses
+            # their sort order (and with it, the ctrl_perp sign needed to mirror the
+            # offset). That reversal only breaks down for an exact y tie (e.g. two
+            # source columns sharing the same row spacing), where Python's stable
+            # sort falls back to insertion order — identical for both hemispheres,
+            # since it doesn't depend on position at all. Reverse the tie-break
+            # itself (not the whole ordering) for lower-hemisphere targets so tied
+            # groups mirror the same way distinct-y groups already do.
+            hem_sign = 1.0 if tgt_hem else (-1.0 if tgt_hem is False else
+                       (1.0 if p1[1] >= 0.5 else -1.0))
+            incoming_sorted = [item for _, item in sorted(
+                enumerate(incoming),
+                key=lambda pair: (-positions[pair[1][0]][1], hem_sign * pair[0]))]
             for idx, (sn, w, src_hem, is_thin) in enumerate(incoming_sorted):
                 p0  = positions[sn]
                 t   = (idx / (k - 1) - 0.5) if k > 1 else 0.0
-                sb  = _signed_bow(src_hem, tgt_hem, self.win._CROSS_BOW,
-                                       (p0[1] + p1[1]) / 2)
+                if (tn, sn) in reciprocal_pairs:
+                    # A connection exists in both directions between these two
+                    # nodes. _signed_bow's cross-hemisphere sign depends on which
+                    # node is passed first, which normally is just "whichever is
+                    # src for this edge" — so the reverse connection (same two
+                    # nodes, src/tgt swapped) computes the opposite sign, and a
+                    # flipped bow with swapped endpoints lands on the exact same
+                    # control point: the two arcs draw on top of each other.
+                    # Key the sign off a direction-independent canonical order
+                    # instead (same idea as _draw_internal_edges's (lo, hi)
+                    # keying for a same-layer reciprocal pair) so the forward and
+                    # backward connections bow the same way and diverge visually
+                    # instead of coinciding.
+                    lo, hi = sorted((sn, tn))
+                    lo_hem, hi_hem = (src_hem, tgt_hem) if sn == lo else (tgt_hem, src_hem)
+                    sb = _signed_bow(lo_hem, hi_hem, self.win._CROSS_BOW,
+                                           (p0[1] + p1[1]) / 2)
+                else:
+                    sb = _signed_bow(src_hem, tgt_hem, self.win._CROSS_BOW,
+                                           (p0[1] + p1[1]) / 2)
                 _lw = 0.6 if is_thin else 3.0
                 self._draw_edge(p0, p1, w, sb, ctrl_perp=0.18 * t, sn=sn, tn=tn,
                                 lw=_lw, mark=not is_thin)

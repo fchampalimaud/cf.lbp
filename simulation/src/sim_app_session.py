@@ -26,7 +26,7 @@ class _SessionMixin:
         gb, vl = self._panel.add_group("Sessions", panel_vl)
 
         # Where the user's own files live (sessions, networks, worlds, …);
-        # 🔒 entries in the pickers ship with the app and are read-only.
+        # 🔒 entries in the pickers ship with the app (data_paths.builtin_writable).
         files_row = QWidget(); fl = QHBoxLayout(files_row); fl.setContentsMargins(0, 0, 0, 0)
         fl.addWidget(QLabel("My files:"))
         from sim_widgets import ElidedLabel
@@ -324,9 +324,12 @@ class _SessionMixin:
     def _show_user_dir(self):
         path = str(data_paths.user_dir())
         self._user_dir_label.setText(path)
+        builtin = ("✎ entries ship with the simulator — editable in this development copy."
+                   if data_paths.builtin_writable() else
+                   "🔒 entries ship with the simulator and are read-only.")
         self._user_dir_label.setToolTip(
             f"{path}\nYour sessions, networks, worlds, motifs, brains and logs live here; "
-            "updates never touch it.\n🔒 entries ship with the simulator and are read-only.")
+            f"updates never touch it.\n{builtin}")
 
     def _open_user_folder(self):
         from PySide6.QtGui import QDesktopServices
@@ -353,8 +356,8 @@ class _SessionMixin:
 
     def _current_session_dir(self):
         """Folder of the selected entry: 'builtin:Tutorials' → the app's
-        configs/Tutorials (read-only), 'X' → the user's configs/X, '' → the
-        user's configs/ (data_paths)."""
+        configs/Tutorials, 'X' → the user's configs/X, '' → the user's
+        configs/ (data_paths)."""
         return str(data_paths.folder_for('configs', self._session_dir_combo.currentData() or ""))
 
     def _refresh_session_dirs(self, select=None):
@@ -364,7 +367,7 @@ class _SessionMixin:
             select = self._session_dir_combo.currentData() if self._session_dir_combo.count() else ""
         builtin = self._fill_folder_picker(self._session_root_combo, self._session_dir_combo,
                                            'configs', select or "")
-        self._btn_new_session_dir.setEnabled(not builtin)   # the simulator's folders are read-only
+        self._btn_new_session_dir.setEnabled(not builtin or data_paths.builtin_writable())
         self._refresh_session_list()
 
     def _new_session_dir(self):
@@ -373,8 +376,9 @@ class _SessionMixin:
         if not ok or not name.strip():
             return
         name = name.strip()
-        data_paths.user_path('configs', name).mkdir(parents=True, exist_ok=True)
-        self._refresh_session_dirs(select=name)
+        key = data_paths.BUILTIN + name if self._session_root_combo.currentData() == 'builtin' else name
+        data_paths.folder_for('configs', key).mkdir(parents=True, exist_ok=True)
+        self._refresh_session_dirs(select=key)
 
     # ── Session save / load ───────────────────────────────────────────────────
 
@@ -406,8 +410,8 @@ class _SessionMixin:
 
     def _save_session(self):
         """Ask for a name and directory (as for saving a network), then write.
-        Sessions always save to the user's configs/ — the simulator's own
-        folders are offered there by name but are never written to."""
+        Folders as data_paths.save_folders: the user's, plus the simulator's
+        own in the development copy."""
         if not self.brain:
             print("SAVE FAILED: No brain loaded.")
             return
@@ -416,41 +420,36 @@ class _SessionMixin:
             QHBoxLayout, QInputDialog,
         )
 
-        current = self._session_dir_combo.currentData() or ""
-        if current.startswith(data_paths.BUILTIN):
-            current = current[len(data_paths.BUILTIN):]
-        subdirs = sorted(set(data_paths.user_subdirs('configs')) | ({current} if current else set()))
-        subdirs = [''] + subdirs
+        entries, current_idx = data_paths.save_folders(
+            'configs', self._session_dir_combo.currentData() or "", '(My Sessions)')
 
         dlg = QDialog(self)
         dlg.setWindowTitle('Save Session')
         form = QFormLayout(dlg)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
-        note = QLabel("Always saved to My files — the Simulator's own folders are read-only.")
+        note = QLabel()
         note.setWordWrap(True)
         note.setStyleSheet(f"color:{C['muted']}; font-style:italic;")
         form.addRow(note)
 
         dir_row = QHBoxLayout()
         dir_combo = QComboBox()
-        dir_combo.addItems([d if d else '(My Sessions)' for d in subdirs])
-        dir_combo.setCurrentIndex(subdirs.index(current) if current in subdirs else 0)
+        for label, key in entries:
+            dir_combo.addItem(label, key)
+        dir_combo.setCurrentIndex(current_idx)
         btn_new_dir = QPushButton('+')
         btn_new_dir.setFixedWidth(24)
-        btn_new_dir.setToolTip('Create new subdirectory')
+        btn_new_dir.setToolTip('Create a new folder in your files')
         def _new_dir():
             name_d, ok = QInputDialog.getText(dlg, 'New directory', 'Directory name:')
             if not ok or not name_d.strip():
                 return
             name_d = name_d.strip()
             data_paths.user_path('configs', name_d).mkdir(parents=True, exist_ok=True)
-            if name_d not in subdirs:
-                subdirs.append(name_d)
-                subdirs.sort()
-                dir_combo.clear()
-                dir_combo.addItems([d if d else '(My Sessions)' for d in subdirs])
-            dir_combo.setCurrentIndex(subdirs.index(name_d))
+            if dir_combo.findData(name_d) < 0:
+                dir_combo.addItem(name_d, name_d)
+            dir_combo.setCurrentIndex(dir_combo.findData(name_d))
         btn_new_dir.clicked.connect(_new_dir)
         dir_row.addWidget(dir_combo, 1)
         dir_row.addWidget(btn_new_dir)
@@ -465,11 +464,11 @@ class _SessionMixin:
         form.addRow('Saves to:', preview)
 
         def _update_preview():
-            chosen = subdirs[dir_combo.currentIndex()]
+            chosen = dir_combo.currentData() or ""
             raw    = name_edit.text().strip()
             clean  = "".join(x for x in raw if x.isalnum() or x in "._- ") or "autosave"
-            dest   = data_paths.user_path('configs', chosen, create=False)
-            preview.setText(str(dest / f"{clean}.json"))
+            preview.setText(str(data_paths.folder_for('configs', chosen) / f"{clean}.json"))
+            note.setText(data_paths.save_note(chosen))
         dir_combo.currentIndexChanged.connect(_update_preview)
         name_edit.textChanged.connect(_update_preview)
         _update_preview()
@@ -482,10 +481,10 @@ class _SessionMixin:
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
 
-        chosen_dir  = subdirs[dir_combo.currentIndex()]
+        chosen_dir  = dir_combo.currentData() or ""
         raw_name    = name_edit.text().strip()
         clean_name  = "".join(x for x in raw_name if x.isalnum() or x in "._- ") or "autosave"
-        session_dir = data_paths.user_path('configs', chosen_dir)
+        session_dir = data_paths.folder_for('configs', chosen_dir)
         session_dir.mkdir(parents=True, exist_ok=True)
         path        = os.path.join(str(session_dir), f"{clean_name}.json")
         if self._write_session(path):

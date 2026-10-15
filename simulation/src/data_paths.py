@@ -5,8 +5,9 @@ Two roots with the same layout — configs/, networks/, worlds/, motifs/,
 brains/, textures/, logs/:
 
   APP_DIR     simulation/2d/ — built-in content shipped with the app
-              (Tutorials, Demos, Default …). Read-only in the UI; an update
-              replaces it.
+              (Tutorials, Demos, Default …). Read-only in the UI of public
+              copies, writable in the development copy (builtin_writable);
+              an update replaces it.
   user_dir()  the user's own files. Writable; updates never touch it.
               Set in the Session tab (stored in settings_file(), outside the
               folder itself); default: APP_DIR/private/ when it exists (the
@@ -19,7 +20,7 @@ brains/, textures/, logs/:
               overrides all of the above (tests, scripts).
 
 References between files (a session naming its network, …) are paths
-relative to the kind's folder, e.g. "Tutorials/T02 - DistanceBrain.json".
+relative to the kind's folder, e.g. "Demos/D02 - DistanceBrain.json".
 "builtin:" in front forces the app root; a plain reference is looked up in
 the user root first, then the app root — so older sessions keep working
 whichever root their network ended up in.
@@ -33,6 +34,7 @@ from pathlib import Path
 APP_DIR = Path(__file__).resolve().parent.parent
 KINDS   = ('configs', 'networks', 'worlds', 'motifs', 'brains', 'textures', 'logs')
 BUILTIN = 'builtin:'
+RELEASE = APP_DIR / 'release.json'   # written by the public sync, never in the private repo
 
 
 # ── Settings (where the user folder is) ──────────────────────────────────────
@@ -116,9 +118,20 @@ def _inside(path, folder):
 
 
 def is_builtin(path):
-    """True for a file shipped with the app (read-only in the UI). The user
-    root may sit inside APP_DIR (private/), so it is checked first."""
+    """True for a file shipped with the app. The user root may sit inside
+    APP_DIR (private/), so it is checked first."""
     return _inside(path, APP_DIR) and not _inside(path, user_dir())
+
+
+def builtin_writable():
+    """The app's own folders can be written only in the development copy —
+    every public copy carries RELEASE."""
+    return not RELEASE.exists()
+
+
+def is_read_only(path):
+    """True for a file the UI must not overwrite."""
+    return is_builtin(path) and not builtin_writable()
 
 
 def resolve(kind, ref):
@@ -157,6 +170,42 @@ def folder_for(kind, key):
     if key.startswith(BUILTIN):
         return app_path(kind, key[len(BUILTIN):])
     return user_path(kind, key)
+
+
+def save_folders(kind, current, top_label):
+    """Folders a save dialog offers: ([(label, key)], index to preselect), keys
+    as in folder_for. The user's folders always; the app's own too where
+    builtin_writable(). Elsewhere a built-in *current* is offered as a user
+    folder of the same name, to save a copy into."""
+    current = current or ''
+    keys = [''] + user_subdirs(kind)
+    if builtin_writable():
+        keys += [BUILTIN + d for d in builtin_subdirs(kind)]
+        if current not in keys and BUILTIN + current in keys:   # older files name built-ins plainly
+            current = BUILTIN + current
+    elif current.startswith(BUILTIN):
+        current = current[len(BUILTIN):]
+        if current not in keys:
+            keys = [''] + sorted(keys[1:] + [current])
+    entries = [(folder_label(k, top_label), k) for k in keys]
+    return entries, keys.index(current) if current in keys else 0
+
+
+def folder_label(key, top_label):
+    if not key:
+        return top_label
+    if key.startswith(BUILTIN):
+        return f'✎ Simulator / {key[len(BUILTIN):]}'
+    return key
+
+
+def save_note(key):
+    """One line for a save dialog: where *key* writes."""
+    if (key or '').startswith(BUILTIN):
+        return "⚠ Writes the simulator's own files — they go public with the next sync."
+    if builtin_writable():
+        return "Saved to My files."
+    return "Always saved to My files — the Simulator's own folders are read-only."
 
 
 def files(kind, pattern):

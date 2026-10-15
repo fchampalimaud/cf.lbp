@@ -3,10 +3,41 @@ import os
 from types import SimpleNamespace
 import numpy as np
 from lateral import half_names
-from neurons import _activate, DynamicsBase, ACTIVATIONS, OUTPUT_MODES
+from neurons import _activate, DynamicsBase, ACTIVATIONS, OUTPUT_MODES, LeakyLayer
 from neurons_base import leaky_step, ou_noise_step, transform_modulator_value
 
 SENSOR_DIST = 0.12
+
+# Neuron stage: every sensor feeds its output into a LeakyLayer, which also
+# receives any connections drawn onto the sensor. The sensor's modulators and
+# transmitter act on this stage. These defaults make it a pass-through, so a
+# sensor without connections or neuron settings behaves as if it weren't there.
+NEURON_DEFAULTS = {
+    'tau_rise': None, 'tau_decay': None, 'x0': 0.0, 'activation': 'linear',
+    'bias': 0.0, 'scale': 1.0, 'output_mode': 'none',
+    'noise_std': 0.0, 'noise_tau': 0.0, 'alpha': 1.0,
+}
+
+
+def neuron_param_defs():
+    """Dialog/serializer param entries for a sensor's neuron stage: LeakyLayer's
+    params minus n (it follows the sensor's output size), with pass-through defaults."""
+    defs = []
+    for p in LeakyLayer.all_param_defs():
+        if p[0] not in NEURON_DEFAULTS:
+            continue
+        default = NEURON_DEFAULTS[p[0]]
+        defs.append((p[0], p[1], '' if default is None else default, *p[3:]))
+    return defs
+
+
+def make_neuron_stage(**params):
+    """A LeakyLayer holding a sensor's neuron-stage params (pass-through by default)."""
+    kw = {**NEURON_DEFAULTS, **{k: v for k, v in params.items() if k in NEURON_DEFAULTS}}
+    for tau in ('tau_rise', 'tau_decay'):
+        if kw[tau] in ('', 0, 0.0):
+            kw[tau] = None
+    return LeakyLayer(name='neuron', **kw)
 
 _GRADIENT_LABEL_COLOR = {
     'A': '#FFAAAA', 'B': '#AAFFAA', 'C': '#AAAAFF',
@@ -203,6 +234,49 @@ class BaseSensor(DynamicsBase):
         self._integral = None
         self._noise_buf = None
         self._mod_row_state = {}
+        self._neuron_runs    = {}   # output key (name / name_L / name_R) → LeakyLayer state
+        self._neuron_raw     = {}   # output key → latest raw sensor output
+        self._neuron_written = {}   # output key → array the neuron stage last wrote to brain
+
+    # ── Neuron stage ───────────────────────────────────────────────────────────
+
+    @property
+    def neuron(self):
+        """The LeakyLayer holding this sensor's neuron-stage params."""
+        stage = self.__dict__.get('_neuron')
+        if stage is None:
+            stage = self._neuron = make_neuron_stage()
+        return stage
+
+    @neuron.setter
+    def neuron(self, stage):
+        self._neuron = stage
+
+    def neuron_params(self):
+        return {p[0]: getattr(self.neuron, p[0]) for p in neuron_param_defs()}
+
+    def neuron_is_passthrough(self):
+        for name, default in NEURON_DEFAULTS.items():
+            val = getattr(self.neuron, name)
+            if name in ('tau_rise', 'tau_decay'):
+                if val:
+                    return False
+            elif val != default:
+                return False
+        return True
+
+    def neuron_run(self, key, n):
+        """The LeakyLayer state for one output key (the sensor, or one lateral
+        half), with the current neuron-stage params copied in."""
+        runs = self.__dict__.setdefault('_neuron_runs', {})
+        run = runs.get(key)
+        if run is None or run.n != n:
+            run = runs[key] = make_neuron_stage(**self.neuron_params())
+            run._ensure_n(n)
+        else:
+            for name in NEURON_DEFAULTS:
+                setattr(run, name, getattr(self.neuron, name))
+        return run
 
     def is_lateralized(self, circuit=None) -> bool:
         """True when this sensor has a lateralized L/R structure (camera or mirrored joint pair)."""
@@ -320,10 +394,12 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
 
 ---
 
-**Neuromodulation:**
+**Neuron stage** (Neuron tab of the dialog):
 
-- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral). Multiplies the sensor output each tick by `1 + Σ (scale × signal)`. The `site` field is accepted but not used — all modulators contribute a single gain.
-  - `scale > 0` → excitatory (boosts sensitivity); `scale < 0` → inhibitory.
+The output above feeds this sensor's neuron stage — a `LeakyLayer` with its own `bias`, `scale`, `activation`, `tau_rise`/`tau_decay`, noise and `output_mode`, pass-through by default. Connections drawn onto the sensor are summed into it, and its result is what the rest of the network reads.
+
+- `modulators` — receptor rows `(name, scale, site, mode)`, acting on the neuron stage: `site="pre"` multiplies its input (sensor output + connections) by `1 + Σ scale × signal`; `site="post"` multiplies its output.
+- `neuromodulator_transmitter` / `neuromodulator_color` — publish the neuron stage's mean output to the neuromodulator bus.
 """
 
     _CHANNEL_COLOR = {'R': '#FF8888', 'G': '#88CC88', 'B': '#88AAFF', None: None}
@@ -421,10 +497,12 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
 
 ---
 
-**Neuromodulation:**
+**Neuron stage** (Neuron tab of the dialog):
 
-- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral). Multiplies the sensor output each tick by `1 + Σ (scale × signal)`. The `site` field is accepted but not used — all modulators contribute a single gain.
-  - `scale > 0` → excitatory (boosts sensitivity); `scale < 0` → inhibitory.
+The output above feeds this sensor's neuron stage — a `LeakyLayer` with its own `bias`, `scale`, `activation`, `tau_rise`/`tau_decay`, noise and `output_mode`, pass-through by default. Connections drawn onto the sensor are summed into it, and its result is what the rest of the network reads.
+
+- `modulators` — receptor rows `(name, scale, site, mode)`, acting on the neuron stage: `site="pre"` multiplies its input (sensor output + connections) by `1 + Σ scale × signal`; `site="post"` multiplies its output.
+- `neuromodulator_transmitter` / `neuromodulator_color` — publish the neuron stage's mean output to the neuromodulator bus.
 """
 
     _CHANNEL_COLOR = {'R': '#FF5555', 'G': '#55BB55', 'B': '#5555FF', None: None}
@@ -545,10 +623,12 @@ In multi-agent sessions, sectors also fire on contact with other agents' bodies 
 
 ---
 
-**Neuromodulation:**
+**Neuron stage** (Neuron tab of the dialog):
 
-- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral). Multiplies the sensor output each tick by `1 + Σ (scale × signal)`. The `site` field is accepted but not used — all modulators contribute a single gain.
-  - `scale > 0` → excitatory (boosts sensitivity); `scale < 0` → inhibitory.
+The output above feeds this sensor's neuron stage — a `LeakyLayer` with its own `bias`, `scale`, `activation`, `tau_rise`/`tau_decay`, noise and `output_mode`, pass-through by default. Connections drawn onto the sensor are summed into it, and its result is what the rest of the network reads.
+
+- `modulators` — receptor rows `(name, scale, site, mode)`, acting on the neuron stage: `site="pre"` multiplies its input (sensor output + connections) by `1 + Σ scale × signal`; `site="post"` multiplies its output.
+- `neuromodulator_transmitter` / `neuromodulator_color` — publish the neuron stage's mean output to the neuromodulator bus.
 """
 
     _ACTIVE_COLOR = '#FF6633'  # kept for backward compatibility
@@ -740,10 +820,12 @@ In multi-agent sessions, rays also hit other agents' bodies (treated as circles 
 
 ---
 
-**Neuromodulation:**
+**Neuron stage** (Neuron tab of the dialog):
 
-- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral). Multiplies the sensor output each tick by `1 + Σ (scale × signal)`. The `site` field is accepted but not used — all modulators contribute a single gain.
-  - `scale > 0` → excitatory (boosts sensitivity); `scale < 0` → inhibitory.
+The output above feeds this sensor's neuron stage — a `LeakyLayer` with its own `bias`, `scale`, `activation`, `tau_rise`/`tau_decay`, noise and `output_mode`, pass-through by default. Connections drawn onto the sensor are summed into it, and its result is what the rest of the network reads.
+
+- `modulators` — receptor rows `(name, scale, site, mode)`, acting on the neuron stage: `site="pre"` multiplies its input (sensor output + connections) by `1 + Σ scale × signal`; `site="post"` multiplies its output.
+- `neuromodulator_transmitter` / `neuromodulator_color` — publish the neuron stage's mean output to the neuromodulator bus.
 """
 
     viz_type    = 'ray'
@@ -911,12 +993,12 @@ $$\\tau = \\begin{cases}\\tau_{rise} & s_{\\text{target}} > s \\\\ \\tau_{decay}
 
 ---
 
-**Neuromodulation:**
+**Neuron stage** (Neuron tab of the dialog):
 
-- `neuromodulator_transmitter` — if set, publishes the sensor's output to the neuromodulator bus under this name (e.g. `"satiety"`). Other layers/sensors can then receive it via their `modulators` list.
-- `neuromodulator_color` — hex color (`#RRGGBB`) used to draw the transmitter signal in the network visualizer. Only meaningful when `neuromodulator_transmitter` is set.
-- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral). Multiplies the sensor output by `1 + Σ (scale × signal)`. The `site` field is accepted but unused (no activation function to gate).
-  - `scale > 0` → excitatory; `scale < 0` → inhibitory.
+The output above feeds this sensor's neuron stage — a `LeakyLayer` with its own `bias`, `scale`, `activation`, `tau_rise`/`tau_decay`, noise and `output_mode`, pass-through by default. Connections drawn onto the sensor are summed into it, and its result is what the rest of the network reads.
+
+- `modulators` — receptor rows `(name, scale, site, mode)`, acting on the neuron stage: `site="pre"` multiplies its input (sensor output + connections) by `1 + Σ scale × signal`; `site="post"` multiplies its output.
+- `neuromodulator_transmitter` / `neuromodulator_color` — publish the neuron stage's mean output to the neuromodulator bus.
 """
 
     viz_type = 'mouth'
@@ -954,6 +1036,7 @@ $$\\tau = \\begin{cases}\\tau_{rise} & s_{\\text{target}} > s \\\\ \\tau_{decay}
         ]
 
     def reset(self):
+        super().reset()
         self._state = float(self.start_val)
         self._prev_output = None
         self._integral = None
@@ -1040,10 +1123,12 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
 
 ---
 
-**Neuromodulation:**
+**Neuron stage** (Neuron tab of the dialog):
 
-- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral). Multiplies the sensor output each tick by `1 + Σ (scale × signal)`. The `site` field is accepted but not used — all modulators contribute a single gain.
-  - `scale > 0` → excitatory (boosts sensitivity); `scale < 0` → inhibitory.
+The output above feeds this sensor's neuron stage — a `LeakyLayer` with its own `bias`, `scale`, `activation`, `tau_rise`/`tau_decay`, noise and `output_mode`, pass-through by default. Connections drawn onto the sensor are summed into it, and its result is what the rest of the network reads.
+
+- `modulators` — receptor rows `(name, scale, site, mode)`, acting on the neuron stage: `site="pre"` multiplies its input (sensor output + connections) by `1 + Σ scale × signal`; `site="post"` multiplies its output.
+- `neuromodulator_transmitter` / `neuromodulator_color` — publish the neuron stage's mean output to the neuromodulator bus.
 """
 
     _viz_color = '#AADDFF'
@@ -1080,6 +1165,7 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
         ]
 
     def reset(self):
+        super().reset()
         self._x = None
         self._prev_output = None
         self._integral = None
@@ -1157,6 +1243,13 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
 4. apply `output_mode` transform to `u` — derivative/integral (if not `none`)
 5. `x = leaky(u)` — asymmetric τ_rise/τ_decay integration (instant on whichever side is unset; passthrough only if neither τ is set)
 6. `output = activation(x) × scale`
+
+**Neuron stage** (Neuron tab of the dialog):
+
+The output above feeds this sensor's neuron stage — a `LeakyLayer` with its own `bias`, `scale`, `activation`, `tau_rise`/`tau_decay`, noise and `output_mode`, pass-through by default. Connections drawn onto the sensor are summed into it, and its result is what the rest of the network reads.
+
+- `modulators` — receptor rows `(name, scale, site, mode)`, acting on the neuron stage: `site="pre"` multiplies its input (sensor output + connections) by `1 + Σ scale × signal`; `site="post"` multiplies its output.
+- `neuromodulator_transmitter` / `neuromodulator_color` — publish the neuron stage's mean output to the neuromodulator bus.
 """
 
     _viz_color = '#DDCC55'
@@ -1203,6 +1296,7 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
         return ox, oy, ray_th
 
     def reset(self):
+        super().reset()
         self._contact_dist = None
         self._x = None
         self._prev_output = None
@@ -1313,10 +1407,12 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
 
 ---
 
-**Neuromodulation:**
+**Neuron stage** (Neuron tab of the dialog):
 
-- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral). Multiplies the sensor output each tick by `1 + Σ (scale × signal)`. The `site` field is accepted but not used — all modulators contribute a single gain.
-  - `scale > 0` → excitatory (boosts sensitivity); `scale < 0` → inhibitory.
+The output above feeds this sensor's neuron stage — a `LeakyLayer` with its own `bias`, `scale`, `activation`, `tau_rise`/`tau_decay`, noise and `output_mode`, pass-through by default. Connections drawn onto the sensor are summed into it, and its result is what the rest of the network reads.
+
+- `modulators` — receptor rows `(name, scale, site, mode)`, acting on the neuron stage: `site="pre"` multiplies its input (sensor output + connections) by `1 + Σ scale × signal`; `site="post"` multiplies its output.
+- `neuromodulator_transmitter` / `neuromodulator_color` — publish the neuron stage's mean output to the neuromodulator bus.
 """
 
     _viz_color = '#FFDD88'
@@ -1356,6 +1452,7 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
         ]
 
     def reset(self):
+        super().reset()
         self._x           = None
         self._noise_buf   = None
         self._last_output = np.zeros(self.n)
@@ -1419,10 +1516,12 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
 
 ---
 
-**Neuromodulation:**
+**Neuron stage** (Neuron tab of the dialog):
 
-- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute / derivative / integral). Multiplies the sensor output each tick by `1 + Σ (scale × signal)`. The `site` field is accepted but not used — all modulators contribute a single gain.
-  - `scale > 0` → excitatory (boosts sensitivity); `scale < 0` → inhibitory.
+The output above feeds this sensor's neuron stage — a `LeakyLayer` with its own `bias`, `scale`, `activation`, `tau_rise`/`tau_decay`, noise and `output_mode`, pass-through by default. Connections drawn onto the sensor are summed into it, and its result is what the rest of the network reads.
+
+- `modulators` — receptor rows `(name, scale, site, mode)`, acting on the neuron stage: `site="pre"` multiplies its input (sensor output + connections) by `1 + Σ scale × signal`; `site="post"` multiplies its output.
+- `neuromodulator_transmitter` / `neuromodulator_color` — publish the neuron stage's mean output to the neuromodulator bus.
 """
 
     _viz_color = '#C8A0FF'
@@ -1459,6 +1558,7 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
         ]
 
     def reset(self):
+        super().reset()
         self._x     = None
         self._phase = 0.0
         self._prev_output = None
@@ -1527,16 +1627,12 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
 
 ---
 
-**Neuromodulation:**
+**Neuron stage** (Neuron tab of the dialog):
 
-- `neuromodulator_transmitter` — if set, publishes this sensor's output to the
-  neuromodulator bus under this name (e.g. `"dopamine"`) — the natural way to
-  wire a faked reward key straight into a `ThreeFactorLayer`'s reward gate.
-- `neuromodulator_color` — hex color for this transmitter in the visualizer.
-- `modulators` — list of `(name, scale, site, mode)` rows (`mode`: absolute /
-  derivative / integral). Multiplies the sensor output each tick by
-  `1 + Σ (scale × signal)`. The `site` field is accepted but not used.
-  - `scale > 0` → excitatory (boosts sensitivity); `scale < 0` → inhibitory.
+The output above feeds this sensor's neuron stage — a `LeakyLayer` with its own `bias`, `scale`, `activation`, `tau_rise`/`tau_decay`, noise and `output_mode`, pass-through by default. Connections drawn onto the sensor are summed into it, and its result is what the rest of the network reads.
+
+- `modulators` — receptor rows `(name, scale, site, mode)`, acting on the neuron stage: `site="pre"` multiplies its input (sensor output + connections) by `1 + Σ scale × signal`; `site="post"` multiplies its output.
+- `neuromodulator_transmitter` / `neuromodulator_color` — publish the neuron stage's mean output to the neuromodulator bus.
 """
 
     _viz_color = '#FFD866'
@@ -1574,6 +1670,7 @@ $$\\text{output} = f(x) \\times \\text{scale} \\quad (\\text{or}\\ f(u) \\times 
         ]
 
     def reset(self):
+        super().reset()
         self._x     = None
         self._prev_output = None
         self._integral = None
@@ -1766,6 +1863,13 @@ Each half connects to its own `Conv2dLayer` (`_L` / `_R` pair).
 8. per-pixel `output = leaky(u)` (if `tau_rise`/`tau_decay` set; else `output = u`) — this sensor's `bias`/`scale`/`activation` aren't exposed as parameters and are fixed at `0` / `1` / `linear`, so they have no effect
 
 - `vertical_angle` — camera tilt in degrees. Positive = tilted down toward ground, negative = tilted up. At 90° the camera looks straight down at the floor.
+
+**Neuron stage** (Neuron tab of the dialog):
+
+The output above feeds this sensor's neuron stage — a `LeakyLayer` with its own `bias`, `scale`, `activation`, `tau_rise`/`tau_decay`, noise and `output_mode`, pass-through by default. Connections drawn onto the sensor are summed into it, and its result is what the rest of the network reads.
+
+- `modulators` — receptor rows `(name, scale, site, mode)`, acting on the neuron stage: `site="pre"` multiplies its input (sensor output + connections) by `1 + Σ scale × signal`; `site="post"` multiplies its output.
+- `neuromodulator_transmitter` / `neuromodulator_color` — publish the neuron stage's mean output to the neuromodulator bus.
 """
 
     in_ch = 1
@@ -1811,6 +1915,13 @@ Unlike `GrayCameraSensor`, the plain (`lateralized=False`) `output` here is alre
 7. per-pixel `output = leaky(u)` (if `tau_rise`/`tau_decay` set; else `output = u`) — this sensor's `bias`/`scale`/`activation` aren't exposed as parameters and are fixed at `0` / `1` / `linear`, so they have no effect
 
 - `vertical_angle` — camera tilt in degrees. Positive = tilted down toward ground, negative = tilted up. At 90° the camera looks straight down at the floor.
+
+**Neuron stage** (Neuron tab of the dialog):
+
+The output above feeds this sensor's neuron stage — a `LeakyLayer` with its own `bias`, `scale`, `activation`, `tau_rise`/`tau_decay`, noise and `output_mode`, pass-through by default. Connections drawn onto the sensor are summed into it, and its result is what the rest of the network reads.
+
+- `modulators` — receptor rows `(name, scale, site, mode)`, acting on the neuron stage: `site="pre"` multiplies its input (sensor output + connections) by `1 + Σ scale × signal`; `site="post"` multiplies its output.
+- `neuromodulator_transmitter` / `neuromodulator_color` — publish the neuron stage's mean output to the neuromodulator bus.
 """
 
     in_ch = 3

@@ -3,7 +3,7 @@ headless.py — run a saved session without the GUI.
 
 From simulation/2d/:
 
-    python src/headless.py "configs/Tutorials/T03 - ColisionSession.json" --seconds 60 --out run.csv
+    python src/headless.py "configs/Demos/D03 - ColisionSession.json" --seconds 60 --out run.csv
     python src/headless.py <session> --seconds 60 --seed 1          # repeatable run
 
 Every agent is driven by its own brain (no keyboard / network). The CSV has
@@ -92,7 +92,7 @@ def run(session_path, seconds, seed=None, out=None, on_step=None):
 def main(argv=None):
     import argparse
     ap = argparse.ArgumentParser(description='Run a simulator session without the GUI.')
-    ap.add_argument('session', help='session JSON (e.g. configs/Tutorials/T03 - ColisionSession.json)')
+    ap.add_argument('session', help='session JSON (e.g. configs/Demos/D03 - ColisionSession.json)')
     ap.add_argument('--seconds', type=float, required=True, help='simulated seconds to run')
     ap.add_argument('--seed', type=int, default=None, help='random seed for a repeatable run')
     ap.add_argument('--out', default=None, help='CSV file for per-agent values of every step')

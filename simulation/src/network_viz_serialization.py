@@ -88,7 +88,7 @@ class NetworkPersistence:
         except Exception as e:
             QMessageBox.critical(self.win, 'Save', f'Cannot determine brain source file:\n{e}')
             return
-        if data_paths.is_builtin(src_file):
+        if data_paths.is_read_only(src_file):
             QMessageBox.information(
                 self.win, 'Save',
                 f'{os.path.basename(src_file)} ships with the simulator and is read-only.\n'
@@ -117,46 +117,45 @@ class NetworkPersistence:
 
     def _save_network_json(self):
         from brain_serializer import save_network_file
-        from PySide6.QtWidgets import QDialog, QFormLayout, QComboBox, QLineEdit, QDialogButtonBox, QPushButton, QHBoxLayout, QInputDialog
+        from PySide6.QtWidgets import QDialog, QFormLayout, QComboBox, QLineEdit, QDialogButtonBox, QPushButton, QHBoxLayout, QInputDialog, QLabel
         current = getattr(self.win.gui.brain, 'network_file', '') or ''
         project = getattr(self.win.gui.brain, 'network_project', '')
 
-        # ── Saving always goes to the user's networks/ — built-in ones are
-        # read-only. A built-in network's folder is offered there by name.
-        nets_root = data_paths.user_path('networks')
-        subdirs = [''] + data_paths.user_subdirs('networks')
-        project = (project or '')
-        if project.startswith(data_paths.BUILTIN):
-            project = project[len(data_paths.BUILTIN):]
-        if project and project not in subdirs:
-            subdirs = sorted(subdirs + [project])
+        # Folders as data_paths.save_folders: the user's, plus the simulator's
+        # own in the development copy.
+        top = '(My Networks)'
+        entries, current_idx = data_paths.save_folders('networks', project, top)
 
         dlg = QDialog(self.win)
         dlg.setWindowTitle('Save Network')
         form = QFormLayout(dlg)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
+        note = QLabel()
+        note.setWordWrap(True)
+        note.setStyleSheet('font-style:italic;')
+        form.addRow(note)
+
         dir_row = QHBoxLayout()
         dir_combo = QComboBox()
-        dir_combo.addItems([d if d else '(My Networks)' for d in subdirs])
-        current_idx = subdirs.index(project) if project in subdirs else 0
+        for label, key in entries:
+            dir_combo.addItem(label, key)
+        dir_combo.currentIndexChanged.connect(
+            lambda _i: note.setText(data_paths.save_note(dir_combo.currentData())))
         dir_combo.setCurrentIndex(current_idx)
+        note.setText(data_paths.save_note(dir_combo.currentData()))
         btn_new_dir = QPushButton('+')
         btn_new_dir.setFixedWidth(24)
-        btn_new_dir.setToolTip('Create new subdirectory')
+        btn_new_dir.setToolTip('Create a new folder in your files')
         def _new_dir():
             name_d, ok = QInputDialog.getText(dlg, 'New directory', 'Directory name:')
             if not ok or not name_d.strip():
                 return
             name_d = name_d.strip()
-            os.makedirs(os.path.join(nets_root, name_d), exist_ok=True)
-            if name_d not in subdirs:
-                subdirs.append(name_d)
-                subdirs.sort()
-                subdirs_display = [d if d else '(My Networks)' for d in subdirs]
-                dir_combo.clear()
-                dir_combo.addItems(subdirs_display)
-            dir_combo.setCurrentIndex(subdirs.index(name_d))
+            data_paths.user_path('networks', name_d).mkdir(parents=True, exist_ok=True)
+            if dir_combo.findData(name_d) < 0:
+                dir_combo.addItem(name_d, name_d)
+            dir_combo.setCurrentIndex(dir_combo.findData(name_d))
         btn_new_dir.clicked.connect(_new_dir)
         dir_row.addWidget(dir_combo, 1)
         dir_row.addWidget(btn_new_dir)
@@ -174,14 +173,14 @@ class NetworkPersistence:
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
 
-        chosen_project = subdirs[dir_combo.currentIndex()]
+        chosen_project = dir_combo.currentData() or ''
         name = name_edit.text().strip()
         if not name:
             return
         if not name.endswith('.json'):
             name += '.json'
 
-        net_dir = os.path.join(nets_root, chosen_project) if chosen_project else nets_root
+        net_dir = data_paths.folder_for('networks', chosen_project)
         os.makedirs(net_dir, exist_ok=True)
         path = os.path.abspath(os.path.join(net_dir, name))
         try:

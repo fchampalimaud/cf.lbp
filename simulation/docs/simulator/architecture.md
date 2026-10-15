@@ -80,7 +80,7 @@ The simulated world doesn't need the window. `Simulation` (`simulation.py`) hold
 
 ```bash
 # from simulation/2d/
-python src/headless.py "configs/Tutorials/T03 - ColisionSession.json" --seconds 60 --seed 1 --out run.csv
+python src/headless.py "configs/Demos/D03 - ColisionSession.json" --seconds 60 --seed 1 --out run.csv
 ```
 
 The CSV has one row per creature per step (position, motor commands, sensor readings). With the same `--seed`, a run is exactly repeatable, and it gives the same result as running the session in the app. Every creature is driven by its own brain — there is no keyboard or network in a headless run. See [Headless Runs](headless.md) for options, the CSV format and scripting experiments in Python.

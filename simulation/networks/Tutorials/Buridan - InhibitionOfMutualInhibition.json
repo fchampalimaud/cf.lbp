@@ -1,0 +1,394 @@
+{
+  "version": 1,
+  "saved_with_app_version": "0.17.2",
+  "motor_layer": "motor",
+  "hidden_cols": [],
+  "disabled_cols": [],
+  "container_labels": {},
+  "container_notes": {},
+  "sensors": [
+    {
+      "type": "GradientSensor",
+      "name": "light",
+      "n": 2,
+      "angle_spread_deg": 30.0,
+      "center_angle_deg": 0.0,
+      "dist": 0.12,
+      "color_channel": "",
+      "gradient": "A",
+      "scale": 15.0,
+      "bias": 0.0,
+      "tau_rise": 0.0,
+      "tau_decay": 0.0,
+      "activation": "linear",
+      "output_mode": "none",
+      "noise_std": 1e-05,
+      "noise_tau": 0.0,
+      "robot_address": ""
+    }
+  ],
+  "layers": [
+    {
+      "type": "MotorLayer",
+      "name": "motor",
+      "layer": 2,
+      "activation": "linear",
+      "n": 2,
+      "scale": 1.0,
+      "alpha": 1.0,
+      "robot_address": "",
+      "viz_row": 1
+    },
+    {
+      "type": "ConstantLayer",
+      "name": "layer1",
+      "layer": 2,
+      "value": 50.0,
+      "n": 2,
+      "noise_std": 0.0,
+      "viz_row": 0
+    },
+    {
+      "type": "AdaptiveLayer",
+      "name": "layer2",
+      "layer": 1,
+      "tau_rise": 0.1,
+      "tau_decay": 0.1,
+      "tau_a": 0.0,
+      "beta": 0.0,
+      "w": 1.0,
+      "bias": 0.0,
+      "activation": "relu",
+      "noise_std": 0.0,
+      "noise_tau": 0.0,
+      "scale": 1.0,
+      "n": 2,
+      "x0": 0.0,
+      "output_mode": "none",
+      "alpha": 1.0,
+      "viz_row": 0
+    }
+  ],
+  "connections": [
+    {
+      "src": "layer1",
+      "tgt": "motor",
+      "W": [
+        [
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "init_W": [
+        [
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "params": {
+        "cosine": {
+          "amp": 1.0,
+          "bias": 0.0,
+          "ph0": 0.0,
+          "step": 180.0
+        },
+        "expression": {
+          "code": ""
+        },
+        "gaussian": {
+          "amp": 1.0,
+          "base": 0.0,
+          "off": 0.0,
+          "sig": 0.2
+        },
+        "manual": {
+          "scale": 1.0
+        },
+        "mexican_hat": {
+          "exc": 2.0,
+          "inh": 1.0,
+          "sige": 0.7,
+          "sigi": 1.5
+        },
+        "one_to_one": {
+          "amp": 1.0,
+          "off": 0
+        },
+        "rand_normal": {
+          "std": 0.1
+        },
+        "rand_uniform": {
+          "amp": 1.0
+        },
+        "type": 8,
+        "uniform": {
+          "amp": 1.0
+        }
+      }
+    },
+    {
+      "src": "light",
+      "tgt": "layer2",
+      "W": [
+        [
+          0.0,
+          1.0
+        ],
+        [
+          1.0,
+          0.0
+        ]
+      ],
+      "init_W": [
+        [
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "params": {
+        "cosine": {
+          "amp": 1.0,
+          "bias": 0.0,
+          "ph0": 0.0,
+          "step": 180.0
+        },
+        "expression": {
+          "code": ""
+        },
+        "gaussian": {
+          "amp": 1.0,
+          "base": 0.0,
+          "off": 0.0,
+          "sig": 0.2
+        },
+        "manual": {
+          "scale": 1.0
+        },
+        "mexican_hat": {
+          "exc": 2.0,
+          "inh": 1.0,
+          "sige": 0.7,
+          "sigi": 1.5
+        },
+        "one_to_one": {
+          "amp": 1.0,
+          "off": 0
+        },
+        "rand_normal": {
+          "std": 0.1
+        },
+        "rand_uniform": {
+          "amp": 1.0
+        },
+        "type": 8,
+        "uniform": {
+          "amp": 1.0
+        }
+      }
+    },
+    {
+      "src": "layer2",
+      "tgt": "motor",
+      "W": [
+        [
+          0.0,
+          -1.0
+        ],
+        [
+          -1.0,
+          0.0
+        ]
+      ],
+      "init_W": [
+        [
+          -1.0,
+          0.0
+        ],
+        [
+          0.0,
+          -1.0
+        ]
+      ],
+      "params": {
+        "cosine": {
+          "amp": 1.0,
+          "bias": 0.0,
+          "ph0": 0.0,
+          "step": 180.0
+        },
+        "expression": {
+          "code": ""
+        },
+        "gaussian": {
+          "amp": 1.0,
+          "base": 0.0,
+          "off": 0.0,
+          "sig": 0.2
+        },
+        "manual": {
+          "scale": 1.0
+        },
+        "mexican_hat": {
+          "exc": 2.0,
+          "inh": 1.0,
+          "sige": 0.7,
+          "sigi": 1.5
+        },
+        "one_to_one": {
+          "amp": 1.0,
+          "off": 0
+        },
+        "rand_normal": {
+          "std": 0.1
+        },
+        "rand_uniform": {
+          "amp": 1.0
+        },
+        "type": 8,
+        "uniform": {
+          "amp": 1.0
+        }
+      }
+    },
+    {
+      "src": "light",
+      "tgt": "motor",
+      "W": [
+        [
+          0.0,
+          1.0
+        ],
+        [
+          1.0,
+          0.0
+        ]
+      ],
+      "init_W": [
+        [
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "params": {
+        "cosine": {
+          "amp": 1.0,
+          "bias": 0.0,
+          "ph0": 0.0,
+          "step": 180.0
+        },
+        "expression": {
+          "code": ""
+        },
+        "gaussian": {
+          "amp": 1.0,
+          "base": 0.0,
+          "off": 0.0,
+          "sig": 0.2
+        },
+        "manual": {
+          "scale": 1.0
+        },
+        "mexican_hat": {
+          "exc": 2.0,
+          "inh": 1.0,
+          "sige": 0.7,
+          "sigi": 1.5
+        },
+        "one_to_one": {
+          "amp": 1.0,
+          "off": 0
+        },
+        "rand_normal": {
+          "std": 0.1
+        },
+        "rand_uniform": {
+          "amp": 1.0
+        },
+        "type": 8,
+        "uniform": {
+          "amp": 1.0
+        }
+      }
+    },
+    {
+      "src": "layer2",
+      "tgt": "light",
+      "W": [
+        [
+          -0.05,
+          0.0
+        ],
+        [
+          0.0,
+          -0.05
+        ]
+      ],
+      "init_W": [
+        [
+          0.0,
+          -1.0
+        ],
+        [
+          -1.0,
+          0.0
+        ]
+      ],
+      "params": {
+        "type": 8,
+        "uniform": {
+          "amp": 1.0
+        },
+        "cosine": {
+          "amp": 1.0,
+          "ph0": 0.0,
+          "step": 180.0,
+          "bias": 0.0
+        },
+        "gaussian": {
+          "amp": 1.0,
+          "sig": 0.2,
+          "off": 0.0,
+          "base": 0.0
+        },
+        "mexican_hat": {
+          "exc": 2.0,
+          "sige": 0.7,
+          "inh": 1.0,
+          "sigi": 1.5
+        },
+        "one_to_one": {
+          "amp": 1.0,
+          "off": 0
+        },
+        "rand_uniform": {
+          "amp": 1.0
+        },
+        "rand_normal": {
+          "std": 0.1
+        },
+        "expression": {
+          "code": ""
+        },
+        "manual": {
+          "scale": 1.0
+        }
+      }
+    }
+  ]
+}

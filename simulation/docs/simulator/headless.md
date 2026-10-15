@@ -21,13 +21,13 @@ A headless run uses exactly the same simulation as the app: the same session giv
 ## Running a session
 
 ```bash
-python src/headless.py "configs/Tutorials/T03 - ColisionSession.json" --seconds 60
+python src/headless.py "configs/Demos/D03 - ColisionSession.json" --seconds 60
 ```
 
 When it finishes it prints a short summary — how many steps ran and where each agent ended up:
 
 ```
-T03 - ColisionSession.json: 6000 steps, 60.00 s simulated, 1 agent(s)
+D03 - ColisionSession.json: 6000 steps, 60.00 s simulated, 1 agent(s)
   agent 0: x=1.284 y=-0.412 theta=2.031
 ```
 

@@ -94,7 +94,7 @@ Each group runs either a **Code brain** — a Python class from `brains/` — or
 
 ### ⬡ Open visualizer { #network-viz }
 
-*Network mode.* Opens the network editor window, which shows the circuit's layers and connections as an interactive graph. It is always editable: drag chips from the palette on the left (**Palette** shows / hides it) to add sensors and layers, drag a node onto another to connect them, Alt+drag to move a node, double-click for its properties, right-click for everything else (weights, mute, remove, oscilloscope, activation / weight panels). Click a node to select it and highlight its connections; drag empty space to pan. Changes take effect immediately without reloading, and **Undo** / Ctrl+Z reverts any edit. **🔒 Lock** stops moving, connecting, adding and removing — properties and the view options still work. The `motor` layer drives the wheels: every network has one (a file without it gets one on load), and it can't be removed or renamed, nor its size changed. There is one visualizer; it follows the selected group, and its title names the group and file.
+*Network mode.* Opens the network editor window, which shows the circuit's layers and connections as an interactive graph. It is always editable: drag chips from the palette on the left (**Palette** shows / hides it) to add sensors and layers, drag a node onto another to connect them, Alt+drag to move a node, double-click for its properties (a sensor's has two tabs, **Sensor** and **Neuron** — see [Neuron stage](sensors/index.md#neuron-stage)), right-click for everything else (weights, mute, remove, oscilloscope, activation / weight panels). Click a node to select it and highlight its connections; drag empty space to pan. Changes take effect immediately without reloading, and **Undo** / Ctrl+Z reverts any edit. **🔒 Lock** stops moving, connecting, adding and removing — properties and the view options still work. The `motor` layer drives the wheels: every network has one (a file without it gets one on load), and it can't be removed or renamed, nor its size changed. There is one visualizer; it follows the selected group, and its title names the group and file.
 
 ### Brain Parameters { #brain-parameters }
 
@@ -107,11 +107,13 @@ Auto-generated from the brain's [`Param`](coding-brains.md#creating-your-brain-f
 ### World file { #world-file }
 
 Saves and loads the arena state — gradient patches, objects, walls, sky, arena shape, and
-floor texture — independently of any session or brain, the same way brains are stored as
-files in `brains/`. World files are stored as flat JSON in `worlds/` — built-in ones and those in [your files folder](#my-files).
+floor texture — independently of any session or brain. World files are stored as JSON in
+`worlds/`, organized into folders the same way as [sessions](#session-tab) and
+[networks](#network-viz) — built-in ones and those in [your files folder](#my-files).
 
-**World dropdown** — lists all saved worlds; selecting one loads it immediately.
-**Save** — prompts for a name and writes the current arena state to `worlds/<name>.json` in your files folder.
+**Directory** — first choose **My files** or **🔒 Simulator** (the read-only worlds that ship with the app), then a folder in it (**+** creates one under My files). This picks which folder's worlds the **World** dropdown below shows.
+**World dropdown** — lists the JSON files in the selected directory; selecting one loads it immediately.
+**Save** — opens a **Save World** dialog: pick a directory (**+** creates a new one) and type a **Name**, with a live preview of exactly where the file will land. Saving while a Simulator (built-in) folder is selected writes your copy into the same-named folder in **My files** instead of overwriting the read-only original.
 
 ### Floor { #floor }
 
@@ -179,11 +181,10 @@ The simulator also ships **built-in** sessions and networks (Tutorials, Demos, D
 
 Saves and loads the complete state of the world: gradient patches, objects, arena shape, simulation speed, and the current brain's parameter values. Sessions are stored as JSON files.
 
-**Directory** — first choose **My files** or **🔒 Simulator** (the read-only sessions that ship with the app), then a folder in it: Tutorials or Demos under Simulator; **(top level)** or one of your folders under My files (**+** creates one there).
-**Name** — the filename (without `.json`) for the next save.
-**Save** — writes the current state to the selected folder; the status bar confirms it. With a Simulator folder selected, it saves to the folder of the same name in **My files** instead.
-The app also saves its state to `latest_session.json` in your files folder when it closes and reopens from it next time.
-**Load** — the drop-down lists all saved configs; selecting one loads it immediately.
+**Directory** — first choose **My files** or **🔒 Simulator** (the read-only sessions that ship with the app), then a folder in it: Tutorials or Demos under Simulator; **(top level)** or one of your folders under My files (**+** creates one there). This picks which folder's sessions the **Load** list below shows — it doesn't by itself save anything.
+**Load** — the drop-down lists every saved session in the chosen directory (read-only — it's for picking one to load, not for naming a new one); **Load** opens the selected one immediately.
+**Save** — opens a **Save Session** dialog: pick a directory (**+** creates a new one) and type any **Name** you like in its own text field, with a live preview of exactly where the file will land. Confirm to write it — the status bar shows the path it saved to. Saving while a Simulator (built-in) folder is selected writes your copy into the same-named folder in **My files** instead of overwriting the read-only original.
+The app also saves its state to `latest_session.json` in your files folder when it closes, and reopens from it next time.
 
 ### Task { #task }
 

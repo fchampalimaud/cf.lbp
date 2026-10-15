@@ -172,6 +172,8 @@ def _sensor_to_dict(sensor) -> dict:
             val = getattr(sensor, param_name, None)
             if val is not None or param_name in _always_write:
                 d[param_name] = val
+    if not sensor.neuron_is_passthrough():
+        d['neuron'] = sensor.neuron_params()
     if getattr(sensor, 'modulators', None):
         d['modulators'] = sensor.modulators
     for attr in ('neuromodulator_transmitter', 'neuromodulator_color'):
@@ -188,6 +190,20 @@ def _sensor_to_dict(sensor) -> dict:
     if viz_z:
         d['viz_z'] = viz_z
     return d
+
+
+def _migrate_sensor_modulators(sensor):
+    """Files saved before the neuron stage applied a sensor's 'pre' modulators
+    inside its own activation: activation(x · gain) · scale. Modulators now act
+    on the neuron stage, after the sensor's output — so move the activation and
+    scale there, which reproduces the old result exactly."""
+    from sensors import make_neuron_stage
+    has_pre = any(len(r) > 2 and r[2] == 'pre' for r in (getattr(sensor, 'modulators', None) or []))
+    if not has_pre or getattr(sensor, 'activation', 'linear') == 'linear':
+        return
+    sensor.neuron = make_neuron_stage(activation=sensor.activation, scale=sensor.scale)
+    sensor.activation = 'linear'
+    sensor.scale = 1.0
 
 
 def _sensor_from_dict(d: dict):
@@ -232,7 +248,13 @@ def _sensor_from_dict(d: dict):
     body_id  = kw.pop('body_id', 'root')   # backward compat with old JSON
     neuromod_transmitter = kw.pop('neuromodulator_transmitter', None)
     neuromod_color       = kw.pop('neuromodulator_color', None)
+    neuron               = kw.pop('neuron', None)
     sensor = cls(**kw)
+    if neuron is not None:
+        from sensors import make_neuron_stage
+        sensor.neuron = make_neuron_stage(**neuron)
+    else:
+        _migrate_sensor_modulators(sensor)
     if body_ids is not None:
         sensor.body_ids = body_ids
     elif body_id != 'root':
@@ -645,7 +667,7 @@ def check_network_freshness(data: dict, sensors, layers) -> list:
         'type', 'name', 'color', 'layer', 'group', 'modulators',
         'neuromodulator_transmitter', 'neuromodulator_color',
         'body_ids', 'robot_address', 'viz_layer', 'viz_z', 'muted',
-        'y_order', 'viz_row', 'mode', 'lateral_pair',
+        'y_order', 'viz_row', 'mode', 'lateral_pair', 'neuron',
     }
 
     layer_data  = {d['name']: d for d in data.get('layers',  [])}

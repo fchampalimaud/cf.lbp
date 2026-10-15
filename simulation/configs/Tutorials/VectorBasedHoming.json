@@ -1,7 +1,7 @@
 {
-    "saved_with_app_version": "0.7.0",
+    "saved_with_app_version": "0.17.2",
     "mode": "network",
-    "network": "Demos/VectorBasedHomingBrain.json",
+    "network": "builtin:Tutorials/Navigation - VectorBasedHoming.json",
     "sim_params": {
         "dt": 0.01,
         "arena_scale": 4.0,
@@ -11,7 +11,7 @@
         "init_y": 0.0,
         "stim_radius": 0.5,
         "body_radius": 0.1,
-        "sensor_angle": 0.14,
+        "grid_size": 0.5,
         "toggle_stim": 1,
         "fixate_robot": 0.0
     },
@@ -44,11 +44,14 @@
     "arena_round": true,
     "agents": [
         {
-            "mode": "network",
-            "network": "Demos/VectorBasedHomingBrain.json",
             "name": "Blah",
             "color": "#4a7fcb",
-            "n": 1
+            "n": 1,
+            "init_pos": [
+                null
+            ],
+            "mode": "network",
+            "network": "builtin:Tutorials/Navigation - VectorBasedHoming.json"
         }
     ]
 }

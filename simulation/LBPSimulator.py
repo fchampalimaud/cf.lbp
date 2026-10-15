@@ -146,7 +146,6 @@ from brain_manager import BrainManager
 from sim_config import SimConfig
 from world import World
 from session_io import save_session, load_session
-from world_serializer import discover_worlds, save_world_file, load_world_file
 
 from arena_widget import ArenaViewBox, RobotItem, ChildBodyItem, CircleItem
 from sim_widgets import MonetarySpinBox, _ManualKeyFilter, _ArrowKeyFilter, _CueKeyFilter
@@ -264,6 +263,7 @@ class SimulatorApp(_UiBuilderMixin, _BrainMixin, _SessionMixin, _AgentsMixin,
         # ── Populate combos and auto-load ─────────────────────────────────────
         self._refresh_brain_list()
         self._refresh_session_dirs()
+        self._refresh_world_dirs()
         if self._load_latest_session():
             pass
         elif self._session_combo.count() > 0:
