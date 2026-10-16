@@ -57,7 +57,7 @@ class _RobotMixin:
         self._robot_hz_labels.clear()
         self._robot_motor_hz_labels.clear()
 
-        circuit = getattr(self._sim_ctrl, 'circuit', None)
+        circuit = getattr(self._sim_ctrl.registry, 'circuit', None)
         if circuit is None:
             return
 
@@ -149,7 +149,7 @@ class _RobotMixin:
         if self._robot_hz_labels and stale_count == len(self._robot_hz_labels):
             self._robot_status_lbl.setText("● No data from robot")
             self._robot_status_lbl.setStyleSheet("color: #cc3333; font-weight: bold;")
-        else:
+        elif self._sim_ctrl.robot.enabled:
             self._robot_status_lbl.setText("● Online")
             self._robot_status_lbl.setStyleSheet("color: green; font-weight: bold;")
 

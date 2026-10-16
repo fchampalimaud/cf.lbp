@@ -54,6 +54,7 @@ class WorldEditor:
         self._hover_pos      = (0.0, 0.0)
         self._pending_mount  = None   # agent id (RobotAgent.id) if current drag will mount a gradient
         self._alt_moving     = False  # True for the duration of an Alt-drag reposition started outside Move mode
+        self._shift_moving   = False  # True for the duration of a Shift-drag reposition started outside Move mode
         self._ctrl_duplicating = False  # True for the duration of a Ctrl-drag duplicate
 
     # ── Public mode setters (called by main window button handlers) ───────────
@@ -108,18 +109,22 @@ class WorldEditor:
     def handle_drag(self, x, y, is_start, is_finish):
         if is_start:
             mods = QApplication.keyboardModifiers()
-            hit_kind = self._find_drag_item(x, y)[0] if mods & (Qt.AltModifier | Qt.ControlModifier) else None
+            hit_kind = self._find_drag_item(x, y)[0] if mods & (Qt.AltModifier | Qt.ControlModifier | Qt.ShiftModifier) else None
             self._ctrl_duplicating = bool(mods & Qt.ControlModifier) and hit_kind in ('patch', 'object')
             self._alt_moving = (not self._ctrl_duplicating and self.draw_mode != 'move'
                                  and bool(mods & Qt.AltModifier) and hit_kind is not None)
+            self._shift_moving = (not self._ctrl_duplicating and not self._alt_moving
+                                   and self.draw_mode != 'move'
+                                   and bool(mods & Qt.ShiftModifier) and hit_kind in ('patch', 'object'))
         if self._ctrl_duplicating:
             self._drag_duplicate(x, y, is_start, is_finish)
             if is_finish:
                 self._ctrl_duplicating = False
-        elif self.draw_mode == 'move' or self._alt_moving:
+        elif self.draw_mode == 'move' or self._alt_moving or self._shift_moving:
             self._drag_move(x, y, is_start, is_finish)
             if is_finish:
                 self._alt_moving = False
+                self._shift_moving = False
         elif self.draw_mode == 'sky':
             self._drag_sky(x, y, is_start, is_finish)
         elif self.draw_mode == 'wall_paint':

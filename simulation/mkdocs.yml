@@ -92,7 +92,7 @@ nav:
     - Architecture: simulator/architecture.md
     - Class Reference: simulator/reference.md
     - Unit Tests: simulator/tests.md
-  # - Real Robot: simulator/real-robot.md
+  - Real Robot: simulator/real-robot.md
 
 extra_css:
   - extra.css

@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 200" width="520" height="200">
+  <rect width="520" height="200" fill="none"/>
+
+  <!-- Neural network box -->
+  <rect x="20" y="20" width="160" height="160" rx="6" fill="#4888aa" fill-opacity="0.25" stroke="#4888aa" stroke-width="1.8"/>
+  <text x="100" y="13" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="bold" fill="#cdd6f4">Neural Network</text>
+
+  <!-- Sensor nodes -->
+  <rect x="35" y="38" width="130" height="28" rx="4" fill="#4888aa" fill-opacity="0.35" stroke="#4888aa" stroke-width="1.2"/>
+  <text x="100" y="57" text-anchor="middle" font-family="Inter, sans-serif" font-size="10" fill="#cdd6f4">CollisionSensor</text>
+
+  <rect x="35" y="80" width="130" height="28" rx="4" fill="#4888aa" fill-opacity="0.35" stroke="#4888aa" stroke-width="1.2"/>
+  <text x="100" y="99" text-anchor="middle" font-family="Inter, sans-serif" font-size="10" fill="#cdd6f4">DistanceSensor</text>
+
+  <rect x="35" y="132" width="130" height="28" rx="4" fill="#4888aa" fill-opacity="0.35" stroke="#4888aa" stroke-width="1.2"/>
+  <text x="100" y="151" text-anchor="middle" font-family="Inter, sans-serif" font-size="10" fill="#cdd6f4">MotorLayer</text>
+
+  <!-- Robot box -->
+  <rect x="340" y="20" width="160" height="160" rx="6" fill="#4888aa" fill-opacity="0.25" stroke="#4888aa" stroke-width="1.8"/>
+  <text x="420" y="13" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="bold" fill="#cdd6f4">Robot (MKR1010)</text>
+
+  <!-- Robot hardware nodes -->
+  <rect x="355" y="38" width="130" height="28" rx="4" fill="#4888aa" fill-opacity="0.35" stroke="#4888aa" stroke-width="1.2"/>
+  <text x="420" y="57" text-anchor="middle" font-family="Inter, sans-serif" font-size="10" fill="#cdd6f4">bumpers</text>
+
+  <rect x="355" y="80" width="130" height="28" rx="4" fill="#4888aa" fill-opacity="0.35" stroke="#4888aa" stroke-width="1.2"/>
+  <text x="420" y="99" text-anchor="middle" font-family="Inter, sans-serif" font-size="10" fill="#cdd6f4">analog sensors</text>
+
+  <rect x="355" y="132" width="130" height="28" rx="4" fill="#4888aa" fill-opacity="0.35" stroke="#4888aa" stroke-width="1.2"/>
+  <text x="420" y="151" text-anchor="middle" font-family="Inter, sans-serif" font-size="10" fill="#cdd6f4">motors</text>
+
+  <!-- Arrow: CollisionSensor ← bumpers -->
+  <line x1="353" y1="52" x2="167" y2="52" stroke="#4888aa" stroke-width="1.6"/>
+  <polygon points="173,48 165,52 173,56" fill="#4888aa"/>
+  <text x="260" y="46" text-anchor="middle" font-family="Inter, sans-serif" font-size="8.5" fill="#cdd6f4">/bumpers</text>
+
+  <!-- Arrow: DistanceSensor ← analogs -->
+  <line x1="353" y1="94" x2="167" y2="94" stroke="#4888aa" stroke-width="1.6"/>
+  <polygon points="173,90 165,94 173,98" fill="#4888aa"/>
+  <text x="260" y="88" text-anchor="middle" font-family="Inter, sans-serif" font-size="8.5" fill="#cdd6f4">/analogs</text>
+
+  <!-- Arrow: MotorLayer → motors -->
+  <line x1="167" y1="146" x2="353" y2="146" stroke="#4888aa" stroke-width="1.6"/>
+  <polygon points="347,142 355,146 347,150" fill="#4888aa"/>
+  <text x="260" y="140" text-anchor="middle" font-family="Inter, sans-serif" font-size="8.5" fill="#cdd6f4">/wheels</text>
+</svg>

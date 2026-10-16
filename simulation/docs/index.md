@@ -28,6 +28,7 @@ everything you make). **To run it again later**, use the Desktop shortcut it cre
 
 ## Where to start
 
+- [Run a demo](simulator/tour.md#sessions) — Sessions tab → **🔒 Simulator** → **Demos**, pick whichever looks interesting, **Load** then **▶ Run**. Confirms everything's working before you build anything yourself.
 - [Tour of the simulator](simulator/tour.md) — every panel, button, and control
 - [Coding Brains](simulator/coding-brains.md) — build your first vehicle in five minutes
 - [Wiring Brains](simulator/wiring-brains.md) — express the same logic as a neural circuit
