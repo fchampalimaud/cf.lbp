@@ -1,0 +1,2743 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Build and run neural-circuit behaviours on a simulated robot">
+      
+      
+      
+      
+        <link rel="prev" href="../second-braitenberg/">
+      
+      
+        <link rel="next" href="../vector-navigation/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/logo.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Surviving in Buridan's World - Little Brain Project Simulator</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../extra.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#surviving-in-buridans-world" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="Little Brain Project Simulator" class="md-header__button md-logo" aria-label="Little Brain Project Simulator" data-md-component="logo">
+      
+  <img src="../../../assets/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Little Brain Project Simulator
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Surviving in Buridan's World
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../.." class="md-tabs__link">
+          
+  
+  
+  Home
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../first-braitenberg/" class="md-tabs__link">
+          
+  
+  
+  Tutorials
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../creating-worlds/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Creating Worlds
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../coding-brains/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Coding Brains
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../wiring-brains/" class="md-tabs__link">
+          
+  
+  
+  Wiring Brains
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../headless/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Headless Runs
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/" class="md-tabs__link">
+          
+  
+  
+  Developer
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../real-robot/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Real Robot
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="Little Brain Project Simulator" class="md-nav__button md-logo" aria-label="Little Brain Project Simulator" data-md-component="logo">
+      
+  <img src="../../../assets/logo.svg" alt="logo">
+
+    </a>
+    Little Brain Project Simulator
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_1" id="__nav_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Home
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tour/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Simulator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorials
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tutorials
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../first-braitenberg/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Braitenberg Vehicle II
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../second-braitenberg/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Braitenberg Vehicle III
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Surviving in Buridan's World
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Surviving in Buridan's World
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#background-a-tie-needs-something-to-break-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Background — a tie needs something to break it
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-1-reopen-your-vehicle-iii-network" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1 — Reopen your Vehicle III network
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-2-give-it-two-identical-choices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2 — Give it two identical choices
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-3-widen-the-steering-wiring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3 — Widen the steering wiring
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-4-run-it-the-tie-that-never-breaks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4 — Run it: the tie that never breaks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-5-insert-a-competing-pair" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 5 — Insert a competing pair
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-6-run-it-watch-it-decide" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 6 — Run it: watch it decide
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-7-let-the-winner-silence-the-other-eye" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 7 — Let the winner silence the other eye
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-8-run-it-deciding-with-less-to-go-on" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 8 — Run it: deciding with less to go on
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 8 — Run it: deciding with less to go on">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-much-noise-does-each-one-need" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How much noise does each one need?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#challenges" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Challenges
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Challenges">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#challenge-1-bump-back-up-turn-away" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Challenge 1 — Bump, back up, turn away
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#challenge-2-take-it-to-the-real-robot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Challenge 2 — Take it to the real robot
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-to-try-next" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What to try next
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../vector-navigation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vector-Based Homing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../creating-worlds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Creating Worlds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../coding-brains/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Coding Brains
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Wiring Brains
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Wiring Brains
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../wiring-brains/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Introduction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_2" id="__nav_5_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sensor types
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Sensor types
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/gradient/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GradientSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/color/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ColorSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/collision/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CollisionSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/distance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DistanceSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/interoceptive/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    InteroceptiveSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/proprioceptive/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ProprioceptiveSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/whisker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WhiskerSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/skycompass/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SkyCompassSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/graycamera/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GrayCameraSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/rgbcamera/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RGBCameraSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_3" id="__nav_5_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neuron types
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Neuron types
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/sum/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SumLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/motor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MotorLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/constant/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ConstantLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/leaky/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LeakyLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/product/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ProductLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/adaptive/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AdaptiveLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/pulse/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PulseLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/sine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SineLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/ring_attractor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RingAttractorLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/conv2d/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Conv2dLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/leaky2d/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Leaky2dLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/reichardt2d/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reichardt2dLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/td/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TDLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/delta/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DeltaLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/three_factor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ThreeFactorLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/snapshot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SnapshotLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/matsuoka/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MatsuokaLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../neuromodulators/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neuromodulators
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../headless/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Headless Runs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Class Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Unit Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../real-robot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Real Robot
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#background-a-tie-needs-something-to-break-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Background — a tie needs something to break it
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-1-reopen-your-vehicle-iii-network" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1 — Reopen your Vehicle III network
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-2-give-it-two-identical-choices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2 — Give it two identical choices
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-3-widen-the-steering-wiring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3 — Widen the steering wiring
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-4-run-it-the-tie-that-never-breaks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4 — Run it: the tie that never breaks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-5-insert-a-competing-pair" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 5 — Insert a competing pair
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-6-run-it-watch-it-decide" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 6 — Run it: watch it decide
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-7-let-the-winner-silence-the-other-eye" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 7 — Let the winner silence the other eye
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-8-run-it-deciding-with-less-to-go-on" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 8 — Run it: deciding with less to go on
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 8 — Run it: deciding with less to go on">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-much-noise-does-each-one-need" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How much noise does each one need?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#challenges" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Challenges
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Challenges">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#challenge-1-bump-back-up-turn-away" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Challenge 1 — Bump, back up, turn away
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#challenge-2-take-it-to-the-real-robot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Challenge 2 — Take it to the real robot
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-to-try-next" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What to try next
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="surviving-in-buridans-world">Surviving in Buridan's World</h1>
+<p><strong>Buridan's ass</strong> is a centuries-old thought experiment: a donkey stands exactly midway between two identical, equally appetizing bales of hay. With no reason to prefer either one, the story goes, it can never decide — and starves to death standing still.</p>
+<p>This tutorial picks up from <strong><a href="../second-braitenberg/">Braitenberg Vehicle III</a></strong> and puts its "love" circuit in exactly that bind: two identical gradient patches, placed as mirror images of each other. You'll see the direct wiring from Vehicle III fail the test outright — it has no way to break a perfect tie. Then you'll build two more vehicles, <strong>Rivalry</strong> and <strong>Discriminator</strong>, each adding one more idea on top of the last to decide with less and less sensor noise to go on.</p>
+<p><strong>What you will build</strong></p>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Add a second, mirrored patch</td>
+<td>Two identical <code>A</code> patches, equidistant from the robot — the two bales of hay</td>
+</tr>
+<tr>
+<td>Widen the steering wiring</td>
+<td>Builds <strong>Waverer</strong>: a direct sensor→motor connection that computes a pure left-vs-right difference</td>
+</tr>
+<tr>
+<td>Watch the tie</td>
+<td>With both patches identical, the difference sits at zero and the robot drives straight between them</td>
+</tr>
+<tr>
+<td>Insert a competing pair</td>
+<td>Builds <strong>Rivalry</strong>: an <code>AdaptiveLayer</code> wired so its two neurons inhibit each other</td>
+</tr>
+<tr>
+<td>Watch it decide</td>
+<td>The competition amplifies the tiniest random imbalance into a committed turn toward one patch</td>
+</tr>
+<tr>
+<td>Let the winner reach back</td>
+<td>Builds <strong>Discriminator</strong>: two new connections that let the winning side suppress the losing eye's own signal, reinforcing the decision from two directions at once</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="background-a-tie-needs-something-to-break-it">Background — a tie needs something to break it</h2>
+<p>Every circuit you've built so far is purely feedforward: a sensor reading flows straight through to a motor command, instantaneously and deterministically. That's fine as long as the world only ever gives the robot one thing to react to. Put two <em>identical</em> things in front of it, symmetric left and right, and a feedforward circuit has nowhere to go — by construction, equal inputs produce equal (or exactly cancelling) outputs, forever.</p>
+<p>Breaking a tie like that needs two ingredients: something that amplifies a small difference instead of just passing it through, and something to seed that difference in the first place. The amplifier is <strong>mutual inhibition</strong> — two neurons that each suppress the other — which turns any momentary edge, however small, into a growing one. The seed is ordinary sensor noise, which this tutorial deliberately leaves switched on.</p>
+<p>Here's the shape of the whole tutorial before you build any of it. <strong>Waverer</strong> reuses Vehicle III's wiring almost unchanged and has no amplifier at all — no amount of sensor noise ever helps it, it just wavers down the middle forever. <strong>Rivalry</strong> adds a pair of mutually-inhibiting neurons: a little sensor noise is now enough to untie the symmetry and force a choice. But turn that noise down and Rivalry takes longer and longer to decide — below some level, it won't commit within any reasonable time at all. That failure is what motivates <strong>Discriminator</strong>: the same competition, but wired so the winning side reaches back and suppresses the losing eye's own signal at its source, not just its rival neuron downstream. That extra feedback reinforces the decision from two directions at once, so it can still resolve a difference at noise levels where Rivalry stalls. Turn the noise down far enough, though, and even Discriminator eventually runs out of signal to work with.</p>
+<hr />
+<h2 id="step-1-reopen-your-vehicle-iii-network">Step 1 — Reopen your Vehicle III network</h2>
+<p>Launch the simulator and reopen the network you built in Vehicle III, with <code>light</code> (a <code>GradientSensor</code>, <code>n=2</code>, <code>gradient='A'</code>) wired for <strong>approach</strong> — <code>cruise</code> (a <code>ConstantLayer</code>, value <code>60</code>) feeding <code>motor</code> directly, and <code>light</code> inhibiting <code>motor</code> same-side (Vehicle III, <a href="../second-braitenberg/#step-5-make-the-sensor-inhibitory">Step 5</a>).</p>
+<div class="admonition note">
+<p class="admonition-title">Skipped Vehicle III?</p>
+<p>Build that starting point first: a <code>GradientSensor</code> named <code>light</code> (<code>n=2</code>, <code>gradient='A'</code>, <code>scale=60</code>), a <code>ConstantLayer</code> named <code>cruise</code> (<code>n=2</code>, <code>value=60</code>) wired to <code>motor</code> with the identity matrix, and <code>light → motor</code> wired same-side with weight <code>−1</code> on the diagonal. See <a href="../second-braitenberg/">Braitenberg Vehicle III</a> for the full build.</p>
+</div>
+<hr />
+<h2 id="step-2-give-it-two-identical-choices">Step 2 — Give it two identical choices</h2>
+<p>Right now there's a single <code>A</code> patch in the world. You're about to give the robot two, placed as exact mirror images of each other.</p>
+<ol>
+<li>Go to the <strong>World</strong> tab. If you don't already have an <code>A</code> patch placed ahead of the robot, place one now (as in Vehicle II/III).</li>
+<li>Hold <strong>Ctrl</strong> and drag the patch — this clones it, the same size and colour, following your cursor while the original stays put.</li>
+<li>Hold <strong>Shift</strong> at the same time to snap both the original and the clone to the grid (set the grid spacing in the Physics tab if you want finer control). Drop the clone so it mirrors the original across the robot's forward axis — if the original sits ahead and to the left, drop the clone the same distance ahead and to the right.</li>
+</ol>
+<p>You should now have two identical <code>A</code> patches, the same distance from the robot, one on each side of the path straight ahead of it — the two bales of hay, equally far and equally appealing.</p>
+<div class="admonition tip">
+<p class="admonition-title">Give it room</p>
+<p>If the arena feels cramped with two patches in it, increase <strong>arena_scale</strong> in the Physics tab so the robot has more distance to react before it reaches either one.</p>
+</div>
+<hr />
+<h2 id="step-3-widen-the-steering-wiring">Step 3 — Widen the steering wiring</h2>
+<p>Vehicle III's same-side inhibitory wiring already produces an approach response, but on its own it leaves a loose end: as the robot nears a patch, <em>both</em> wheels can be slowed by their own-side sensor, so the robot can drift to a stop in the middle rather than just failing to turn. To make this demonstration purely about <em>which way to turn</em> — not also about whether to stop — add a crossed excitatory term on top of the existing same-side one.</p>
+<ol>
+<li>In the network visualizer, right-click the <code>light → motor</code> connection and choose <strong>Edit weight…</strong>.</li>
+<li>
+<p>Switch to <strong>Manual</strong> and enter:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>light_0</code> (left)</th>
+<th><code>light_1</code> (right)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>motor_0</code> (left wheel)</td>
+<td><strong>−1</strong></td>
+<td><strong>+1</strong></td>
+</tr>
+<tr>
+<td><code>motor_1</code> (right wheel)</td>
+<td><strong>+1</strong></td>
+<td><strong>−1</strong></td>
+</tr>
+</tbody>
+</table>
+</li>
+<li>
+<p>Confirm and <strong>Save</strong>.</p>
+</li>
+</ol>
+<p>Writing <code>Δ = light_0 − light_1</code> for the difference between the two eyes, this matrix reduces to <code>left wheel = 60 − Δ</code>, <code>right wheel = 60 + Δ</code>. The two correction terms are now exact opposites, so <code>left + right = 120</code> no matter what <code>Δ</code> is — the robot's overall speed never changes, only how that speed is split between the wheels. It still turns toward whichever side senses more signal, exactly as in Vehicle III, but the turn is now a pure, speed-preserving comparison between left and right.</p>
+<p>This is <strong>Waverer</strong>: a plain comparator, no competition, no memory.</p>
+<hr />
+<h2 id="step-4-run-it-the-tie-that-never-breaks">Step 4 — Run it: the tie that never breaks</h2>
+<p>Press <strong>▶ Run</strong>. With two identical, symmetric patches, <code>light_0</code> and <code>light_1</code> read almost exactly the same value at every moment — <code>Δ</code> sits at (or flickers randomly around) zero. The robot drives essentially straight ahead, passing directly between the two patches without ever committing to either one.</p>
+<div class="admonition note">
+<p class="admonition-title">It still wobbles a little</p>
+<p><code>light</code>'s <code>noise_std</code> (<code>0.05</code>) means <code>Δ</code> never sits at <em>exactly</em> zero — each eye has its own small independent noise, so the robot wobbles slightly left and right as it drives. But the wobble has no memory: the next noisy sample is as likely to push it back the other way. Watch closely and you'll see it never accumulates into an actual turn. This is Buridan's ass, literally — stuck exactly between the two things it might otherwise want. No amount of noise fixes Waverer — see the table at the end of Step 8.</p>
+</div>
+<hr />
+<h2 id="step-5-insert-a-competing-pair">Step 5 — Insert a competing pair</h2>
+<p>To actually break the tie, the circuit needs two things it doesn't have yet: a way to amplify a small difference instead of just reporting it, and persistence, so an early (even noise-driven) lead keeps growing instead of resetting every tick. A pair of mutually-inhibiting neurons gives you both.</p>
+<ol>
+<li>Stop the simulation. Right-click the <code>light → motor</code> connection from Step 3 and delete it — the new circuit routes through a middle layer instead, with no direct shortcut.</li>
+<li>Drag an <strong>AdaptiveLayer</strong> chip onto the canvas, between <code>light</code> and <code>motor</code>. Name it <code>choice</code>, set <code>n = 2</code>.</li>
+<li>In <code>choice</code>'s settings, besides the defaults, set:<ul>
+<li><code>tau_rise</code> → <code>0.1</code>, <code>tau_decay</code> → <code>0.1</code></li>
+<li><code>w</code> → <code>1.0</code> — <strong>this is the one that matters.</strong> It's the only layer type with a built-in cross-inhibition term: each of <code>choice</code>'s two neurons subtracts the <em>other's</em> output from its own input.</li>
+<li><code>beta</code> → <code>0.0</code> — <code>AdaptiveLayer</code> defaults this to <code>1.0</code>, which turns on spike-frequency adaptation (the layer's namesake feature). You don't want that here: set it to <code>0</code> so the only thing <code>choice</code> does is compete, with none of the burst-and-fade behaviour adaptation would add on top.</li>
+</ul>
+</li>
+<li>
+<p>Wire <code>light → choice</code>, same-side only:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>light_0</code> (left)</th>
+<th><code>light_1</code> (right)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>choice_0</code></td>
+<td><strong>+1</strong></td>
+<td>0</td>
+</tr>
+<tr>
+<td><code>choice_1</code></td>
+<td>0</td>
+<td><strong>+1</strong></td>
+</tr>
+</tbody>
+</table>
+</li>
+<li>
+<p>Wire <code>choice → motor</code> — the <em>exact same matrix</em> as Vehicle III's original approach wiring, just one synapse further downstream:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>choice_0</code></th>
+<th><code>choice_1</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>motor_0</code> (left wheel)</td>
+<td><strong>−1</strong></td>
+<td>0</td>
+</tr>
+<tr>
+<td><code>motor_1</code> (right wheel)</td>
+<td>0</td>
+<td><strong>−1</strong></td>
+</tr>
+</tbody>
+</table>
+</li>
+<li>
+<p><strong>Save</strong>.</p>
+</li>
+</ol>
+<p><code>choice_0</code> is excited by the left eye and inhibited by <code>choice_1</code>'s output; <code>choice_1</code> is the mirror image. Whichever one edges ahead — even from noise alone — suppresses the other a little more than it's suppressed back, which lets it edge ahead a little further: a positive feedback loop. Because <code>choice</code>'s activation is <code>relu</code>, the losing neuron is floored at zero rather than going negative, so once it loses, it can't recover — the decision sticks. See <a href="../../layers/adaptive/">AdaptiveLayer</a> for the full dynamics behind the <code>w</code> term.</p>
+<p>This is <strong>Rivalry</strong>: recurrent mutual inhibition, winner-take-all.</p>
+<hr />
+<h2 id="step-6-run-it-watch-it-decide">Step 6 — Run it: watch it decide</h2>
+<p>Press <strong>▶ Run</strong>. Within the first second or so, Rivalry commits to one side and curves firmly toward that patch instead of splitting the difference. Which side it picks is effectively random, seeded by whichever way the sensor noise happened to tip the balance first.</p>
+<p>Open the oscilloscope on <code>choice_0</code> and <code>choice_1</code> while it runs: you'll see both rise together briefly, then rapidly diverge — one heading toward its ceiling, the other clamped at zero. Stop and run it a few more times from the same starting position; it won't always pick the same side.</p>
+<hr />
+<h2 id="step-7-let-the-winner-silence-the-other-eye">Step 7 — Let the winner silence the other eye</h2>
+<p>Rivalry has a weakness: <code>choice</code>'s competition only acts <em>downstream</em> of the two eyes. Whichever side is winning suppresses its rival neuron in <code>choice</code>, but it never touches the losing eye's own reading — <code>light</code> keeps reporting exactly what it senses regardless of how the competition is going. At low noise the competition has very little to work with, and nothing shortens that struggle.</p>
+<p>This step closes the loop: it lets the winning side reach back and suppress the <em>losing eye's own output</em>, not just its rival neuron. No new node is needed — just two new connections on top of the circuit you already built in Step 5.</p>
+<div class="admonition note">
+<p class="admonition-title">Sensors can be connection targets too</p>
+<p>Every sensor has its own <strong>neuron stage</strong> sitting after its raw reading — a small filter that the rest of the network actually reads from. You can draw a connection onto a sensor exactly as onto a layer: it lands in that neuron stage, summed with the sensor's own reading. See <a href="../../sensors/#neuron-stage">Sensors — neuron stage</a> for the full picture. <code>light</code>'s neuron stage is pass-through by default, so you don't need to change any of its settings here — just draw the connection.</p>
+</div>
+<ol>
+<li>
+<p>Wire <code>light → motor</code> directly, <strong>crossed</strong>, on top of the existing <code>cruise → motor</code> and <code>choice → motor</code> connections:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>light_0</code> (left)</th>
+<th><code>light_1</code> (right)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>motor_0</code> (left wheel)</td>
+<td>0</td>
+<td><strong>+1</strong></td>
+</tr>
+<tr>
+<td><code>motor_1</code> (right wheel)</td>
+<td><strong>+1</strong></td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+</li>
+<li>
+<p>Wire <code>choice → light</code>, <strong>crossed</strong>, inhibitory — drag from <code>choice</code> onto <code>light</code> itself:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>choice_0</code></th>
+<th><code>choice_1</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>light_0</code></td>
+<td>0</td>
+<td><strong>−1</strong></td>
+</tr>
+<tr>
+<td><code>light_1</code></td>
+<td><strong>−1</strong></td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+</li>
+<li>
+<p><strong>Save</strong>. Everything from Step 5 — <code>light → choice</code> (same-side), <code>choice → motor</code> (same-side), <code>cruise → motor</code> — stays exactly as it was; this step only adds to the circuit.</p>
+</li>
+</ol>
+<p>Trace what happens once <code>choice_0</code> (the left-eye competitor) starts winning: it suppresses <code>choice_1</code> as before (Rivalry's own competition), but now it also suppresses <code>light_1</code> — the right eye's own output — directly at the source. That shrinks the <code>+light_1</code> term feeding <code>motor_0</code>, so the left wheel loses a source of excitation just as it's being suppressed by <code>choice_0</code>. Meanwhile <code>choice_1</code>, now losing, barely suppresses <code>light_0</code> at all, so the left eye's full-strength reading keeps flowing into <code>motor_1</code> through the direct crossed connection, boosting the right wheel on top of <code>choice_1</code>'s fading suppression. Both wheels get pushed further apart than Rivalry's competition alone would manage — a second, independent feedback loop stacked on top of the first, reinforcing the same decision from two directions at once.</p>
+<p>This is <strong>Discriminator</strong>.</p>
+<hr />
+<h2 id="step-8-run-it-deciding-with-less-to-go-on">Step 8 — Run it: deciding with less to go on</h2>
+<p>Press <strong>▶ Run</strong>. Discriminator should still commit to one patch, same as Rivalry — but because the winning side also starves the losing eye's own signal, it should be able to do so at lower noise levels than Rivalry can. That's worth testing directly rather than taking on faith: the table below is where to record what you find.</p>
+<h3 id="how-much-noise-does-each-one-need">How much noise does each one need?</h3>
+<p>For a fixed <code>light.noise_std</code>, run a vehicle several times and see whether it reliably commits to one patch within a fixed window, or fails to (drives down the middle, or flip-flops without settling). Sweep <code>noise_std</code> downward to find roughly where that changes.</p>
+<table>
+<thead>
+<tr>
+<th>Vehicle</th>
+<th>Built in</th>
+<th>Mechanism</th>
+<th>Noise floor — lowest <code>light.noise_std</code> it can still decide at, in time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Waverer</td>
+<td>Step 3</td>
+<td>None</td>
+<td><em>(never decides, at any noise level — see Step 4)</em></td>
+</tr>
+<tr>
+<td>Rivalry</td>
+<td>Step 5</td>
+<td>Recurrent mutual inhibition</td>
+<td><code>TBD</code></td>
+</tr>
+<tr>
+<td>Discriminator</td>
+<td>Step 7</td>
+<td>+ winner suppresses the losing eye's own signal</td>
+<td><code>TBD</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="challenges">Challenges</h2>
+<p>Every vehicle so far turns toward or away from something it can sense from a distance. Braitenberg vehicles are just as often defined by what they do once a stimulus can no longer be avoided — contact.</p>
+<h3 id="challenge-1-bump-back-up-turn-away">Challenge 1 — Bump, back up, turn away</h3>
+<p>Using the same motifs as this tutorial — a constant baseline drive, same-side/crossed sensor wiring, and a dynamics layer with its own time constants — build a vehicle that drives forward by default, and on collision, backs away and turns away from whichever side made contact, then resumes forward once it's clear. Use a <code>CollisionSensor</code> (see <a href="../../sensors/collision/">CollisionSensor</a>) in place of <code>light</code>.</p>
+<div class="admonition tip">
+<p class="admonition-title">Split forward and backward into separate pathways</p>
+<p>Don't try to make one <code>motor</code> connection do both jobs. Give <code>motor</code> two separate drives instead: a <strong>forward</strong> pathway that receives <em>only</em> a constant (no sensor ever touches it — the vehicle always wants to go forward, the same intrinsic-drive idea as <code>cruise</code> in Vehicle III), and a <strong>backward</strong> pathway driven <em>only</em> by the collision sensor, wired same-side or crossed depending on which way you want it to turn while backing away.</p>
+</div>
+<div class="admonition tip">
+<p class="admonition-title">The sensor goes quiet before the response should</p>
+<p>A bumper only fires for the instant the robot is actually touching something — by the time it's backed off and turned a little, the sensor already reads zero again. If the backward drive follows the raw sensor directly, the robot stops backing up the moment contact breaks, often before it's actually clear of the obstacle. Insert a dynamics layer between the sensor and the backward pathway (or use the <code>CollisionSensor</code>'s own <code>tau_rise</code> / <code>tau_decay</code>), and set <code>tau_decay</code> noticeably longer than <code>tau_rise</code>: fast to react, slow to let go.</p>
+</div>
+<h3 id="challenge-2-take-it-to-the-real-robot">Challenge 2 — Take it to the real robot</h3>
+<p>Once Challenge 1 works in simulation, run the same network on the physical robot — see <a href="../../real-robot/">Running Networks on the Real Robot</a>. No code changes are needed, just a <code>robot_address</code> on the sensor and on <code>motor</code>. If you built your <code>CollisionSensor</code> with <code>n=2</code> in Challenge 1, matching the real robot's two bumpers (reported together as a single <code>/bumpers</code> message), the same network file should drive the hardware with no rewiring at all.</p>
+<hr />
+<h2 id="what-to-try-next">What to try next</h2>
+<ul>
+<li><strong><a href="../../wiring-brains/">Wiring Brains</a></strong> — more general-purpose layer types and wiring patterns, including other ways dynamics layers reshape a sensor's signal before it reaches the motors.</li>
+<li><strong><a href="../../layers/adaptive/">AdaptiveLayer</a></strong> — the full layer reference, including the half-centre oscillator mode (<code>beta &gt; 0</code> together with <code>w &gt; 0</code>) this tutorial deliberately avoided.</li>
+<li><strong><a href="../../creating-worlds/">Creating Worlds</a></strong> — all the patch, obstacle, and duplication/grid-snap tools used in Step 2.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.top", "content.code.copy", "content.code.annotate", "toc.follow"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+
+      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    var markup =
+      '<span class="lbp-title-project">little brain project</span>' +
+      '<span class="lbp-title-sim">SIMULATOR</span>';
+    document.querySelectorAll(
+      ".md-header__title .md-header__topic .md-ellipsis"
+    ).forEach(function (el) {
+      el.innerHTML = markup;
+    });
+  });
+</script>
+
+  </body>
+</html>
