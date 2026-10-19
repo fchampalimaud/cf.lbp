@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="380" viewBox="204 250 172 218" overflow="hidden">
+  <defs>
+  <radialGradient id="grd_light" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#f5c842" stop-opacity="0.75"/>
+    <stop offset="100%" stop-color="#f5c842" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="grd_food" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#7cb849" stop-opacity="0.8"/>
+    <stop offset="100%" stop-color="#7cb849" stop-opacity="0"/>
+  </radialGradient>
+  </defs>
+  <rect x="204" y="250" width="172" height="218" fill="#f5f0ea"/>
+  <path d="M280.3,344.2 Q290.3,309.2 275.3,276.2" fill="none" stroke="#9a6840" stroke-width="1.8"/><rect x="253.30091089305097" y="272.20023628750886" width="44" height="6" rx="2" fill="#9a8070" opacity="0.65"/><circle cx="275.3" cy="276.2" r="2.5" fill="#c49a6c"/><circle cx="290.0" cy="365.0" r="27" fill="#e2d8cc" stroke="#5c4a3a" stroke-width="1.5"/><polygon points="290.0,338.0 282.3,376.1 297.7,376.1" fill="#5c4a3a" opacity="0.35"/><text x="290" y="267" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="700" fill="#3a2e28">WhiskerSensor</text><text x="290" y="461" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="9" fill="#7a6050" font-style="italic">bend proportion (0 = free, 1 = base)</text>
+</svg>
