@@ -185,7 +185,7 @@ class OscThread(threading.Thread):
     def __init__(self, local_port: int, sensors):
         super().__init__(daemon=True, name=f'OscThread:{local_port}')
         self._port = local_port
-        self._stop = threading.Event()
+        self._stop_evt = threading.Event()
 
         # Bind the socket immediately in __init__ so send() can use it before run() fires.
         # The robot identifies the host by the source port of the first motor command it
@@ -241,7 +241,7 @@ class OscThread(threading.Thread):
     def run(self):
         pkt_count = 0
         try:
-            while not self._stop.is_set():
+            while not self._stop_evt.is_set():
                 try:
                     data, _ = self._sock.recvfrom(65535)
                 except socket.timeout:
@@ -278,7 +278,7 @@ class OscThread(threading.Thread):
             self._sock.close()
 
     def stop(self):
-        self._stop.set()
+        self._stop_evt.set()
 
 
 class MotorThread(threading.Thread):
@@ -352,7 +352,7 @@ class CameraThread(threading.Thread):
         self._host    = host
         self._port    = port
         self._sensors = sensors
-        self._stop    = threading.Event()
+        self._stop_evt = threading.Event()
 
     def run(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -361,7 +361,7 @@ class CameraThread(threading.Thread):
         buf = b''
 
         try:
-            while not self._stop.is_set():
+            while not self._stop_evt.is_set():
                 now = time.monotonic()
                 if now - last_ka >= self.KEEPALIVE_INTERVAL:
                     try:
@@ -425,7 +425,7 @@ class CameraThread(threading.Thread):
                 pass
 
     def stop(self):
-        self._stop.set()
+        self._stop_evt.set()
 
 
 # ── RobotDriver ───────────────────────────────────────────────────────────────
