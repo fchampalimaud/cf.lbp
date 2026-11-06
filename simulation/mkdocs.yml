@@ -52,6 +52,7 @@ nav:
     - Braitenberg Vehicle III: simulator/tutorials/second-braitenberg.md
     - Surviving in Buridan's World: simulator/tutorials/buridans-world.md
     - Vector-Based Homing: simulator/tutorials/vector-navigation.md
+    - "Hunger Tunes the Senses: Neuromodulation": simulator/tutorials/hunger-and-satiety.md
   - Creating Worlds: simulator/creating-worlds.md
   - Coding Brains: simulator/coding-brains.md
   - Wiring Brains:
