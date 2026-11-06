@@ -1,0 +1,42 @@
+:root {
+  --md-primary-fg-color:              #9a6840;   /* warm brown */
+  --md-primary-fg-color--light:       #b5855a;   /* mid brown */
+  --md-primary-fg-color--dark:        #7a4e28;   /* dark umber */
+  --md-accent-fg-color:               #b8895a;   /* tan */
+  --md-accent-fg-color--transparent:  rgba(184, 137, 90, 0.1);
+}
+
+/* Centre images in page content */
+.md-typeset img {
+  display: block;
+  margin: 1rem auto;
+}
+
+/* Logo 4× larger in header */
+.md-header__button.md-logo img,
+.md-header__button.md-logo svg {
+  height: 6rem;
+  width: auto;
+}
+
+/* Two-line brand title — injected into both header topics so it survives scroll */
+.md-header__title .md-header__topic .md-ellipsis {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1.05;
+  gap: 2px;
+}
+.lbp-title-project {
+  font-size: 1.15em;
+  font-weight: 300;
+  letter-spacing: 0.15em;
+  color: rgba(255, 255, 255, 0.6);
+}
+.lbp-title-sim {
+  font-size: 1.35em;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  color: #f5c842;
+  font-family: 'JetBrains Mono', monospace;
+}

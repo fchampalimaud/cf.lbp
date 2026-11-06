@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="380" viewBox="388 250 172 218" overflow="hidden">
+  <defs>
+  <radialGradient id="grd_light" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#f5c842" stop-opacity="0.75"/>
+    <stop offset="100%" stop-color="#f5c842" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="grd_food" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#7cb849" stop-opacity="0.8"/>
+    <stop offset="100%" stop-color="#7cb849" stop-opacity="0"/>
+  </radialGradient>
+  </defs>
+  <rect x="388" y="250" width="172" height="218" fill="#f5f0ea"/>
+  <circle cx="510.0" cy="320.0" r="10" fill="#f5c842" opacity="0.9"/><line x1="522.0" y1="320.0" x2="528.0" y2="320.0" stroke="#f5c842" stroke-width="1.5"/><line x1="518.5" y1="311.5" x2="522.7" y2="307.3" stroke="#f5c842" stroke-width="1.5"/><line x1="510.0" y1="308.0" x2="510.0" y2="302.0" stroke="#f5c842" stroke-width="1.5"/><line x1="501.5" y1="311.5" x2="497.3" y2="307.3" stroke="#f5c842" stroke-width="1.5"/><line x1="498.0" y1="320.0" x2="492.0" y2="320.0" stroke="#f5c842" stroke-width="1.5"/><line x1="501.5" y1="328.5" x2="497.3" y2="332.7" stroke="#f5c842" stroke-width="1.5"/><line x1="510.0" y1="332.0" x2="510.0" y2="338.0" stroke="#f5c842" stroke-width="1.5"/><line x1="518.5" y1="328.5" x2="522.7" y2="332.7" stroke="#f5c842" stroke-width="1.5"/><circle cx="520.0" cy="365.0" r="3.0" fill="#9a6840" opacity="0.25"/><circle cx="506.5" cy="332.5" r="7.2" fill="#9a6840" opacity="0.71"/><circle cx="474.0" cy="319.0" r="9.0" fill="#9a6840" opacity="0.90"/><circle cx="441.5" cy="332.5" r="7.2" fill="#9a6840" opacity="0.71"/><circle cx="428.0" cy="365.0" r="3.0" fill="#9a6840" opacity="0.25"/><circle cx="441.5" cy="397.5" r="3.0" fill="#9a6840" opacity="0.25"/><circle cx="474.0" cy="411.0" r="3.0" fill="#9a6840" opacity="0.25"/><circle cx="506.5" cy="397.5" r="3.0" fill="#9a6840" opacity="0.25"/><circle cx="474.0" cy="365.0" r="27" fill="#e2d8cc" stroke="#5c4a3a" stroke-width="1.5"/><polygon points="474.0,338.0 466.3,376.1 481.7,376.1" fill="#5c4a3a" opacity="0.35"/><text x="474" y="267" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="700" fill="#3a2e28">SkyCompassSensor</text><text x="474" y="461" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="9" fill="#7a6050" font-style="italic">heading vs. sun azimuth</text>
+</svg>

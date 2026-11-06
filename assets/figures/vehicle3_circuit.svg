@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="330" viewBox="0 0 680 330">
+  <rect width="680" height="330" fill="#f5f0ea"/>
+
+  <!-- ── Panels ── -->
+  <rect x="60"  y="40" width="140" height="220" rx="8" fill="#E8F4E8" stroke="#A8CCA8" stroke-width="1.5"/>
+  <text x="130" y="55" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="12" fill="#5a8a5a">Sensors</text>
+
+  <rect x="270" y="40" width="140" height="220" rx="8" fill="#f0eaf8" stroke="#c0a8d8" stroke-width="1.5"/>
+  <text x="340" y="55" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="12" fill="#7b5fa0">Interneurons</text>
+
+  <rect x="480" y="40" width="140" height="220" rx="8" fill="#D4E4F4" stroke="#A0C0DC" stroke-width="1.5"/>
+  <text x="550" y="55" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="12" fill="#3A6FA8">Motors</text>
+
+  <!-- ── Connections ── -->
+
+  <!-- Sensor L → Motor L  (inhibitory: dashed + hollow dot) -->
+  <path d="M145,105 C300,15 400,15 535,103" stroke="#3A6FA8" stroke-width="1.8" stroke-dasharray="6,3" fill="none"/>
+  <circle cx="535" cy="103" r="5" fill="white" stroke="#3A6FA8" stroke-width="1.8"/>
+
+  <!-- Sensor R → Motor R  (inhibitory: dashed + hollow dot) -->
+  <path d="M145,215 C300,300 400,300 535,217" stroke="#3A6FA8" stroke-width="1.8" stroke-dasharray="6,3" fill="none"/>
+  <circle cx="535" cy="217" r="5" fill="white" stroke="#3A6FA8" stroke-width="1.8"/>
+
+  <!-- Cruise L → Motor L  (excitatory: solid + filled dot) -->
+  <path d="M355,115 C420,110 470,110 535,117" stroke="#3A6FA8" stroke-width="1.8" fill="none"/>
+  <circle cx="535" cy="117" r="5" fill="#3A6FA8"/>
+
+  <!-- Cruise R → Motor R  (excitatory: solid + filled dot) -->
+  <path d="M355,205 C420,210 470,210 535,203" stroke="#3A6FA8" stroke-width="1.8" fill="none"/>
+  <circle cx="535" cy="203" r="5" fill="#3A6FA8"/>
+
+  <!-- ── Nodes ── -->
+
+  <!-- Sensor L -->
+  <circle cx="130" cy="110" r="15" fill="#d8eed8" stroke="#5a8a5a" stroke-width="1.5"/>
+  <text x="130" y="133" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="12" fill="#3a2e28">Sensor L</text>
+
+  <!-- Sensor R -->
+  <circle cx="130" cy="210" r="15" fill="#d8eed8" stroke="#5a8a5a" stroke-width="1.5"/>
+  <text x="130" y="233" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="12" fill="#3a2e28">Sensor R</text>
+
+  <!-- Cruise L  (amber) -->
+  <circle cx="340" cy="110" r="15" fill="#fff2dc" stroke="#ef6c00" stroke-width="1.5"/>
+  <text x="340" y="133" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="12" fill="#3a2e28">Cruise L</text>
+
+  <!-- Cruise R  (amber) -->
+  <circle cx="340" cy="210" r="15" fill="#fff2dc" stroke="#ef6c00" stroke-width="1.5"/>
+  <text x="340" y="233" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="12" fill="#3a2e28">Cruise R</text>
+
+  <!-- Motor L -->
+  <circle cx="550" cy="110" r="15" fill="#c4d8f0" stroke="#3A6FA8" stroke-width="1.5"/>
+  <text x="550" y="133" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="12" fill="#3a2e28">Motor L</text>
+
+  <!-- Motor R -->
+  <circle cx="550" cy="210" r="15" fill="#c4d8f0" stroke="#3A6FA8" stroke-width="1.5"/>
+  <text x="550" y="233" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="12" fill="#3a2e28">Motor R</text>
+
+  <!-- Legend -->
+  <text x="340" y="305" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="10" fill="#7a6050" font-style="italic">&#9679; excitatory &#8195; &#9675; inhibitory</text>
+</svg>

@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="620" height="320" viewBox="0 0 620 320">
+  <rect width="620" height="320" fill="#f5f0ea"/>
+
+  <!-- ── Panels ── -->
+  <rect x="55"  y="40" width="150" height="220" rx="8" fill="#E8F4E8" stroke="#A8CCA8" stroke-width="1.5"/>
+  <text x="130" y="55" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="12" fill="#5a8a5a">Sensors</text>
+
+  <rect x="415" y="40" width="150" height="220" rx="8" fill="#D4E4F4" stroke="#A0C0DC" stroke-width="1.5"/>
+  <text x="490" y="55" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="12" fill="#3A6FA8">Motors</text>
+
+  <!-- ── Connections (same-side / ipsilateral — the avoidance wiring) ── -->
+
+  <!-- Sensor L → Motor L (same-side) -->
+  <path d="M145,128 C280,118 350,118 475,128" stroke="#3A6FA8" stroke-width="1.8" fill="none"/>
+  <circle cx="475" cy="128" r="5" fill="#3A6FA8"/>
+
+  <!-- Sensor R → Motor R (same-side) -->
+  <path d="M145,212 C280,222 350,222 475,212" stroke="#3A6FA8" stroke-width="1.8" fill="none"/>
+  <circle cx="475" cy="212" r="5" fill="#3A6FA8"/>
+
+  <!-- ── Nodes ── -->
+
+  <circle cx="130" cy="130" r="15" fill="#d8eed8" stroke="#5a8a5a" stroke-width="1.5"/>
+  <text x="130" y="153" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="12" fill="#3a2e28">Sensor L</text>
+
+  <circle cx="130" cy="210" r="15" fill="#d8eed8" stroke="#5a8a5a" stroke-width="1.5"/>
+  <text x="130" y="233" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="12" fill="#3a2e28">Sensor R</text>
+
+  <circle cx="490" cy="130" r="15" fill="#c4d8f0" stroke="#3A6FA8" stroke-width="1.5"/>
+  <text x="490" y="153" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="12" fill="#3a2e28">Motor L</text>
+
+  <circle cx="490" cy="210" r="15" fill="#c4d8f0" stroke="#3A6FA8" stroke-width="1.5"/>
+  <text x="490" y="233" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="12" fill="#3a2e28">Motor R</text>
+</svg>

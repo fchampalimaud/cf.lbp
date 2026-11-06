@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="378" viewBox="0 0 720 378">
+  <rect width="720" height="378" fill="#f5f0ea"/>
+
+  <!-- ── Panels ── -->
+  <rect x="97"  y="22" width="125" height="310" rx="8" fill="#E8F4E8" stroke="#A8CCA8" stroke-width="1.5"/>
+  <text x="159" y="37" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="12" fill="#5a8a5a">Sensors</text>
+
+  <rect x="280" y="22" width="151" height="310" rx="8" fill="#f0eaf8" stroke="#c0a8d8" stroke-width="1.5"/>
+  <text x="356" y="37" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="12" fill="#7b5fa0">Interneurons</text>
+
+  <rect x="491" y="68" width="132" height="204" rx="8" fill="#D4E4F4" stroke="#A0C0DC" stroke-width="1.5"/>
+  <text x="557" y="83" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="12" fill="#3A6FA8">Motors</text>
+
+  <!-- ── Connections ── -->
+
+  <!-- food_L → Motor_L  (inhibitory: dashed + hollow dot) -->
+  <path d="M174,90 C315,52 448,52 542,123" stroke="#3A6FA8" stroke-width="1.8" stroke-dasharray="6,3" fill="none"/>
+  <circle cx="542" cy="123" r="5" fill="white" stroke="#3A6FA8" stroke-width="1.8"/>
+
+  <!-- food_R → Motor_R  (inhibitory: dashed + hollow dot) -->
+  <path d="M174,270 C315,298 448,298 542,237" stroke="#3A6FA8" stroke-width="1.8" stroke-dasharray="6,3" fill="none"/>
+  <circle cx="542" cy="237" r="5" fill="white" stroke="#3A6FA8" stroke-width="1.8"/>
+
+  <!-- Drive_L → Motor_L  (excitatory: solid + filled dot) -->
+  <path d="M370,110 C455,110 507,118 542,137" stroke="#3A6FA8" stroke-width="1.8" fill="none"/>
+  <circle cx="542" cy="137" r="5" fill="#3A6FA8"/>
+
+  <!-- Drive_R → Motor_R  (excitatory: solid + filled dot) -->
+  <path d="M370,250 C455,250 507,242 542,223" stroke="#3A6FA8" stroke-width="1.8" fill="none"/>
+  <circle cx="542" cy="223" r="5" fill="#3A6FA8"/>
+
+  <!-- ── Nodes ── -->
+
+  <!-- food L -->
+  <circle cx="159" cy="90"  r="15" fill="#d8eed8" stroke="#5a8a5a" stroke-width="1.5"/>
+  <circle cx="159" cy="105" r="5"  fill="#c62828"/>
+  <text x="159" y="116" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="12" fill="#3a2e28">chemo L</text>
+
+  <!-- interoception  (red diffusion rings: outer faded → inner bright) -->
+  <circle cx="159" cy="180" r="22" fill="none" stroke="#e57373" stroke-width="1.3" stroke-opacity="0.30"/>
+  <circle cx="159" cy="180" r="17" fill="#fff5f5" stroke="#ef5350" stroke-width="1.4" stroke-opacity="0.55"/>
+  <circle cx="159" cy="180" r="11" fill="none" stroke="#e53935" stroke-width="1.4" stroke-opacity="0.75"/>
+  <circle cx="159" cy="180" r="5"  fill="none" stroke="#c62828" stroke-width="1.5"/>
+  <circle cx="159" cy="180" r="2"  fill="#c62828"/>
+  <text x="159" y="154" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="10" font-style="italic" fill="#c62828">insulin</text>
+  <text x="159" y="213" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="12" fill="#3a2e28">interoception</text>
+
+  <!-- food R -->
+  <circle cx="159" cy="270" r="15" fill="#d8eed8" stroke="#5a8a5a" stroke-width="1.5"/>
+  <circle cx="159" cy="255" r="5"  fill="#c62828"/>
+  <text x="159" y="296" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="12" fill="#3a2e28">chemo R</text>
+
+  <!-- Drive L  (amber) -->
+  <circle cx="355" cy="110" r="15" fill="#fff2dc" stroke="#ef6c00" stroke-width="1.5"/>
+  <text x="355" y="135" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="12" fill="#3a2e28">Drive L</text>
+
+  <!-- Drive R  (amber) -->
+  <circle cx="355" cy="250" r="15" fill="#fff2dc" stroke="#ef6c00" stroke-width="1.5"/>
+  <text x="355" y="275" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="12" fill="#3a2e28">Drive R</text>
+
+  <!-- Motor L -->
+  <circle cx="557" cy="130" r="15" fill="#c4d8f0" stroke="#3A6FA8" stroke-width="1.5"/>
+  <text x="557" y="155" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="12" fill="#3a2e28">Motor L</text>
+
+  <!-- Motor R -->
+  <circle cx="557" cy="230" r="15" fill="#c4d8f0" stroke="#3A6FA8" stroke-width="1.5"/>
+  <text x="557" y="255" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="12" fill="#3a2e28">Motor R</text>
+
+  <!-- Legend -->
+  <text x="360" y="368" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="10" fill="#7a6050" font-style="italic">&#9679; excitatory &#8195; &#9675; inhibitory &#8195; red rings: neuromodulator release &#8195; red filled circle: receptor site</text>
+</svg>

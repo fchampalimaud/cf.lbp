@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="380" viewBox="20 20 172 218" overflow="hidden">
+  <defs>
+  <radialGradient id="grd_light" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#f5c842" stop-opacity="0.75"/>
+    <stop offset="100%" stop-color="#f5c842" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="grd_food" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#7cb849" stop-opacity="0.8"/>
+    <stop offset="100%" stop-color="#7cb849" stop-opacity="0"/>
+  </radialGradient>
+  </defs>
+  <rect x="20" y="20" width="172" height="218" fill="#f5f0ea"/>
+  <circle cx="106.0" cy="83.0" r="36" fill="url(#grd_light)"/><circle cx="106.0" cy="83.0" r="4" fill="#e8b020" opacity="0.9"/><line x1="106.0" y1="135.0" x2="122.5" y2="77.3" stroke="#9a6840" stroke-width="1.5"/><line x1="106.0" y1="135.0" x2="89.5" y2="77.3" stroke="#9a6840" stroke-width="1.5"/><circle cx="106.0" cy="135.0" r="27" fill="#e2d8cc" stroke="#5c4a3a" stroke-width="1.5"/><polygon points="106.0,108.0 98.3,146.1 113.7,146.1" fill="#5c4a3a" opacity="0.35"/><text x="106" y="37" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="700" fill="#3a2e28">GradientSensor</text><text x="106" y="231" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="9" fill="#7a6050" font-style="italic">gradient intensity at ray tip</text>
+</svg>
