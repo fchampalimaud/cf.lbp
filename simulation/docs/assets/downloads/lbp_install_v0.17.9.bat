@@ -1,7 +1,7 @@
 @echo off
 setlocal enabledelayedexpansion
 
-:: lbp_install.bat — standalone bootstrapper: download this file alone (no git, no
+:: lbp_install_v0.17.9.bat — standalone bootstrapper: download this file alone (no git, no
 :: prior clone) and double-click it. It fetches the simulator into LBP_DIR\app
 :: on first run, then hands off to start.bat there (your own sessions/networks/…
 :: land in the sibling LBP_DIR\lbp_files, created by the app itself). Re-running

@@ -6,13 +6,13 @@ No git, no terminal commands to remember — just one file.
 
 === "Windows"
 
-    [Download lbp_install.bat](../assets/downloads/lbp_install.bat){ .md-button download="lbp_install.bat" }
+    [Download lbp_install_v0.17.9.bat](../assets/downloads/lbp_install_v0.17.9.bat){ .md-button download="lbp_install_v0.17.9.bat" }
 
     Save it anywhere and double-click it.
 
 === "macOS / Linux"
 
-    [Download lbp_install.sh](../assets/downloads/lbp_install.sh){ .md-button download="lbp_install.sh" }
+    [Download lbp_install_v0.17.9.sh](../assets/downloads/lbp_install_v0.17.9.sh){ .md-button download="lbp_install_v0.17.9.sh" }
 
     Downloaded files aren't executable by default, so open a terminal where you saved it and run:
 
