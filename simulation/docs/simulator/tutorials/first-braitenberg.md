@@ -1,8 +1,8 @@
 # Braitenberg Vehicle II
 
-This tutorial builds a complete, working robot behaviour from scratch — world, sensors, and motor wiring — entirely through the simulator's **graphical network editor**. No Python file, no code.
+This tutorial builds a complete, working robot behaviour from scratch — world, sensors, and motor wiring — entirely through the simulator's **graphical network editor**. You will be programming behavior with neurons — no code required.
 
-You will discover how just two sensor neurons wired to two motor neurons can produce what looks like desire or fear, and how swapping two connection weights is all it takes to switch from one to the other.
+You will discover how just two sensor neurons wired to two motor neurons can produce what looks like aggression or fear, and how swapping two connection weights is all it takes to switch from one to the other.
 
 **What you will build**
 
@@ -20,9 +20,9 @@ In 1984, Valentino Braitenberg described a series of imaginary vehicles. Each ha
 and motors on the sides. He showed that incredibly simple wiring rules produce surprisingly rich behaviour:
 
 - **Crossed wiring** (left sensor → right motor, right sensor → left motor): when the stimulus is
-  stronger on the left, the *right* motor speeds up and the robot steers toward it — **attraction**.
+  stronger on the left, the *right* motor speeds up and the robot steers toward it — **aggression**.
 - **Same-side wiring** (left sensor → left motor, right sensor → right motor): when the stimulus is
-  stronger on the left, the *left* motor speeds up and the robot steers away — **avoidance**.
+  stronger on the left, the *left* motor speeds up and the robot steers away — **cowardice**.
 
 That is the whole secret. No computation, no memory, no planning — just which wire goes where.
 
@@ -39,9 +39,31 @@ The main window opens. You will see a **Controls panel** on the left with a *Bra
 
 ---
 
+## Step 1b — Take it for a drive
+
+Before adding any sensors or wiring, get a feel for how the robot moves.
+
+Press **▶ Run** to start the simulation. The robot won't move on its own yet — there is no brain loaded — but you can steer it manually with the keyboard:
+
+| Key | Action |
+|-----|--------|
+| `W` | Both wheels forward |
+| `S` | Both wheels backward |
+| `A` | Spin left |
+| `D` | Spin right |
+
+Drive it around the arena for a moment. Notice how the two independent wheels work: turning is just running one wheel faster than the other — the same principle the brain will use later.
+
+!!! tip "Robot moving too fast?"
+    Tick the **Real Time** checkbox in the Controls panel. This caps the simulation to real-world speed, which makes the robot much easier to drive.
+
+Press **■ Stop** when you're done. The world resets to its starting position for the next step.
+
+---
+
 ## Step 2 — Place a gradient patch
 
-A **gradient patch** is an invisible circular stimulus cloud. The robot's sensors detect its signal; the robot's body passes through it without resistance.
+A **gradient patch** is an invisible circular stimulus cloud; you can think of it as an abstraction of an environmental gradient like an odor, or termperature, or light. The robot's sensors detect its signal; the robot's body passes through it without pysical resistance.
 
 1. Click the **World** tab in the Controls panel.
 2. In the *Gradients* row, click the **A** button (the pinkish-red one — it creates a gradient with label `A`).
@@ -51,10 +73,13 @@ A **gradient patch** is an invisible circular stimulus cloud. The robot's sensor
 
 ![World tab with a red gradient patch placed in front of the robot](../../assets/screenshots/sim_patch.png)
 
-!!! tip "Too small or too large?"
+!!! tip "Want to modify it?"
     Right-click the patch to delete it and try again. Larger patches are easier for a first experiment.
+    
+    Left-click the patch, while pressing Alt to drag it around.
 
 ---
+
 
 ## Step 3 — Open the network editor
 
@@ -114,10 +139,6 @@ Close the visualizer (or leave it open beside the main window), then press **▶
 
 Watch the robot. With the patch placed above it, the right sensor (`light_1`) detects more signal than the left sensor (`light_0`). Because `light_1` drives the left motor (`motor_0`), the left wheel goes faster and the robot curves right — toward the source. This is **Vehicle 2b**, attraction.
 
-!!! note "Nothing happening?"
-    Make sure the network was saved and the group is in **Network** mode with your file selected. If the robot circles without making progress, try increasing the patch size in the World tab.
-
----
 
 ## Step 7 — Flip to avoidance
 
@@ -146,7 +167,7 @@ Press **▶ Run** again. The robot now **moves away** from the patch. When the p
 Switch back to attraction (Step 5's crossed matrix) and let the robot actually reach the patch. Watch closely: it drives straight through, the patch slides out of the sensor's forward-facing rays, and `light_0`/`light_1` both drop to `0`. Since `motor_0` and `motor_1` are driven directly by those two numbers, both wheels get a flat-zero command — the robot stops dead, wherever the signal happened to run out. Nothing in this circuit gives it a reason to move once there's nothing left to react to. That's not a bug; it's the defining limit of a purely reactive vehicle like this one.
 
 !!! tip "The world updates live"
-    You don't need to stop the simulation to fix this. World edits — placing a patch, dragging it, resizing it — take effect the instant you make them, even while **▶ Run** is active. Watch the robot stall, then drop a new `A` patch a little ahead of it: it should pick the pull back up immediately, no pause or reload required.
+    You don't need to stop the simulation to fix this. World edits — placing a patch, dragging it, resizing it — take effect the instant you make them, even while **▶ Run** is active. Watch the robot stall, then drop a new `A` patch a little ahead of it: it should pick the pull back up immediately, no pause or reload required. 
 
 **Try it**
 
@@ -154,6 +175,7 @@ Switch back to attraction (Step 5's crossed matrix) and let the robot actually r
 2. Drag out a fresh patch somewhere ahead of the robot — close enough that its sensor rays can reach it from where it's currently sitting.
 3. Watch it take off again the moment the patch exists. Repeat a few times, dropping each new patch just ahead of wherever the robot ends up, and you can lead it all the way across the arena without ever touching Run/Stop.
 4. Once you've got the hang of it, place four or five `A` patches around the arena *before* pressing Run, spaced so each one's radius slightly overlaps the next one's sensing range. The robot should now wander from patch to patch indefinitely instead of stalling on the first one.
+5. Also, try to move the patch around while the simulator is running (*Alt+drag*) and see if you can make the robot follow your mouse.
 
 Scattering patches works, but it only ever patches the problem over from the *outside* — the robot itself still has no will of its own. **[Braitenberg Vehicle III](second-braitenberg.md)** tackles the same stopping problem from the inside instead: one small addition to the circuit that gives the robot a reason to keep moving even with no patches in the arena at all.
 
@@ -164,6 +186,5 @@ Click the **Session** tab → **Save** before moving on, to snapshot both the wo
 ## What to try next
 
 - **[Braitenberg Vehicle III](second-braitenberg.md)** — give the robot an intrinsic drive so it keeps moving on its own, instead of relying on a trail of patches.
+- **[Watching the Brain While You Drive](oscilloscope.md)** — open the oscilloscope on this circuit and see the sensor and motor signals live as the robot homes in on a patch.
 - **[Creating Worlds](../creating-worlds.md)** — all gradient, obstacle, and wall types in detail.
-- **[Wiring Brains](../wiring-brains.md)** — the full Vehicle 3 math, adding a `LeakyLayer` for smooth motor responses, and more wiring patterns.
-- **[Coding Brains](../coding-brains.md)** — if you want to express the same circuits in Python code instead.

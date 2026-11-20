@@ -4,17 +4,53 @@ The **arena** is the environment your robot lives in. It can contain gradient fi
 
 All world editing happens in the **World** tab of the control panel. Changes take effect immediately — you can reshape the world while the brain is running.
 
-![World control panel](../assets/figures/world_panel.svg)
+![World control panel](../assets/screenshots/world_panel.png)
+
+---
+
+## World file
+
+Saves and loads the arena independently of the session and brain.
+
+**Dir** — choose **My files** or **🔒 Simulator** (read-only built-in worlds), then a folder inside it. **+** creates a new folder.
+**World** — lists the JSON files in the chosen folder; selecting one loads it immediately.
+**Save** — opens a dialog: pick a folder and type a name, with a live preview of the destination path. Saving a Simulator world writes your own copy instead of overwriting the original.
+
+---
+
+## Floor
+
+Selects a texture for the floor, drawn from your `textures/` folder. **(default)** keeps the built-in checker pattern. The floor texture is visible in the MuJoCo **Top view** and **Show 3D** views only — the flat 2D canvas does not render textures.
+
+---
+
+## Trail and 3D views
+
+**Trail** — enables the position trail drawn in the arena. **Len** sets how many past positions are kept (10–5000).
+
+**Show 3D** — opens a separate MuJoCo 3D viewer window (enabled when MuJoCo is running).
+
+**Top view** — replaces the flat 2D canvas with a MuJoCo overhead render. Object editing still works in this mode; switch back to 2D to see gradient patches.
+
+---
+
+## Arena
+
+**Square / Round** — sets the arena boundary shape. Round is the default; Square gives four flat walls instead of a circular perimeter.
+
+**↖ Move** — toggle. While active, drag any gradient patch, solid object, or robot disc to a new position. You can also **Alt+drag** directly from any other tool without switching to Move mode first.
+
+**✕ Clear World** — removes all gradient patches and objects (walls stay), after asking for confirmation.
 
 ---
 
 ## Gradient fields
 
-Gradient patches are invisible stimulus fields. They have no physical presence — the robot passes through them freely — but sensors like `GradientSensor`, `ColorSensor`, and `InteroceptiveSensor` detect their signal.
+Gradient patches are invisible stimulus fields — the robot passes through them freely, but sensors like `GradientSensor` detect their signal.
+
+Each patch has a **label** (A–F) and a matching **colour** (A = red, B = green, C = blue, D = yellow, E = magenta, F = cyan). Sensors subscribe to a label; a sensor set to label `A` reads only patches labelled `A`. Multiple patches with the same label stack by maximum — the sensor receives the highest reading over all of them.
 
 ![Gradient patch types](../assets/figures/world_gradient_patches.svg)
-
-Each patch has a **label** (A–F) and a **colour** (red, green, blue, yellow, magenta, cyan). Sensors subscribe to a label; a sensor set to label `A` only reads patches labelled `A`. You can have multiple patches of the same label — the sensor receives the maximum signal over all of them.
 
 ### Gradient (default)
 
@@ -22,65 +58,68 @@ Signal decays linearly from 1.0 at the centre to 0.0 at the edge:
 
 $$\text{sig} = \max\!\left(0,\; 1 - \frac{d}{r}\right)$$
 
-**To place:** click a colour button in the *Gradients* row, then drag on the arena (drag start = centre, drag end = radius).
+**To place:** click one of the letter buttons (**A–F**) in the *Gradients* row, then drag on the arena (drag start = centre, drag end = radius).
 
 ### Continuous
 
-Same shape, but the signal is a flat 1.0 everywhere inside the radius and drops to exactly 0.0 at the boundary. Useful for food zones where stimulus intensity should not depend on position.
+Same shape, but the signal is a flat 1.0 everywhere inside the radius and drops to exactly 0.0 at the boundary. Useful for food zones where stimulus intensity should not depend on position within the patch.
 
 **To place:** toggle **Cont.** on before dragging.
 
 ### Wall band
 
-A gradient that emanates from the arena boundary inward. There is no `x/y` centre — it covers the entire perimeter. Useful as a looming-wall sensor input for avoidance.
+A gradient that emanates from the arena boundary inward. It covers the entire perimeter — there is no centre point. Useful as a looming-wall input for avoidance behaviours.
 
-**To place:** toggle **Wall** on, then drag (the drag distance sets the band width).
+**To place:** click **Wall** in the *Gradients* row, then drag (the drag distance sets the band width).
 
 ### Mounted gradient
 
-A gradient patch that follows the robot. Place it by starting your drag from inside the robot's body disk. Useful for interoceptive signals ("smell of self") or for creating an energy field the robot carries around.
+A gradient patch that follows a specific robot. Place it by starting your drag from inside that robot's body disc. Useful for interoceptive signals ("smell of self") or for creating a scent field another agent can track — see the courtship scenario in [Braitenberg Vehicle III](tutorials/second-braitenberg.md#what-to-try-next).
 
 ---
 
-## Solid obstacles
+## Solid objects
 
-Circular objects that physically block the robot. The simulator pushes the robot out whenever they overlap. Distance, collision, whisker, and camera sensors all detect solid obstacles.
+Circular objects that physically block the robot. The simulator pushes the robot out on contact. Distance, collision, whisker, and camera sensors all detect solid objects.
 
 ![Obstacle types](../assets/figures/world_obstacles.svg)
 
-### Circular obstacle
+**Colours** — five presets (**Z** red, **Y** green, **X** blue, **W** yellow, **V** orange) plus a **…** custom colour picker.
 
-A filled circle that the robot cannot enter. Click a colour button in the *Objects* row and drag to place (drag start = centre, drag end = radius). The **Solid** toggle must be active (default).
+**Wall** — switches drawing to polygon-wall mode (see below).
 
-### Room (circular confinement)
+**Solid / Room** — toggles the object type for the next placed circle:
 
-The robot is kept **inside** the circle. When the robot tries to leave, the simulator pushes it back toward the centre. Rendered as an annular ring rather than a filled disk.
+- **Solid** — a filled obstacle the robot stays outside.
+- **Room** — the robot is kept *inside* the circle. Rendered as an annular ring. Toggle **Solid** off to activate Room mode.
 
-**To place:** toggle **Solid** off (button switches to *Room*), then drag.
+**To place:** select a colour, choose Solid or Room, then drag on the arena (drag start = centre, drag end = radius).
+
+### Texture
+
+Assigns a texture image to objects and polygon walls placed afterward. Textures are PNG files in `textures/` in your files folder. **(none)** = flat colour only. Textures render in the MuJoCo Top view and Show 3D only.
 
 ---
 
 ## Polygon walls
 
-Freehand-drawn polygon boundaries. Click individual vertices on the arena to draw; the polygon closes automatically when you click near the first vertex (or after at least 3 points). Hold **Shift** to snap edges to 45° increments.
+Freehand polygon boundaries drawn by clicking vertices on the arena. The polygon closes automatically when you click near the first vertex (or after at least 3 points). Hold **Shift** to snap edges to 45° increments. Right-click while drawing to cancel.
+
+The **Solid / Room** toggle on the Objects row controls whether the polygon is a wall the robot stays outside (Solid, filled) or a boundary the robot stays inside (Room, hollow band).
 
 ![Polygon wall types](../assets/figures/world_polygon_walls.svg)
 
-The **Solid / Room** toggle controls whether the polygon is a wall the robot stays outside (solid, filled) or a boundary the robot stays inside (room, hollow band).
-
-Right-click while drawing to cancel.
+**To draw:** click **Wall** in the *Objects* row, then click vertices on the arena.
 
 ---
 
 ## Sky polarization
 
-A global celestial field that the `SkyCompassSensor` reads. It does not affect any other sensor and has no physical presence.
+A global celestial field that the `SkyCompassSensor` reads. It has no physical presence and does not affect any other sensor.
 
 ![Sky polarization field](../assets/figures/world_sky.svg)
 
-The field consists of a repeating pattern of e-vector bars at angle `sky.angle`. The sun direction is perpendicular: `sun_dir = sky.angle + π/2`. The `SkyCompassSensor` computes a cosine tuning curve over its `n` neurons relative to the current heading versus `sun_dir`.
-
-**To configure:** tick **Polarization field** in the *Sky* row to enable it. Click the **↕** button and drag on the arena to set the angle.
+Tick **Polarization field** to enable it. Click **↕** and drag on the arena to set the e-vector angle. The sun direction is perpendicular to the e-vector: `sun_dir = sky.angle + π/2`.
 
 ---
 
@@ -100,10 +139,9 @@ The field consists of a repeating pattern of e-vector bars at angle `sky.angle`.
 
 ## Tips
 
-- **Right-click** on any placed object to delete it.
-- **Drag** in *Move* mode (select *Move* in the toolbar) to reposition patches and obstacles — or hold **Alt** and drag one directly, from any tool, without switching to Move mode first.
-- Hold **Ctrl** and drag a patch or obstacle to duplicate it — the clone (same radius, colour, label) follows the cursor; the original stays put. Not available for the robot itself — spawning another agent is a separate workflow.
-- Hold **Shift** while repositioning or duplicating (Move mode, Alt-drag, or Ctrl-drag) to snap to a grid, spaced by the **Grid size** setting in the Physics tab. The grid always lines up with the arena centre `(0, 0)`, whatever the spacing. Combining **Ctrl+Shift**-drag is the quickest way to build a pair of identical, exactly mirrored stimuli.
-- The **Cont.** and **Wall** toggles apply to whichever gradient colour is currently selected.
-- Sessions (brain params + world layout) are saved as JSON in your files folder (`~/LBPSimulator/configs/` by default, see [Your files](tour.md#my-files)). Use Session tab → **Save** to snapshot the current world.
-- Multiple gradient patches of the same label stack by maximum, not sum. Place several overlapping patches to widen a field without increasing peak intensity.
+- **Right-click** any placed object to delete it.
+- **Alt+drag** a patch or obstacle directly from any draw tool to reposition it without switching to Move mode.
+- **Ctrl+drag** duplicates a patch or obstacle — the clone (same radius, colour, label) follows the cursor; the original stays put.
+- **Shift** while repositioning or duplicating snaps to a grid spaced by the **Grid size** setting in the Physics tab. The grid always aligns to arena centre `(0, 0)`. **Ctrl+Shift**-drag is the quickest way to build a pair of exactly mirrored stimuli.
+- Multiple gradient patches with the same label stack by maximum, not sum. Overlap several patches to widen a field without raising its peak intensity.
+- Sessions save the entire world state (patches, objects, walls, sky, floor, arena shape). Use **Session tab → Save** to snapshot it.

@@ -52,8 +52,12 @@ nav:
     - Braitenberg Vehicle III: simulator/tutorials/second-braitenberg.md
     - Surviving in Buridan's World: simulator/tutorials/buridans-world.md
     - Vector-Based Homing: simulator/tutorials/vector-navigation.md
-    - "Hunger Tunes the Senses: Neuromodulation": simulator/tutorials/hunger-and-satiety.md
-  - Creating Worlds: simulator/creating-worlds.md
+    - The Belly Rules the Nose - Neuromodulation: simulator/tutorials/hunger-and-satiety.md
+  - Deployment Tools:
+    - Creating Worlds: simulator/creating-worlds.md
+    - Watching the Brain While You Drive: simulator/tutorials/oscilloscope.md
+    - A World with Many Vehicles: simulator/tutorials/multi-agent.md
+    - Circuits Driving a Real Robot: simulator/tutorials/vehicle3-on-robot.md
   - Coding Brains: simulator/coding-brains.md
   - Wiring Brains:
     - Introduction: simulator/wiring-brains.md
