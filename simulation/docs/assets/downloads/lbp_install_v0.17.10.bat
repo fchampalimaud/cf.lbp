@@ -1,7 +1,7 @@
 @echo off
 setlocal enabledelayedexpansion
 
-:: lbp_install_v0.17.9.bat — standalone bootstrapper: download this file alone (no git, no
+:: lbp_install_v0.17.10.bat — standalone bootstrapper: download this file alone (no git, no
 :: prior clone) and double-click it. It fetches the simulator into LBP_DIR\app
 :: on first run, then hands off to start.bat there (your own sessions/networks/…
 :: land in the sibling LBP_DIR\lbp_files, created by the app itself). Re-running
@@ -9,7 +9,7 @@ setlocal enabledelayedexpansion
 :: install — updates after that go through the app's own update button, not
 :: this script.
 
-set "VERSION=0.17.9"
+set "VERSION=0.17.10"
 echo === LBP Simulator Installer v%VERSION% ===
 echo.
 
@@ -69,4 +69,3 @@ echo   "%LBP_DIR%\lbp_files"
 echo.
 cd /d "%APP_DIR%"
 call start.bat
-if %ERRORLEVEL% neq 0 pause

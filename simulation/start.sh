@@ -33,8 +33,9 @@ if [ "$NEEDS_INSTALL" = "1" ]; then
     if [ ! -d ".venv" ]; then
         uv venv --python 3.11 .venv
     fi
-    uv pip sync --python ".venv/bin/python" requirements.txt || \
-    uv pip sync --python ".venv/Scripts/python.exe" requirements.txt
+    VENV_PY=".venv/bin/python"
+    [ -x ".venv/Scripts/python.exe" ] && VENV_PY=".venv/Scripts/python.exe"
+    uv pip install --python "$VENV_PY" -r requirements.txt
     touch "$STAMP"
 fi
 

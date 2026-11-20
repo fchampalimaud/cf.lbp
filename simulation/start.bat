@@ -36,50 +36,38 @@ set "PATH=%USERPROFILE%\.local\bin;%USERPROFILE%\.cargo\bin;%PATH%"
 cd /d "%~dp0"
 
 :: ── Install packages once; reinstall only when requirements.txt changes ──────
-set "STAMP=.venv\.req_stamp"
-set "NEEDS_INSTALL=0"
-if not exist ".venv\Scripts\python.exe" set "NEEDS_INSTALL=1"
-if "%NEEDS_INSTALL%"=="0" (
-    :: compare requirements.txt modification time against the stamp file
-    for %%f in (requirements.txt) do set "REQ_TIME=%%~tf"
-    for %%f in ("%STAMP%") do set "STAMP_TIME=%%~tf"
-    if not exist "%STAMP%" set "NEEDS_INSTALL=1"
-)
-if "%NEEDS_INSTALL%"=="0" (
-    :: stamp older than requirements.txt → reinstall
-    if "!REQ_TIME!" GTR "!STAMP_TIME!" set "NEEDS_INSTALL=1"
-)
+:: No parenthesised blocks here: a ")" inside one ends it early and cmd aborts.
+if not exist ".venv\Scripts\python.exe" goto :install
+fc /b requirements.txt ".venv\requirements.txt" >nul 2>nul
+if errorlevel 1 goto :install
+goto :launch
 
-if "%NEEDS_INSTALL%"=="1" (
-    echo Installing packages (one-time or requirements changed)...
-)
-if "%NEEDS_INSTALL%"=="1" if not exist ".venv\Scripts\python.exe" (
-    uv venv --python 3.11 .venv
-    if %ERRORLEVEL% neq 0 (
-        echo.
-        echo Failed to create virtual environment. Make sure uv can find Python 3.11.
-        pause
-        exit /b 1
-    )
-)
-if "%NEEDS_INSTALL%"=="1" (
-    uv pip sync --python ".venv\Scripts\python.exe" requirements.txt
-    if %ERRORLEVEL% neq 0 (
-        echo.
-        echo Package installation failed. See above for details.
-        pause
-        exit /b 1
-    )
-    echo. > "%STAMP%"
-)
+:install
+echo Installing packages - first run, or the requirements changed...
+if exist ".venv\Scripts\python.exe" goto :sync
+call uv venv --python 3.11 .venv
+if errorlevel 1 goto :install_failed
+:sync
+call uv pip install --python ".venv\Scripts\python.exe" -r requirements.txt
+if errorlevel 1 goto :install_failed
+copy /y requirements.txt ".venv\requirements.txt" >nul
+goto :launch
 
+:install_failed
+echo.
+echo Package installation failed. See the message above.
+pause
+exit /b 1
+
+:launch
 echo Starting simulator...
 echo.
 ".venv\Scripts\python.exe" LBPSimulator.py
+if errorlevel 1 goto :sim_failed
+exit /b 0
 
-:: Keep the window open if something went wrong
-if %ERRORLEVEL% neq 0 (
-    echo.
-    echo The simulator exited with an error. See the message above.
-    pause
-)
+:sim_failed
+echo.
+echo The simulator exited with an error. See the message above.
+pause
+exit /b 1
