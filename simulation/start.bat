@@ -3,9 +3,10 @@ setlocal enabledelayedexpansion
 
 echo === LBP 2D Simulator ===
 
-:: ── Create shortcuts with the LBP icon (first run only): Desktop + this folder ──
+:: ── Shortcuts with the LBP icon (Desktop + this folder), rewritten every launch
+::    so they always point at the install that was run last ────────────────────
 powershell -ExecutionPolicy Bypass -NoProfile -Command ^
-    "$shell = New-Object -ComObject WScript.Shell; foreach ($path in @((Join-Path $shell.SpecialFolders('Desktop') 'LBP Simulator.lnk'), (Join-Path '%~dp0' 'LBPSimulator.lnk'))) { if (-not (Test-Path $path)) { $s = $shell.CreateShortcut($path); $s.TargetPath = '%~f0'; $s.WorkingDirectory = '%~dp0'; $s.IconLocation = '%~dp0docs\assets\icon.ico'; $s.Save() } }" >nul 2>nul
+    "$shell = New-Object -ComObject WScript.Shell; foreach ($path in @((Join-Path $shell.SpecialFolders('Desktop') 'LBP Simulator.lnk'), (Join-Path '%~dp0' 'LBPSimulator.lnk'))) { $s = $shell.CreateShortcut($path); $s.TargetPath = '%~f0'; $s.WorkingDirectory = '%~dp0'; $s.IconLocation = '%~dp0docs\assets\icon.ico'; $s.Save() }" >nul 2>nul
 
 :: ── Check if uv is already on PATH ──────────────────────────────────────────
 where uv >nul 2>nul

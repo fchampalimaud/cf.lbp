@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# lbp_install_v0.17.10.sh — standalone bootstrapper: download this file alone (no git, no
+# lbp_install_v0.17.11.sh — standalone bootstrapper: download this file alone (no git, no
 # prior clone) and run it. It fetches the simulator into LBP_DIR/app on first
 # run, then hands off to start.sh there (your own sessions/networks/… land in
-# the sibling LBP_DIR/lbp_files, created by the app itself). Re-running later
-# just launches the existing install — updates after that go through the
-# app's own update button, not this script.
+# the sibling LBP_DIR/lbp_files, created by the app itself). Re-running it
+# later launches the existing install, offering to update it first if it is
+# older than this installer (lbp_files is never touched).
 #
 # Downloaded files aren't executable by default: run it as
-#   bash lbp_install_v0.17.10.sh
+#   bash lbp_install_v0.17.11.sh
 # or make it executable first:
-#   chmod +x lbp_install_v0.17.10.sh && ./lbp_install_v0.17.10.sh
+#   chmod +x lbp_install_v0.17.11.sh && ./lbp_install_v0.17.11.sh
 
-VERSION="0.17.10"
+VERSION="0.17.11"
 echo "=== LBP Simulator Installer v$VERSION ==="
 echo
 
@@ -26,10 +26,27 @@ LBP_DIR="${LBP_DIR%/}"
 APP_DIR="$LBP_DIR/app"
 echo
 
+version_lt() {   # true if $1 < $2, comparing dotted numbers
+    awk -v a="$1" -v b="$2" 'BEGIN { n = split(a, x, "."); m = split(b, y, ".")
+        for (i = 1; i <= (n > m ? n : m); i++) { if (x[i]+0 < y[i]+0) exit 0; if (x[i]+0 > y[i]+0) exit 1 }
+        exit 1 }'
+}
+
+DO_DOWNLOAD=1
 if [ -f "$APP_DIR/LBPSimulator.py" ]; then
-    echo "Found an existing install at $LBP_DIR."
-else
-    echo "Downloading the simulator to $LBP_DIR (one-time, needs internet)..."
+    OLD_VERSION="$( { head -n1 "$APP_DIR/VERSION" 2>/dev/null || true; } | tr -d '[:space:]')"
+    OLD_VERSION="${OLD_VERSION:-0}"
+    echo "Found an existing install at $LBP_DIR, version $OLD_VERSION."
+    DO_DOWNLOAD=0
+    if version_lt "$OLD_VERSION" "$VERSION"; then
+        read -rp "Update it to v$VERSION? Your own files in lbp_files are kept. [Y/n] " ANSWER
+        case "$ANSWER" in [nN]*) ;; *) DO_DOWNLOAD=1 ;; esac
+        echo
+    fi
+fi
+
+if [ "$DO_DOWNLOAD" = 1 ]; then
+    echo "Downloading the simulator to $LBP_DIR (needs internet)..."
 
     TMP_ZIP="$(mktemp -t lbp_simulator.XXXXXX).zip"
     if command -v curl &>/dev/null; then

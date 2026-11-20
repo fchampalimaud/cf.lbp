@@ -6,18 +6,18 @@ No git, no terminal commands to remember — just one file.
 
 === "Windows"
 
-    [Download lbp_install_v0.17.10.bat](../assets/downloads/lbp_install_v0.17.10.bat){ .md-button download="lbp_install_v0.17.10.bat" }
+    [Download lbp_install_v0.17.11.bat](../assets/downloads/lbp_install_v0.17.11.bat){ .md-button download="lbp_install_v0.17.11.bat" }
 
     Save it anywhere and double-click it.
 
 === "macOS / Linux"
 
-    [Download lbp_install_v0.17.10.sh](../assets/downloads/lbp_install_v0.17.10.sh){ .md-button download="lbp_install_v0.17.10.sh" }
+    [Download lbp_install_v0.17.11.sh](../assets/downloads/lbp_install_v0.17.11.sh){ .md-button download="lbp_install_v0.17.11.sh" }
 
     Downloaded files aren't executable by default, so open a terminal where you saved it and run:
 
     ```bash
-    bash lbp_install_v0.17.10.sh
+    bash lbp_install_v0.17.11.sh
     ```
 
 First run downloads the simulator (no git required), installs [uv](https://docs.astral.sh/uv/) if
@@ -46,7 +46,8 @@ If you'd rather not rely on the shortcut, the installer asked you to pick a fold
     Open a terminal in the `app` folder and run `./start.sh`.
 
 No need to download or run the installer again — either of those is all you need from now on. After
-that, updates go through the **↻** button in the app itself, not this script.
+that, updates go through the **↻** button in the app itself. Running a newer installer over an
+existing install also works: it offers to update `app/` first, and never touches `lbp_files/`.
 
 ---
 

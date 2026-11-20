@@ -1,15 +1,14 @@
 @echo off
 setlocal enabledelayedexpansion
 
-:: lbp_install_v0.17.10.bat — standalone bootstrapper: download this file alone (no git, no
+:: lbp_install_v0.17.11.bat — standalone bootstrapper: download this file alone (no git, no
 :: prior clone) and double-click it. It fetches the simulator into LBP_DIR\app
 :: on first run, then hands off to start.bat there (your own sessions/networks/…
 :: land in the sibling LBP_DIR\lbp_files, created by the app itself). Re-running
-:: later (e.g. the next time you double-click it) just launches the existing
-:: install — updates after that go through the app's own update button, not
-:: this script.
+:: it later launches the existing install, offering to update it first if it is
+:: older than this installer (lbp_files is never touched).
 
-set "VERSION=0.17.10"
+set "VERSION=0.17.11"
 echo === LBP Simulator Installer v%VERSION% ===
 echo.
 
@@ -24,12 +23,19 @@ if "%LBP_DIR:~-1%"=="\" set "LBP_DIR=%LBP_DIR:~0,-1%"
 set "APP_DIR=%LBP_DIR%\app"
 echo.
 
-if exist "%APP_DIR%\LBPSimulator.py" (
-    echo Found an existing install at "%LBP_DIR%".
-    goto :run
-)
+if not exist "%APP_DIR%\LBPSimulator.py" goto :download
+set "OLD_VERSION=0.0"
+if exist "%APP_DIR%\VERSION" set /p OLD_VERSION=<"%APP_DIR%\VERSION"
+echo Found an existing install at "%LBP_DIR%", version !OLD_VERSION!.
+powershell -NoProfile -Command "if ([version]'!OLD_VERSION!' -lt [version]'%VERSION%') { exit 1 }" >nul 2>nul
+if not errorlevel 1 goto :run
+set "UPDATE=Y"
+set /p "UPDATE=Update it to v%VERSION%? Your own files in lbp_files are kept. [Y/n] "
+if /i "!UPDATE!"=="n" goto :run
+echo.
 
-echo Downloading the simulator to "%LBP_DIR%" (one-time, needs internet)...
+:download
+echo Downloading the simulator to "%LBP_DIR%" (needs internet)...
 set "TMP_ZIP=%TEMP%\lbp_simulator_%RANDOM%.zip"
 set "TMP_EXTRACT=%TEMP%\lbp_simulator_extract_%RANDOM%"
 
