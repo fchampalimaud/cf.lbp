@@ -68,3 +68,4 @@ echo   "%LBP_DIR%\lbp_files"
 echo.
 cd /d "%APP_DIR%"
 call start.bat
+if %ERRORLEVEL% neq 0 pause

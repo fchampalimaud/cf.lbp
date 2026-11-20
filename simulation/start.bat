@@ -52,9 +52,17 @@ if "%NEEDS_INSTALL%"=="0" (
 
 if "%NEEDS_INSTALL%"=="1" (
     echo Installing packages (one-time or requirements changed)...
-    if not exist ".venv\Scripts\python.exe" (
-        uv venv --python 3.11 .venv
+)
+if "%NEEDS_INSTALL%"=="1" if not exist ".venv\Scripts\python.exe" (
+    uv venv --python 3.11 .venv
+    if %ERRORLEVEL% neq 0 (
+        echo.
+        echo Failed to create virtual environment. Make sure uv can find Python 3.11.
+        pause
+        exit /b 1
     )
+)
+if "%NEEDS_INSTALL%"=="1" (
     uv pip sync --python ".venv\Scripts\python.exe" requirements.txt
     if %ERRORLEVEL% neq 0 (
         echo.
