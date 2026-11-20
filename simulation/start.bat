@@ -33,10 +33,41 @@ if %ERRORLEVEL% neq 0 (
 set "PATH=%USERPROFILE%\.local\bin;%USERPROFILE%\.cargo\bin;%PATH%"
 
 :run
+cd /d "%~dp0"
+
+:: ── Install packages once; reinstall only when requirements.txt changes ──────
+set "STAMP=.venv\.req_stamp"
+set "NEEDS_INSTALL=0"
+if not exist ".venv\Scripts\python.exe" set "NEEDS_INSTALL=1"
+if "%NEEDS_INSTALL%"=="0" (
+    :: compare requirements.txt modification time against the stamp file
+    for %%f in (requirements.txt) do set "REQ_TIME=%%~tf"
+    for %%f in ("%STAMP%") do set "STAMP_TIME=%%~tf"
+    if not exist "%STAMP%" set "NEEDS_INSTALL=1"
+)
+if "%NEEDS_INSTALL%"=="0" (
+    :: stamp older than requirements.txt → reinstall
+    if "!REQ_TIME!" GTR "!STAMP_TIME!" set "NEEDS_INSTALL=1"
+)
+
+if "%NEEDS_INSTALL%"=="1" (
+    echo Installing packages (one-time or requirements changed)...
+    if not exist ".venv\Scripts\python.exe" (
+        uv venv --python 3.11 .venv
+    )
+    uv pip sync --python ".venv\Scripts\python.exe" requirements.txt
+    if %ERRORLEVEL% neq 0 (
+        echo.
+        echo Package installation failed. See above for details.
+        pause
+        exit /b 1
+    )
+    echo. > "%STAMP%"
+)
+
 echo Starting simulator...
 echo.
-cd /d "%~dp0"
-uv run --python 3.11 --with-requirements requirements.txt python LBPSimulator.py
+".venv\Scripts\python.exe" LBPSimulator.py
 
 :: Keep the window open if something went wrong
 if %ERRORLEVEL% neq 0 (

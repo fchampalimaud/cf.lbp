@@ -16,8 +16,31 @@ if ! command -v uv &>/dev/null; then
     fi
 fi
 
-# ── Run ──────────────────────────────────────────────────────────────────────
+# ── Install packages once; reinstall only when requirements.txt changes ──────
 cd "$(dirname "$0")"
+
+STAMP=".venv/.req_stamp"
+NEEDS_INSTALL=0
+
+if [ ! -x ".venv/bin/python" ] && [ ! -x ".venv/Scripts/python.exe" ]; then
+    NEEDS_INSTALL=1
+elif [ ! -f "$STAMP" ] || [ "requirements.txt" -nt "$STAMP" ]; then
+    NEEDS_INSTALL=1
+fi
+
+if [ "$NEEDS_INSTALL" = "1" ]; then
+    echo "Installing packages (one-time or requirements changed)..."
+    if [ ! -d ".venv" ]; then
+        uv venv --python 3.11 .venv
+    fi
+    uv pip sync --python ".venv/bin/python" requirements.txt || \
+    uv pip sync --python ".venv/Scripts/python.exe" requirements.txt
+    touch "$STAMP"
+fi
+
+# ── Run ──────────────────────────────────────────────────────────────────────
 echo "Starting simulator..."
 echo
-uv run --python 3.11 --with-requirements requirements.txt python LBPSimulator.py
+PYTHON=".venv/bin/python"
+[ -x ".venv/Scripts/python.exe" ] && PYTHON=".venv/Scripts/python.exe"
+"$PYTHON" LBPSimulator.py
