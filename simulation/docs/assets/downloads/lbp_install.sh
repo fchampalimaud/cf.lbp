@@ -13,7 +13,8 @@ set -euo pipefail
 # or make it executable first:
 #   chmod +x lbp_install.sh && ./lbp_install.sh
 
-echo "=== LBP Simulator Installer ==="
+VERSION="0.17.9"
+echo "=== LBP Simulator Installer v$VERSION ==="
 echo
 
 REPO_ZIP="https://github.com/fchampalimaud/cf.lbp/archive/refs/heads/main.zip"

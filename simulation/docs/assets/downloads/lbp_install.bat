@@ -9,7 +9,8 @@ setlocal enabledelayedexpansion
 :: install — updates after that go through the app's own update button, not
 :: this script.
 
-echo === LBP Simulator Installer ===
+set "VERSION=0.17.9"
+echo === LBP Simulator Installer v%VERSION% ===
 echo.
 
 set "REPO_ZIP=https://github.com/fchampalimaud/cf.lbp/archive/refs/heads/main.zip"
