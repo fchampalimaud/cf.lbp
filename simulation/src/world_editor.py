@@ -56,6 +56,7 @@ class WorldEditor:
         self._alt_moving     = False  # True for the duration of an Alt-drag reposition started outside Move mode
         self._shift_moving   = False  # True for the duration of a Shift-drag reposition started outside Move mode
         self._ctrl_duplicating = False  # True for the duration of a Ctrl-drag duplicate
+        self._rotate_dragging  = False  # True for the duration of an Alt+Shift-drag rotation
 
     # ── Public mode setters (called by main window button handlers) ───────────
 
@@ -109,14 +110,25 @@ class WorldEditor:
     def handle_drag(self, x, y, is_start, is_finish):
         if is_start:
             mods = QApplication.keyboardModifiers()
+            alt   = bool(mods & Qt.AltModifier)
+            shift = bool(mods & Qt.ShiftModifier)
+            ctrl  = bool(mods & Qt.ControlModifier)
             hit_kind = self._find_drag_item(x, y)[0] if mods & (Qt.AltModifier | Qt.ControlModifier | Qt.ShiftModifier) else None
-            self._ctrl_duplicating = bool(mods & Qt.ControlModifier) and hit_kind in ('patch', 'object')
-            self._alt_moving = (not self._ctrl_duplicating and self.draw_mode != 'move'
-                                 and bool(mods & Qt.AltModifier) and hit_kind is not None)
-            self._shift_moving = (not self._ctrl_duplicating and not self._alt_moving
+            self._rotate_dragging  = alt and shift and hit_kind == 'robot'
+            self._ctrl_duplicating = (not self._rotate_dragging
+                                       and ctrl and hit_kind in ('patch', 'object'))
+            self._alt_moving = (not self._rotate_dragging and not self._ctrl_duplicating
+                                 and self.draw_mode != 'move'
+                                 and alt and hit_kind is not None)
+            self._shift_moving = (not self._rotate_dragging and not self._ctrl_duplicating
+                                   and not self._alt_moving
                                    and self.draw_mode != 'move'
-                                   and bool(mods & Qt.ShiftModifier) and hit_kind in ('patch', 'object'))
-        if self._ctrl_duplicating:
+                                   and shift and hit_kind in ('patch', 'object'))
+        if self._rotate_dragging:
+            self._drag_rotate(x, y, is_start, is_finish)
+            if is_finish:
+                self._rotate_dragging = False
+        elif self._ctrl_duplicating:
             self._drag_duplicate(x, y, is_start, is_finish)
             if is_finish:
                 self._ctrl_duplicating = False
@@ -337,6 +349,21 @@ class WorldEditor:
                     # Pin the drop as this agent's own Reset position — otherwise
                     # the next Reset would snap it back to the auto-spacing slot.
                     item.init_pos = list(item.bot_pos)
+                self._setup_world(rebuild=True)
+            self._drag_item = (None, None)
+
+    def _drag_rotate(self, x, y, is_start, is_finish):
+        if is_start:
+            self._drag_item = self._find_drag_item(x, y)
+        if self._drag_item[0] == 'robot' and not is_finish:
+            kind, item = self._drag_item
+            pos = item.bot_pos if hasattr(item, 'bot_pos') else item
+            pos[2] = float(np.arctan2(y - pos[1], x - pos[0]))
+            self._setup_world(rebuild=False)
+        if is_finish:
+            kind, item = self._drag_item
+            if kind == 'robot' and hasattr(item, 'bot_pos'):
+                item.init_pos = list(item.bot_pos)
                 self._setup_world(rebuild=True)
             self._drag_item = (None, None)
 

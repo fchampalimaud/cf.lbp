@@ -42,6 +42,7 @@ INTERACTIONS = {
         ('Drag (↕ Sky tool)',  'Set the polarization e-vector direction'),
         ('Drag (↖ Move)',      'Move a gradient patch, an object or a robot'),
         ('Alt+drag',           'Move a patch, object or robot from any tool, without switching to ↖ Move'),
+        ('Alt+Shift+drag a robot', 'Rotate the robot by pointing toward the cursor; sets its heading'),
         ('Ctrl+drag',          'Duplicate a patch or object (not the robot) and drag the copy; the original stays put'),
         ('Shift+drag (Move / Alt / Ctrl)', 'Snap to a grid (Physics tab Grid size), anchored at the arena centre'),
         ('Click a robot',      'Select that agent (Move / gradient / Wall / Sky tools)'),
