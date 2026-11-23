@@ -132,11 +132,14 @@ Try `drive`'s `value` at `100` with `light`'s `scale` left at `60`: the sensor c
 
 - **Wall avoidance** — Vehicle III never stops, which means it will eventually hit a wall. Add a `DistanceSensor` and wire it so the robot steers away from walls without losing its drive to roam. Think about which vehicle type produces a gentle curve rather than a spin — and whether the wall signal should speed a wheel up or slow it down.
 
-- **Fly courtship** — Two groups, two gradient labels, one arena. Place a mounted gradient (label **B**) on the female's body so the male tracks her position rather than a static patch. Check out the [A World with Many Vehicles](multi-agent.md) page if you don't know how to set up a multi-agent world.
+- **Colour vision** — Replace the `GradientSensor` with an `RGBCameraSensor` and a `Conv2dLayer` colour filter. The robot can now distinguish objects by colour — approaching green ones and avoiding red ones — using exactly the same crossed and same-side wiring logic you built here. See [Braitenberg Vehicles with Vision](vision-braitenberg.md) for a step-by-step guide.
+
+- **Fly courtship** — Two groups, two gradient labels, one arena. Place a mounted gradient (label **B**) on the female's body so the male tracks her position rather than a static patch. For a more realistic version, replace the gradient sensor with a camera and colour filter — the male then responds to the female's actual body colour rather than an invisible cloud. Check out the [A World with Many Vehicles](multi-agent.md) page if you don't know how to set up a multi-agent world.
 
 - **On the real robot** — Does the same network behave the same way on physical hardware? Wire the Vehicle III circuit to a real robot and see whether the drive baseline and sensor weights you tuned in simulation transfer without adjustment. See [Vehicle III on the Real Robot](vehicle3-on-robot.md) to get started.
 
 ## What to try next
 
+- **[Braitenberg Vehicles with Vision](vision-braitenberg.md)** — swap the gradient sensor for a camera and teach the robot to tell colours apart.
 - **[A World with Many Vehicles](multi-agent.md)** — put several vehicles in the same arena and watch population-level patterns emerge without changing any brain.
 - **[Vehicle III on the Real Robot](vehicle3-on-robot.md)** *(if you have a robot)* — connect the same network to live hardware with no code changes.
