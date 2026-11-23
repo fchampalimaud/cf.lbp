@@ -2,7 +2,7 @@
 
 ![InteroceptiveSensor](../../assets/figures/sensor_interoceptive.svg)
 
-Samples gradient intensity at the **mouth** (heading angle 0) and integrates it over time as an internal energy/satiation state.
+Samples gradient intensity at the **mouth** (heading angle 0) and integrates what is eaten into an internal satiation state, which digestion slowly drains.
 
 ## Pipeline
 
@@ -12,15 +12,17 @@ Samples gradient intensity at the **mouth** (heading angle 0) and integrates it 
 
 $$s_{\text{target}} = \text{clip}(r \times \text{scale},\; 0,\; 1) \times \text{max\_val}$$
 
-- `scale` controls mouth sensitivity. At `scale=1` full-intensity gradient drives state all the way to `max_val`.
+- `scale` controls mouth sensitivity: it sets how fast a given patch intensity is eaten.
 - `max_val` is the ceiling of the internal state.
 
-**3. Integrate** — asymmetric leaky dynamics toward the target:
+**3. Eat & digest** — a leaky integrator. Intake fills the gut while digestion drains it, so fullness reflects how much has been eaten (time × intensity), not how much food is under the mouth right now:
 
-$$\tau = \begin{cases}\tau_{rise} & s_{\text{target}} > s \\ \tau_{decay} & s_{\text{target}} \leq s\end{cases}, \qquad \frac{ds}{dt} = \frac{s_{\text{target}} - s}{\tau}$$
+$$\frac{ds}{dt} = \frac{s_{\text{target}}}{\tau_{rise}} - \frac{s}{\tau_{decay}}$$
 
-- `tau_rise` — seconds to reach satiation when food is at the mouth.
-- `tau_decay` — seconds to return to zero when food is absent (should be >> `tau_rise` for realistic hunger).
+- `tau_rise` — seconds to fill from empty while eating at full intensity (0 = instant).
+- `tau_decay` — digestion time constant; 0 = no digestion (pure integrator). Should be ≫ `tau_rise` for realistic hunger.
+
+A long stay at the weak edge of a patch fills the gut as surely as a short meal at its centre.
 
 **4. Clip & output:**
 

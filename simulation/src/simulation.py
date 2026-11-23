@@ -8,6 +8,7 @@ SimController; headless runs use it directly (see headless.py).
 """
 
 from sim_engine import step_agents, free_running_cameras
+from sim_constants import agent_display_color
 
 
 class Simulation:
@@ -40,6 +41,7 @@ class Simulation:
             self.engine = MuJoCoEngine(self.world, self.sim_cfg, n_agents=len(self.agents),
                                        agent_sensors=_agent_collision_sensors(self.agents))
             self.engine.reset([a.bot_pos for a in self.agents])
+            self.sync_agent_colors()
             log_collision_sensor_routing(self.agents)
             return True, None
         except Exception as e:
@@ -55,7 +57,14 @@ class Simulation:
         self.engine.rebuild(self.world, self.sim_cfg, bot_pos=[a.bot_pos for a in self.agents],
                             n_agents=len(self.agents),
                             agent_sensors=_agent_collision_sensors(self.agents))
+        self.sync_agent_colors()
         log_collision_sensor_routing(self.agents)
+
+    def sync_agent_colors(self):
+        """Paint each MuJoCo robot body with its agent's arena color."""
+        if self.engine is None:
+            return
+        self.engine.set_agent_colors([agent_display_color(a, i) for i, a in enumerate(self.agents)])
 
     def close(self):
         if self.engine is not None:

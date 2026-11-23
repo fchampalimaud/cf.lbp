@@ -144,7 +144,7 @@ class _SessionMixin:
     def _update_record_status(self):
         parts = []
         if self._logger.running:
-            parts.append("CSV")
+            parts.append("Log")
         if self._video_recorders:
             parts.append("Video")
         self._record_label.setText("●  REC: " + " + ".join(parts) if parts else "")
@@ -166,8 +166,11 @@ class _SessionMixin:
     # ── Logger ────────────────────────────────────────────────────────────────
 
     def _logger_start(self):
+        agents_info = [{'id': a.id, 'name': a.name, 'color': a.color}
+                       for a in self._sim_ctrl.registry.agents]
         self._logger.start(arena_scale=self.sim_cfg.arena_scale,
-                           arena_round=self.world.arena_round)
+                           arena_round=self.world.arena_round,
+                           agents=agents_info)
         self._btn_log_start.setEnabled(False)
         self._btn_log_stop.setEnabled(True)
         self._update_record_status()
@@ -648,7 +651,7 @@ class _SessionMixin:
 
     def _load_session_agents(self, saved_agents):
         """Reconstruct multiagent groups from a saved 'agents' array."""
-        from arena_widget import _AGENT_COLORS
+        from sim_constants import _AGENT_COLORS
 
         def _apply_init_pos(member_ids, init_pos):
             for mid, ip in zip(member_ids, init_pos or [None] * len(member_ids)):

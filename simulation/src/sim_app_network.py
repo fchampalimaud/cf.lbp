@@ -122,7 +122,7 @@ class _NetworkMixin:
         from circuit_model import CircuitModel
         from rigid_body import RigidBody
         from brain_manager import BrainManager
-        from arena_widget import _AGENT_COLORS
+        from sim_constants import _AGENT_COLORS
 
         slot_idx     = info['slot_idx']
         name         = info.get('name', '') or f'Remote {slot_idx}'

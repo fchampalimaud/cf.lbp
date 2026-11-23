@@ -237,6 +237,7 @@ class BaseSensor(DynamicsBase):
         self._neuron_runs    = {}   # output key (name / name_L / name_R) → LeakyLayer state
         self._neuron_raw     = {}   # output key → latest raw sensor output
         self._neuron_written = {}   # output key → array the neuron stage last wrote to brain
+        self._published_mod  = None # transmitter value last published (neuron-stage output mean)
 
     # ── Neuron stage ───────────────────────────────────────────────────────────
 
@@ -441,7 +442,7 @@ The output above feeds this sensor's neuron stage — a `LeakyLayer` with its ow
             ('color_channel', str,   '',               'R, G, B or empty for all'),
             ('gradient',      str,   'A',              'label A–F or empty for all'),
             ('scale',         float, 1.0,      'output scale'),
-            ('bias',          float, 0.0,      'constant offset added after scale'),
+            ('bias',          float, 0.0,      'offset added to the raw reading, before scale (a threshold on the scaled signal belongs in the Neuron tab bias)'),
             ('tau_rise',      float, '',       'rise τ (0 / empty = instant rise)'),
             ('tau_decay',     float, '',       'decay τ (0 / empty = instant decay)'),
             ('activation',    str,   'linear', 'output activation', ACTIVATIONS),
@@ -539,7 +540,7 @@ The output above feeds this sensor's neuron stage — a `LeakyLayer` with its ow
             ('dist',          float, 0.12,             'placement distance'),
             ('color_channel', str,   '',               'R, G, B or empty for all'),
             ('scale',         float, 1.0,              'output scale'),
-            ('bias',          float, 0.0,      'constant offset added after scale'),
+            ('bias',          float, 0.0,      'offset added to the raw reading, before scale (a threshold on the scaled signal belongs in the Neuron tab bias)'),
             ('tau_rise',      float, '',       'rise τ (0 / empty = instant rise)'),
             ('tau_decay',     float, '',       'decay τ (0 / empty = instant decay)'),
             ('activation',    str,   'linear', 'output activation', ACTIVATIONS),
@@ -677,7 +678,7 @@ The output above feeds this sensor's neuron stage — a `LeakyLayer` with its ow
             ('arc_angle',     float, np.radians(45.0),  'arc width per sector in degrees'),
             ('radius',        float, 1.2,      'radius multiplier'),
             ('scale',         float, 1.0,      'output scale'),
-            ('bias',          float, 0.0,      'constant offset added after scale'),
+            ('bias',          float, 0.0,      'offset added to the raw reading, before scale (a threshold on the scaled signal belongs in the Neuron tab bias)'),
             ('noise_std',      float, 0.0,      'Gaussian noise std added on collision (zero otherwise)'),
             ('tau_rise',      float, '',       'rise τ (0 / empty = instant rise)'),
             ('tau_decay',     float, '',       'decay τ (0 / empty = instant decay)'),
@@ -857,7 +858,7 @@ The output above feeds this sensor's neuron stage — a `LeakyLayer` with its ow
             ('angle_spread',  float, np.radians(90.0), 'fan width in degrees'),
             ('max_range',     float, 1.0,      'maximum detection range'),
             ('scale',         float, 1.0,      'output scale'),
-            ('bias',          float, 0.0,      'constant offset added after scale'),
+            ('bias',          float, 0.0,      'offset added to the raw reading, before scale (a threshold on the scaled signal belongs in the Neuron tab bias)'),
             ('tau_rise',      float, '',       'rise τ (0 / empty = instant rise)'),
             ('tau_decay',     float, '',       'decay τ (0 / empty = instant decay)'),
             ('activation',    str,   'linear', 'output activation', ACTIVATIONS),
@@ -947,20 +948,19 @@ The output above feeds this sensor's neuron stage — a `LeakyLayer` with its ow
 
 class InteroceptiveSensor(BaseSensor):
     """
-    Interoceptive (gut) sensor: tracks cumulative exposure to a specific gradient.
+    Interoceptive (gut) sensor: a leaky integrator of food eaten at the mouth.
 
     Samples the gradient at a single point on the robot's circumference at
-    heading angle zero (the "mouth"). Integrates over time with asymmetric
-    time constants — rises quickly when food is present, decays slowly when
-    absent. Output is a scalar clamped to [0, max_val].
+    heading angle zero (the "mouth"). Intake fills the gut, digestion drains it
+    with tau_decay. Output is clamped to [0, max_val].
 
     Parameters
     ----------
     gradient  : gradient label to track ('A'–'F')
     scale     : multiplier applied to the raw gradient sample before integration
     max_val   : saturation ceiling for the internal state
-    tau_rise  : time constant when input exceeds current state (getting fed)
-    tau_decay : time constant when input is below current state (getting hungry)
+    tau_rise  : seconds to fill from empty while eating at full intensity
+    tau_decay : digestion time constant
 
     Example:
         InteroceptiveSensor(gradient='A', tau_rise=1.0, tau_decay=30.0, name='gut')
@@ -977,19 +977,19 @@ Samples gradient intensity at the **mouth** (heading angle 0) and integrates it 
 2. **Scale & clip** — $s_{\\text{target}} = \\min(r \\times \\text{scale},\\; 1) \\times \\text{max\\_val}$
    - `scale` controls how sensitive the mouth is to the gradient. At `scale=1` full-intensity gradient drives the state all the way to `max_val`. At `scale=0.5` even a full-intensity patch only drives it to `max_val / 2`.
    - `max_val` is the ceiling of the internal state — the highest value the sensor can reach.
-3. apply the `output_mode` transform to $s_{\\text{target}}$ — derivative/integral (if not `none`) — **before** the leaky integration below runs, so a derivative/integral tracks the true stimulus, not this sensor's own filter lag.
-4. **Integrate** — asymmetric leaky dynamics toward the (possibly transformed) target:
+3. apply the `output_mode` transform to $s_{\\text{target}}$ — derivative/integral (if not `none`) — before the gut integrates it.
+4. **Eat & digest** — a leaky integrator: intake fills the gut while digestion drains it, so fullness reflects how much has been eaten (time × intensity), not how much food is under the mouth right now:
 
-$$\\tau = \\begin{cases}\\tau_{rise} & s_{\\text{target}} > s \\\\ \\tau_{decay} & s_{\\text{target}} \\leq s\\end{cases}, \\qquad \\frac{ds}{dt} = \\frac{s_{\\text{target}} - s}{\\tau}$$
+$$\\frac{ds}{dt} = \\frac{s_{\\text{target}}}{\\tau_{rise}} - \\frac{s}{\\tau_{decay}}$$
 
-   - `tau_rise` — seconds to reach satiation when food is at the mouth.
-   - `tau_decay` — seconds to return to zero when food is absent (should be >> `tau_rise` for realistic hunger).
+   - `tau_rise` — seconds to fill from empty while eating at full intensity (0 = instant).
+   - `tau_decay` — digestion time constant; 0 = no digestion (pure integrator).
 
 5. **Clip & output** — $\\text{output} = \\text{clip}(s,\\; 0,\\; \\text{max\\_val}) + \\text{bias}$
    - `start_val` — initial value of $s$ at reset (0 = empty stomach, `max_val` = full).
    - `bias` — constant offset added to the output every tick. Use a negative bias to shift the resting output below zero (e.g. to encode a hunger drive rather than a satiation level).
 
-**Example:** `scale=50, max_val=100` — a patch at half intensity (`r=0.5`) drives `s_target = clip(0.5×50, 0, 1) × 100 = 100` (full satiation), so `scale` here acts as a sensitivity amplifier and anything above `1/scale = 0.02` patch intensity triggers full satiation.
+**Example:** `scale=50, max_val=100` — a patch at half intensity (`r=0.5`) gives `s_target = clip(0.5×50, 0, 1) × 100 = 100`, the full eating rate, so `scale` here acts as a sensitivity amplifier and anything above `1/scale = 0.02` patch intensity is eaten at full speed.
 
 ---
 
@@ -1030,8 +1030,8 @@ The output above feeds this sensor's neuron stage — a `LeakyLayer` with its ow
             ('max_val',   float, 1.0,    'saturation ceiling'),
             ('start_val', float, 0.0,    'initial state (0 = hungry, max_val = fed)'),
             ('bias',      float, 0.0,    'constant offset added to the output'),
-            ('tau_rise',  float, 1.0,    'rise time constant (seconds)'),
-            ('tau_decay',      float, 30.0, 'decay time constant (seconds)'),
+            ('tau_rise',  float, 1.0,    'seconds to fill from empty while eating at full intensity'),
+            ('tau_decay',      float, 30.0, 'digestion time constant (seconds); 0 = no digestion'),
             ('output_mode',    str,   'none', 'none / derivative / integral', OUTPUT_MODES),
         ]
 
@@ -1063,14 +1063,11 @@ The output above feeds this sensor's neuron stage — a `LeakyLayer` with its ow
         # filter below runs — not the filtered state — so derivative/integral
         # track the true stimulus, not this sensor's own filter lag.
         target = float(self._apply_output_mode(np.array([target]), sim_cfg.dt)[0])
-        # Hunger/satiety state: the shared leaky filter (same tau rules as every
-        # sensor and layer), clipped to [0, max_val].
-        if self.tau_rise or self.tau_decay:
-            self._state = float(leaky_step(np.float64(self._state), target,
-                                           self.tau_rise, self.tau_decay, sim_cfg.dt))
-        else:
-            self._state = target
-        self._state  = float(np.clip(self._state, 0.0, self.max_val))
+        # Leaky integrator: intake fills the gut, digestion drains it at the same time.
+        dt = sim_cfg.dt
+        fill  = target * dt / self.tau_rise if self.tau_rise else target
+        drain = self._state * dt / self.tau_decay if self.tau_decay else 0.0
+        self._state = float(np.clip(self._state + fill - drain, 0.0, self.max_val))
         return np.array([self._state + self.bias])
 
 
@@ -1157,7 +1154,7 @@ The output above feeds this sensor's neuron stage — a `LeakyLayer` with its ow
             ('joint_id',       str,   'root',   'motor_layer_name of the joint group to read'),
             ('use_velocity',   bool,  False,    'read angular velocity instead of angle'),
             ('scale',          float, 1.0,      'output multiplier'),
-            ('bias',           float, 0.0,      'constant offset added after scale'),
+            ('bias',           float, 0.0,      'offset added to the raw reading, before scale (a threshold on the scaled signal belongs in the Neuron tab bias)'),
             ('tau_rise',       float, '',       'rise τ (0 / empty = instant rise)'),
             ('tau_decay',      float, '',       'decay τ (0 / empty = instant decay)'),
             ('activation',     str,   'linear', 'output activation', ACTIVATIONS),
@@ -1281,7 +1278,7 @@ The output above feeds this sensor's neuron stage — a `LeakyLayer` with its ow
             ('mount_angle',  float, 0.0,      'mount angle offset from body heading (radians)'),
             ('n',            int,   1,         'number of neurons'),
             ('scale',        float, 1.0,       'output scale'),
-            ('bias',         float, 0.0,       'constant offset added after scale'),
+            ('bias',         float, 0.0,       'offset added to the raw reading, before scale (a threshold on the scaled signal belongs in the Neuron tab bias)'),
             ('tau_rise',     float, '',        'rise τ (0 / empty = instant rise)'),
             ('tau_decay',    float, '',        'decay τ (0 / empty = instant decay)'),
             ('activation',   str,   'linear',  'output activation', ACTIVATIONS),
@@ -1441,7 +1438,7 @@ The output above feeds this sensor's neuron stage — a `LeakyLayer` with its ow
         return [
             ('n',              int,   8,        'number of DRA neurons'),
             ('scale',          float, 1.0,      'output multiplier'),
-            ('bias',           float, 0.0,      'constant offset added after scale'),
+            ('bias',           float, 0.0,      'offset added to the raw reading, before scale (a threshold on the scaled signal belongs in the Neuron tab bias)'),
             ('phase',          float, 0.0,      'phase offset (rad) — aligns neuron 0 to field direction'),
             ('tau_rise',       float, '',       'rise τ (0 / empty = instant rise)'),
             ('tau_decay',      float, '',       'decay τ (0 / empty = instant decay)'),
@@ -1551,7 +1548,7 @@ The output above feeds this sensor's neuron stage — a `LeakyLayer` with its ow
             ('tau_decay',      float, '',       'decay τ (0 / empty = instant decay)'),
             ('activation',     str,   'relu',   'output activation', ACTIVATIONS),
             ('scale',          float, 1.0,      'output multiplier'),
-            ('bias',           float, 0.0,      'constant offset added after scale'),
+            ('bias',           float, 0.0,      'offset added to the raw reading, before scale (a threshold on the scaled signal belongs in the Neuron tab bias)'),
             ('noise_std',      float, 0.0,      'noise amplitude'),
             ('noise_tau',      float, 0.0,      'OU correlation time (0 = white noise)'),
             ('output_mode',    str,   'none',   'none / derivative / integral', OUTPUT_MODES),
@@ -1663,7 +1660,7 @@ The output above feeds this sensor's neuron stage — a `LeakyLayer` with its ow
             ('tau_decay',      float, '',       'decay τ (0 / empty = instant decay)'),
             ('activation',     str,   'linear', 'output activation', ACTIVATIONS),
             ('scale',          float, 1.0,      'output multiplier'),
-            ('bias',           float, 0.0,      'constant offset added after scale'),
+            ('bias',           float, 0.0,      'offset added to the raw reading, before scale (a threshold on the scaled signal belongs in the Neuron tab bias)'),
             ('noise_std',      float, 0.0,      'noise amplitude'),
             ('noise_tau',      float, 0.0,      'OU correlation time (0 = white noise)'),
             ('output_mode',    str,   'none',   'none / derivative / integral', OUTPUT_MODES),

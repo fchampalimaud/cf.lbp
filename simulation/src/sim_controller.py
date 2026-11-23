@@ -187,6 +187,7 @@ class SimController(QObject):
         """Arena disks follow the agent list (and colors / selection). Called on
         every registry change; call it after changing an agent's color."""
         self._arena.sync_robot_items(self.registry.agents, self.registry.selected_id)
+        self.sim.sync_agent_colors()
 
     def sync_robot_markers(self):
         """Push each agent's current bot_pos into its arena vector marker,
@@ -466,7 +467,7 @@ class SimController(QObject):
                         if jdx < len(out):
                             raw[lname] = float(out[jdx])
 
-        self._logger.log(self.sim.time_index, agent.bot_pos, raw, self.world)
+        self._logger.log(self.sim.time_index, agents, raws, selected_id, self.world)
         self._phys_ms_acc += (time.perf_counter() - _t0) * 1000
 
         self.sig_tick_values.emit({k: raw.get(k, getattr(agent.brain, k, 0))

@@ -73,15 +73,9 @@ _OVERHEAD_H_FACTOR = 3.0
 # Viewer sync interval (seconds) — decoupled from physics rate to reduce GPU load
 _VIEWER_SYNC_DT = 0.033   # ~30 fps
 
-# Per-agent body colors (matches arena_widget._AGENT_COLORS, stored as RGB floats)
-_ROBOT_COLORS = [
-    (0.29, 0.50, 0.80),   # blue   — agent 0
-    (0.88, 0.36, 0.36),   # red    — agent 1
-    (0.36, 0.72, 0.36),   # green  — agent 2
-    (0.94, 0.65, 0.00),   # gold   — agent 3
-    (0.61, 0.36, 0.72),   # purple — agent 4
-    (0.09, 0.64, 0.72),   # teal   — agent 5
-]
+def _hex_to_rgb(color):
+    h = color.lstrip('#')
+    return tuple(int(h[k:k + 2], 16) / 255.0 for k in (0, 2, 4))
 
 # Per-sector CollisionSensor geoms carry margin=0 (detect only genuine overlap
 # — no lookahead trick needed here, since a lookahead sensor's geom is simply
@@ -169,6 +163,7 @@ class MuJoCoEngine:
         self._robot_body_ids = []        # list[int], one per agent
         self._robot_body_id  = -1       # backward-compat alias for agent 0
         self._collision_sector_geom_ids = {}   # (agent_idx, sensor_name) -> [geom_id, ...]; set by rebuild()
+        self._agent_colors  = []        # hex per agent; re-applied after every rebuild
         self.rebuild(world, sim_cfg, n_agents=n_agents, agent_sensors=agent_sensors)
 
     # ── XML ───────────────────────────────────────────────────────────────────
@@ -363,12 +358,11 @@ class MuJoCoEngine:
         # exclude only suppresses this one specific body pair.
         exclude_lines = []
         for i in range(n_agents):
-            r, g, b = _ROBOT_COLORS[i % len(_ROBOT_COLORS)]
             lines += [
                 f'    <body name="robot_{i}" pos="{i*0.5:.3f} 0 {_ROBOT_H:.4f}">',
                 f'      <freejoint name="root_{i}"/>',
-                f'      <geom type="cylinder" size="{br:.4f} {_ROBOT_H:.4f}"',
-                f'            density="500" rgba="{r:.2f} {g:.2f} {b:.2f} 1"',
+                f'      <geom name="robot_{i}_shell" type="cylinder" size="{br:.4f} {_ROBOT_H:.4f}"',
+                f'            density="500" rgba="0.5 0.5 0.5 1"',
                 f'            contype="1" conaffinity="1" friction="0.5 0.1 0.1"/>',
                 f'      <geom type="box" pos="{br*0.8:.4f} 0 {_ROBOT_H:.4f}"',
                 f'            size="{br*0.35:.4f} {br*0.12:.4f} {_ROBOT_H*0.6:.4f}"',
@@ -464,6 +458,7 @@ class MuJoCoEngine:
                         for j in range(sensor.n)
                     ]
                     self._collision_sector_geom_ids[(i, sensor.name)] = sector_ids
+            self._apply_agent_colors()
             if bot_pos:
                 if isinstance(bot_pos[0], (list, tuple)):
                     for i, pos in enumerate(bot_pos):
@@ -475,6 +470,19 @@ class MuJoCoEngine:
 
         if viewer_was_open:
             self.launch_viewer()
+
+    def set_agent_colors(self, colors):
+        """Recolor each robot body to match its 2D-arena color (list of hex strings,
+        one per agent). Takes effect immediately, no rebuild needed."""
+        with self._lock:
+            self._agent_colors = list(colors)
+            self._apply_agent_colors()
+
+    def _apply_agent_colors(self):
+        for i, color in enumerate(self._agent_colors[:self._n_agents]):
+            gid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, f'robot_{i}_shell')
+            if gid >= 0:
+                self.model.geom_rgba[gid, :3] = _hex_to_rgb(color)
 
     def reset(self, bot_pos_or_list):
         """Teleport robots to given positions and zero velocities. Call after simulator reset.

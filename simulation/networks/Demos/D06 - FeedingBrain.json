@@ -45,7 +45,7 @@
         [
           "insulin",
           -2.0,
-          "post",
+          "pre",
           "absolute"
         ]
       ],
@@ -59,7 +59,7 @@
       "max_val": 1.0,
       "start_val": 0.0,
       "bias": 0.0,
-      "tau_rise": 0.01,
+      "tau_rise": 2.0,
       "tau_decay": 30.0,
       "output_mode": "none",
       "noise_std": 0.0,

@@ -190,7 +190,7 @@ Discovers Python files in `brains/`, imports them, finds the class that inherits
 
 `logger.py`
 
-`start(path)` / `stop()` / `log(time_index, bot_pos, raw_signals, world)` — records a run's state to CSV for later analysis, independent of the oscilloscope.
+`start(path, arena_scale, arena_round, agents)` / `stop()` / `log(time_index, agents, raws, selected_id, world)` — records every agent's state to a JSONL file (v2 format) for later analysis, independent of the oscilloscope. Each tick row contains a list of per-agent entries (`id`, `x`, `y`, `theta`, `mL`, `mR`, `signals`). Non-scalar signals (e.g. camera arrays) are silently skipped. If an agent joins mid-recording, a `{"_agent": true, …}` registration row is emitted automatically.
 
 ---
 
@@ -497,7 +497,7 @@ sim_net_client.py         SimNetClient — distributed-sim client side (+ headle
 sim_config.py             SimConfig (global simulation parameters)
 sim_widgets.py            reusable Qt widgets
 sim_constants.py          shared numeric constants
-logger.py                 SimLogger — CSV data recording
+logger.py                 SimLogger — JSONL data recording (multi-agent v2)
 arena_widget.py           ArenaWidget, RobotItem — multi-robot 2-D scene
 network_viz.py            NetworkVisualizerWindow (holds the parts below)
 network_viz_context.py    NetworkVizContext — DI facade bridging to SimulatorApp

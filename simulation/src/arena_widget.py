@@ -3,11 +3,8 @@ import pyqtgraph as pg
 from PySide6.QtCore import Qt, QRectF, QPointF, Signal
 from PySide6.QtGui import QPainter, QPainterPath, QPainterPathStroker, QPen, QBrush, QColor
 
-from sim_constants import C, _CHAN_PALETTE, _TRAIL_COLOR
+from sim_constants import C, _CHAN_PALETTE, _TRAIL_COLOR, agent_display_color
 from rigid_body import world_poses as _rb_world_poses
-
-# Distinct fill colors for each agent's robot disk (agent 0 uses the existing primary blue)
-_AGENT_COLORS = ['#FF4444', '#22BB22', '#4444FF', '#FFCC00', '#FF8800', '#9900CC']
 
 
 def _paint_texture_marker(p, path):
@@ -360,7 +357,7 @@ class ArenaWidget(pg.GraphicsLayoutWidget):
         r = self._sim_cfg.body_radius if self._sim_cfg is not None else 0.2
         robots, trails, ids, colors = [], [], [], []
         for i, agent in enumerate(agents):
-            color = agent.color or _AGENT_COLORS[i % len(_AGENT_COLORS)]
+            color = agent_display_color(agent, i)
             if agent.id in existing:
                 robot, trail, old_color = existing.pop(agent.id)
                 if color != old_color:

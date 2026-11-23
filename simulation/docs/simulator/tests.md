@@ -52,6 +52,7 @@ Core layer math, serialisation, and visualiser smoke tests.
 | `test_reset_zeroes_state` | `reset()` zeroes layer output regardless of prior activity |
 | `test_ensure_n_raises_on_mismatch` | `_ensure_n` raises `ValueError` when called with a different `n` than already declared |
 | `test_ensure_n_initialises_when_none` | `_ensure_n` initialises buffers on first call when `n` was unset at construction |
+| `test_interoceptive_gut_integrates_dose_and_digests` | `InteroceptiveSensor` is a leaky integrator of intake: 10 s at a weak patch edge (intensity 0.3) fills it to `max_val`, and with food gone it decays to `e⁻¹` after one `tau_decay` |
 | `test_x0_seeds_initial_state` | `x0` seeds `_x` and the `output_mode='integral'` accumulator at construction, both when `n` is given immediately and via the deferred `_ensure_n` path |
 | `test_x0_per_neuron_list` | `x0` accepts a per-neuron list, not just a scalar broadcast |
 | `test_x0_wrong_length_raises` | A per-neuron `x0` list whose length doesn't match `n` raises `ValueError` |
@@ -61,6 +62,7 @@ Core layer math, serialisation, and visualiser smoke tests.
 | `test_sensor_neuron_stage_sums_connections_before_its_activation` | A connection onto a sensor is summed into its neuron stage before the stage's activation (a relu stage floors an inhibited channel at 0), and stepping again without re-sampling doesn't feed the stage its own output |
 | `test_sensor_neuron_stage_passthrough_leaves_output_untouched` | A sensor with a pass-through neuron stage, no connections and no modulators keeps the exact array SENSE wrote |
 | `test_sensor_neuron_stage_does_not_compound_a_held_camera_frame` | A camera's held frame keeps feeding the neuron stage its raw value between renders, so a leaky stage rises as `1 − (1 − dt/τ)^k`, not compounding |
+| `test_sensor_receptor_reads_transmitter_sensors_neuron_output` | A receptor on a sensor reads what a transmitter sensor's neuron stage publishes, not its raw reading: a gut-like sensor turns fullness into hunger (`1 − x`), and a food sensor's `+1 pre` receptor sees the hunger value, even when the food sensor is listed first |
 | `test_sensor_from_dict_migrates_pre_modulator_activation_exactly` | Loading a pre-neuron-stage sensor with a `pre` modulator and relu moves activation and scale to the neuron stage, reproducing the old `relu(x · gain) · scale` exactly even for a negative gain; the saved form round-trips |
 | `test_step_network_size_reconciliation_is_gated` | `step_network`'s size-reconciliation pass only re-runs when the connections list identity changes, not every tick (regression for the O(connections) caching fix) |
 | `test_product_layer_multiplies_connections` | `ProductLayer` combines incoming connections by elementwise product, not sum (with `tau_rise=0.0` to isolate the fan-in contract from leaky filtering); a `ProductLayer` with zero connections outputs all-ones (not all-zeros) before bias/dynamics/activation/scale |
@@ -113,6 +115,26 @@ Core layer math, serialisation, and visualiser smoke tests.
 | `test_headless_session_loads_all_agents_and_runs` | `session_loader.build_simulation` builds every agent group of a saved session without the GUI (multi-agent tutorial: 3 agents, all with brains), and the result can be stepped |
 | `test_simulation_runs_without_qt` | Importing the simulation core (`simulation`, `sim_engine`, `agent_registry`, `session_loader`, `headless`) in a fresh interpreter never imports PySide6 or pyqtgraph |
 | `test_step_agents_renders_due_cameras_only` | `step_agents` renders `fps > 0` cameras on their schedule and leaves `fps = 0` cameras to the display loop |
+
+## `tests/test_logger.py`
+
+Unit tests for `SimLogger` and `TrajectoryLoader`. No Qt or MuJoCo required.
+
+| Test | Verifies |
+|---|---|
+| `test_scalar_signals_excludes_mL_mR` | `_scalar_signals` strips `mL`/`mR` and keeps other scalar channels |
+| `test_scalar_signals_skips_arrays` | numpy arrays in the raw dict are silently excluded |
+| `test_scalar_signals_skips_none` | `None` values don't crash `_scalar_signals` |
+| `test_logger_writes_meta_and_tick_rows` | v2 meta row contains `version`, `arena_scale`, and agent list; tick row has `t`, `sel`, and an `agents` list |
+| `test_logger_top_level_positions_per_agent` | Each agent entry in a tick row carries its own `x`/`y` from `bot_pos` |
+| `test_logger_selected_id_recorded` | `sel` in each tick row matches the `selected_id` passed to `log()` |
+| `test_logger_mid_recording_agent_emits_registration_row` | An agent not in `_known_ids` gets a `{"_agent": true, …}` row emitted before the tick that first includes it; subsequent ticks for the same agent emit no further registration rows |
+| `test_logger_vector_signal_does_not_crash` | A camera-array signal in the raw dict is silently dropped; scalar signals alongside it are kept |
+| `test_logger_row_count` | `row_count` reflects the number of tick rows written |
+| `test_trajectory_loader_v2_tracks` | `TrajectoryLoader` parses a v2 file into a `tracks` dict keyed by agent id, one entry per agent, each with the correct number of steps |
+| `test_trajectory_loader_v2_agent_info` | `agent_info` is populated with names from the `_meta` header |
+| `test_trajectory_loader_v2_compat_props` | `xs`, `ys`, `n_steps`, `arena_scale` work on a v2 file (point at the first agent) |
+| `test_trajectory_loader_v1_single_agent` | A hand-written v1 file (top-level `x`/`y`, no `agents` key) loads into a single-entry `tracks` dict with id=0 |
 
 ## `tests/test_shipped_files.py`
 

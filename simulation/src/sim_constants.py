@@ -19,6 +19,14 @@ _CHAN_PALETTE = ['#6CC87A', '#6AAAD4', '#E07878', '#D4A060',
 
 _TRAIL_COLOR = '#282C34'
 
+# Default per-agent body colors, used when an agent has no explicit color.
+_AGENT_COLORS = ['#FF4444', '#22BB22', '#4444FF', '#FFCC00', '#FF8800', '#9900CC']
+
+
+def agent_display_color(agent, index):
+    """Hex color an agent is drawn with (2D arena and MuJoCo body alike)."""
+    return agent.color or _AGENT_COLORS[index % len(_AGENT_COLORS)]
+
 
 class _NumpyEncoder(json.JSONEncoder):
     def default(self, obj):

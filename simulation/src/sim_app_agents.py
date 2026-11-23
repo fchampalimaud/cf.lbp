@@ -103,7 +103,7 @@ class _AgentsMixin:
 
     def _add_agent(self, color=None, name=None):
         """Add a new agent group (n=1) with an optional brain load."""
-        from arena_widget import _AGENT_COLORS
+        from sim_constants import _AGENT_COLORS
         registry = self._sim_ctrl.registry
         # The new group starts with what the currently selected group runs
         # (same code brain, or same network file).

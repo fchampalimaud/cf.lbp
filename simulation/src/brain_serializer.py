@@ -242,6 +242,7 @@ def _sensor_from_dict(d: dict):
         kw.setdefault('output_mode', 'derivative' if kw.pop('differential') else 'none')
     kw.pop('group', None)          # removed field — silently drop from old JSON
     kw.pop('osc_path', None)       # removed field — path is now embedded in robot_address
+    kw.pop('gut_mode', None)       # removed field — InteroceptiveSensor is always integrating
     viz_layer = kw.pop('viz_layer', None)
     viz_z     = kw.pop('viz_z', None)
     body_ids = kw.pop('body_ids', None)

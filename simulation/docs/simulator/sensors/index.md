@@ -37,6 +37,19 @@ $$u = \text{sensor output} + \sum_k W_k \cdot \text{input}_k$$
 - **Pass-through by default.** `bias` 0, `scale` 1, `linear`, no time constants — a sensor with no connections and an untouched Neuron tab behaves exactly as before.
 - **Neuromodulation acts here.** `site = pre` scales the neuron stage's input (sensor output plus connections), `site = post` its output. The transmitter publishes the neuron stage's output.
 - **Lateralized sensors.** Each half (`name_L`, `name_R`) runs through its own copy of the neuron stage, so a connection can target one half.
+
+### Sensor bias vs neuron bias
+
+Both tabs have a `bias`, but they act at different points of the signal, so they do very different things:
+
+$$\text{sensor output} = \text{activation}(r + b_{\text{sensor}}) \times \text{scale}_{\text{sensor}}$$
+
+$$\text{neuron output} = \text{activation}\big(g_{\text{pre}} \cdot (\text{sensor output} + \text{connections}) + b_{\text{neuron}}\big) \times \text{scale}_{\text{neuron}} \times g_{\text{post}}$$
+
+where $r$ is the raw reading (usually between 0 and 1), and $g_{\text{pre}}$, $g_{\text{post}}$ are the modulator gains (`1 + scale × signal`).
+
+- **Sensor bias** shifts the *raw* reading, before the sensor's `scale`. It's in the units of the reading itself, so a bias of −1 on a gradient sensor (readings between 0 and 1) makes every reading ≤ 0, and with a `relu` the sensor goes silent.
+- **Neuron bias** comes *after* the sensor's `scale` and after any `pre` modulator gain, so it's in the units of the scaled signal. Use it, together with a `relu` activation, to set a **threshold**: with sensor `scale = 10`, a neuron bias of −5 lets through only readings above half the maximum. Since it comes after the `pre` gain, a modulator can push the signal over that threshold. This is how a hungry robot can react to a food smell that a full one ignores (see [The Belly Rules the Nose, Challenge 1](../tutorials/hunger-and-satiety.md#challenge-1-hunger-turns-the-gain-up)).
 - **Timing.** Sensors are read before the network steps, so a connection from a layer onto a sensor carries that layer's output from the previous step — the same one-step delay as any recurrent connection.
 
 Networks saved before the neuron stage existed load unchanged. For a sensor with a `pre` modulator and a non-linear activation, the activation and `scale` move to the Neuron tab on load, which gives exactly the old result.

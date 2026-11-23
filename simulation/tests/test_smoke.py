@@ -596,6 +596,28 @@ def test_x0_seeds_integral_accumulator_not_bias():
     assert out.item() == pytest.approx(0.7)   # 0.5 + 2.0*0.1
 
 
+def test_interoceptive_gut_integrates_dose_and_digests():
+    """The gut fills with time spent eating — a long stay at a weak patch edge fills it
+    past the edge intensity — and digests with tau_decay once food is gone."""
+    from types import SimpleNamespace as NS
+    from sensors import InteroceptiveSensor
+
+    sim_cfg = NS(body_radius=0.1, dt=0.01)
+    weak = NS(cfg=NS(toggle_stim=True),
+              patches=[{'x': 0.8, 'y': 0.0, 'r': 1.0, 'label': 'A'}])   # mouth intensity 0.3
+    empty = NS(cfg=NS(toggle_stim=True), patches=[])
+
+    s = InteroceptiveSensor(tau_rise=1.0, tau_decay=30.0)
+    s.reset()
+    for _ in range(1000):
+        full = s.sample(0.0, 0.0, 0.0, weak, sim_cfg)[0]
+    assert full == pytest.approx(1.0)
+
+    for _ in range(3000):
+        after = s.sample(0.0, 0.0, 0.0, empty, sim_cfg)[0]
+    assert after == pytest.approx(np.exp(-1.0), rel=0.01)
+
+
 def test_collision_sensor_silent_when_never_hit():
     """noise_std > 0 must not produce any output while the sensor never registers a hit.
 
@@ -2896,6 +2918,31 @@ def test_sensor_neuron_stage_does_not_compound_a_held_camera_frame():
         step_network(brain, dt=0.01)
         got.append(float(brain.cam[0]))
     assert got == pytest.approx([1 - 0.8 ** k for k in (1, 2, 3)], abs=1e-5)
+
+
+def test_sensor_receptor_reads_transmitter_sensors_neuron_output():
+    """A receptor on a sensor must read what a transmitter sensor's neuron
+    stage publishes, not its raw reading. Here 'gut' turns fullness into
+    hunger (neuron bias −1, scale −1 → 1 − x); 'food' listens with a +1 'pre'
+    receptor. 'food' is listed first, so the transmitter must still step
+    before it. The bug read the raw fullness instead (gain 1 + x)."""
+    from network_runner import step_network
+    from brain_serializer import _sensor_from_dict
+
+    food = _sensor_from_dict({'type': 'GradientSensor', 'name': 'food', 'n': 2,
+                              'modulators': [['ghrelin', 1.0, 'pre', 'absolute']]})
+    gut = _sensor_from_dict({'type': 'GradientSensor', 'name': 'gut', 'n': 1,
+                             'neuron': {'bias': -1.0, 'scale': -1.0, 'activation': 'linear'},
+                             'neuromodulator_transmitter': 'ghrelin'})
+    food.reset(); gut.reset()
+    brain = _neuron_brain([food, gut], [], [])
+    x = np.array([0.8, 0.3], dtype=np.float32)
+    for fullness in (1.0, 0.25, 0.0):
+        brain.food, brain.gut = x.copy(), np.array([fullness], dtype=np.float32)
+        step_network(brain, dt=0.01)
+        hunger = 1.0 - fullness
+        assert brain.gut == pytest.approx([hunger])
+        assert np.allclose(brain.food, x * (1.0 + hunger))
 
 
 def test_sensor_from_dict_migrates_pre_modulator_activation_exactly():

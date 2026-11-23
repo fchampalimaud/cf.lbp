@@ -176,49 +176,62 @@ def _step_sensor_neurons(brain, sensors, conn_by_tgt, mod_map, dt):
 
     The raw sensor output is remembered per key: cameras and other sensors
     not re-sampled every tick would otherwise feed the stage its own output.
+
+    A transmitter sensor publishes into mod_map as soon as its stage has run,
+    so receptors on sensors stepped after it read its neuron output — the
+    caller orders transmitters first.
     """
     for sensor in sensors:
-        keys = _sensor_output_keys(brain, sensor)
-        mods = getattr(sensor, 'modulators', None) or []
-        written = sensor.__dict__.setdefault('_neuron_written', {})
-        raws    = sensor.__dict__.setdefault('_neuron_raw', {})
-        active = bool(mods) or not sensor.neuron_is_passthrough() or any(k in conn_by_tgt for k in keys)
-        if not active:
-            for key in keys:   # stage just switched off: restore the raw output
-                if key in written and getattr(brain, key, None) is written[key]:
-                    setattr(brain, key, raws[key])
-            written.clear()
+        _step_one_sensor_neuron(brain, sensor, conn_by_tgt, mod_map, dt)
+        nt = getattr(sensor, 'neuromodulator_transmitter', None)
+        if nt:
+            val = getattr(brain, sensor.name, None)
+            if val is not None:
+                mod_map[nt] = sensor._published_mod = float(np.mean(np.atleast_1d(val)))
+
+
+def _step_one_sensor_neuron(brain, sensor, conn_by_tgt, mod_map, dt):
+    keys = _sensor_output_keys(brain, sensor)
+    mods = getattr(sensor, 'modulators', None) or []
+    written = sensor.__dict__.setdefault('_neuron_written', {})
+    raws    = sensor.__dict__.setdefault('_neuron_raw', {})
+    active = bool(mods) or not sensor.neuron_is_passthrough() or any(k in conn_by_tgt for k in keys)
+    if not active:
+        for key in keys:   # stage just switched off: restore the raw output
+            if key in written and getattr(brain, key, None) is written[key]:
+                setattr(brain, key, raws[key])
+        written.clear()
+        return
+
+    pre_gain = post_gain = 1.0
+    for row in mods:
+        mod_name, scale, site, mode, _dp, _th = _unpack_mod_row(row)
+        if mod_name in mod_map:
+            v = sensor._transform_modulator_value((mod_name, mode), mode, mod_map[mod_name], dt)
+            if site == 'pre':
+                pre_gain += scale * v
+            elif site == 'post':
+                post_gain += scale * v
+
+    for key in keys:
+        cur = getattr(brain, key, None)
+        if cur is None:
             continue
-
-        pre_gain = post_gain = 1.0
-        for row in mods:
-            mod_name, scale, site, mode, _dp, _th = _unpack_mod_row(row)
-            if mod_name in mod_map:
-                v = sensor._transform_modulator_value((mod_name, mode), mode, mod_map[mod_name], dt)
-                if site == 'pre':
-                    pre_gain += scale * v
-                elif site == 'post':
-                    post_gain += scale * v
-
-        for key in keys:
-            cur = getattr(brain, key, None)
-            if cur is None:
-                continue
-            if key in written and cur is written[key]:
-                cur = raws[key]        # not re-sampled since last tick
-            raws[key] = cur
-            u = torch.as_tensor(np.atleast_1d(cur), dtype=torch.float32)
-            extra = _connection_sum(brain, conn_by_tgt.get(key, []))
-            if extra is not None and extra.shape == u.shape:
-                u = u + extra
-            if pre_gain != 1.0:
-                u = u * pre_gain
-            out = sensor.neuron_run(key, u.shape[0]).step(u, dt)
-            if post_gain != 1.0:
-                out = out * post_gain
-            out = out.numpy().astype(np.float32)
-            setattr(brain, key, out)
-            written[key] = out
+        if key in written and cur is written[key]:
+            cur = raws[key]        # not re-sampled since last tick
+        raws[key] = cur
+        u = torch.as_tensor(np.atleast_1d(cur), dtype=torch.float32)
+        extra = _connection_sum(brain, conn_by_tgt.get(key, []))
+        if extra is not None and extra.shape == u.shape:
+            u = u + extra
+        if pre_gain != 1.0:
+            u = u * pre_gain
+        out = sensor.neuron_run(key, u.shape[0]).step(u, dt)
+        if post_gain != 1.0:
+            out = out * post_gain
+        out = out.numpy().astype(np.float32)
+        setattr(brain, key, out)
+        written[key] = out
 
 
 @torch.no_grad()
@@ -407,18 +420,18 @@ def step_network(brain, dt):
             out = layer.output
             mod_map[nt] = float(out.mean() if isinstance(out, torch.Tensor)
                                 else np.mean(np.atleast_1d(out)))
+    # Sensor transmitters publish what their neuron stage produced — never the
+    # raw reading, which would bypass the stage (e.g. a 1 − x hunger neuron).
+    # Transmitters step first and publish as they go, so receptors on other
+    # sensors read this tick's value; a receptor on a transmitter that has not
+    # stepped yet reads last tick's published value.
     for sensor in tx_sensors:
-        nt = sensor.neuromodulator_transmitter
-        val = getattr(brain, sensor.name, None)
-        if val is not None:
-            mod_map[nt] = float(np.mean(np.atleast_1d(val)))
-
-    _step_sensor_neurons(brain, sensors, conn_by_tgt, mod_map, dt)
-    # Sensor transmitters publish what the neuron stage produced.
-    for sensor in tx_sensors:
-        val = getattr(brain, sensor.name, None)
-        if val is not None:
-            mod_map[sensor.neuromodulator_transmitter] = float(np.mean(np.atleast_1d(val)))
+        prev = getattr(sensor, '_published_mod', None)
+        if prev is not None:
+            mod_map[sensor.neuromodulator_transmitter] = prev
+    tx_ids = {id(s) for s in tx_sensors}
+    _step_sensor_neurons(brain, tx_sensors + [s for s in sensors if id(s) not in tx_ids],
+                         conn_by_tgt, mod_map, dt)
 
     # Main forward pass: accumulate weighted inputs, step each layer.
     for layer in active_layers:

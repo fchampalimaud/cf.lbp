@@ -1,4 +1,4 @@
-# Hunger Tunes the Senses — Neuromodulation
+# The Belly Rules the Nose — Neuromodulation
 
 A hungry animal and a full one can have exactly the same eyes, nose and wiring, and still behave very differently when they smell food. The difference is not in *where* signals go but in *how strongly* they get through. Internal state turns the volume of the senses up or down.
 
@@ -15,38 +15,22 @@ In this tutorial you will build a vehicle that lives in a round arena with two f
 | Put insulin receptors on the nose | The food sensor's gain becomes `1 − insulin` |
 | Watch it skip a meal | Fed at one patch, it passes the next one by and eats again once it is hungry |
 
-The finished vehicle ships as the built-in session **D06 - FeedingSession** (network **D06 - FeedingBrain**). Load it at any point to compare with what you built.
-
 ---
 
-## Background — satiety turns down the gain at the very first synapse
+## Background
 
-Neuromodulators such as hormones and neuropeptides are not wired point-to-point like ordinary synapses. They are released into the blood or into tissue and reach every cell that carries the matching **receptor**. Each of those cells changes how it responds. One slow signal can retune a whole pathway at once.
+Neuromodulators — hormones, neuropeptides — are not point-to-point wires. They flood a tissue and change the gain of every cell that carries the matching receptor. One slow signal retunes a whole pathway at once.
 
-Two studies show this happening at the **first synapse of the olfactory system**, where receptor neurons in the nose hand their signal to the brain:
+This happens at the **first synapse of the olfactory system** in both flies ([Root et al., 2011](#references)) and mice ([Oncul et al., 2026](#references)): when satiated, circulating insulin reduces how strongly food odours drive the brain. When hungry, the gain is restored. [Sengupta (2013)](#references) shows the same principle across *C. elegans* and *Drosophila* — feeding state routinely gates smell and taste right at the peripheral sensory neuron.
 
-- **Fruit flies (Root et al., 2011).** When a fly is fed, circulating insulin is high. In the olfactory receptor neurons that detect vinegar-like food odours, insulin signalling keeps the receptor for the neuropeptide sNPF switched down. When the fly starves, insulin drops, those neurons make more sNPF receptor, and their output synapses are **facilitated**: the same odour drives a larger response in the brain. A single type of receptor neuron (the one projecting to glomerulus DM1) was both necessary and sufficient for the starvation-driven improvement in food search. Making just those neurons more excitable made *fed* flies search like starved ones.
-- **Mice (Oncul et al., 2026, preprint).** In the mouse olfactory bulb, insulin blocks a potassium channel (Kv1.3) in periglomerular cells, the inhibitory neurons that wrap around the receptor-neuron terminals. These cells become more excitable and inhibit the incoming odour signal more strongly, so **less sensory input reaches the brain**. Fasted mice given glucose (which raises insulin) took about twice as long to find buried food (128 s vs 67 s). They also dug much further from it (9.0 cm vs 1.8 cm from the pellet).
-
-The two species use different molecules but share one principle. **The metabolic state sets the gain of the food-odour channel, right where it enters the brain, and that gain shapes which way the animal steers.** When hungry, the gain is high and food odours dominate. When full, the gain is low and the same odours barely register.
-
-This is not a quirk of two species. Sengupta (2013), in a review aptly titled *The belly rules the nose*, surveys work in *C. elegans* and *Drosophila* showing that feeding state routinely gates both smell and taste at the peripheral sensory neurons, through neuromodulatory signals that translate nutritional state into changes in how those neurons respond.
-
-That is exactly what you will build. Here is how the parts map onto the biology:
-
-| In the papers | In the simulator |
-|---|---|
-| Olfactory receptor neurons for a food odour | `food`, a `GradientSensor` tuned to gradient `A` |
-| Metabolic state (gut content, blood glucose) | `gut`, an `InteroceptiveSensor` that fills while the mouth is on food |
-| Insulin released into the circulation | `gut` set as a **transmitter** of `insulin` on the neuromodulator bus |
-| Insulin acting on the first olfactory synapse | An `insulin` **receptor** on `food`'s neuron stage that scales its output |
+You will build exactly that: a `GradientSensor` as the nose, an `InteroceptiveSensor` as the gut that releases insulin onto the neuromodulator bus, and an insulin receptor on the nose that scales its output down when the gut is full.
 
 ---
 
 ## Step 1 — Set up the arena
 
 1. In the **Physics** tab, set **arena_scale** to `4` so the arena is big enough to circle. 
-2. In the **World** tab, place two gradient-`A` patches (the red **A** button, then drag from the centre outwards). Put one at around North and the other around East, making sure the patches are far enough from the wall to observe a movement from the robot towards them but close enough to allow the robot to sense them with one of its antenae. These are the two meals.
+2. In the **World** tab, place two gradient-`A` patches (the red **A** button, then drag from the centre outwards). Put one at around North and the other around West, making sure the patches are far enough from the wall to observe a movement from the robot towards them but close enough to allow the robot to sense them with one of its antenae. These are the two meals.
 3. Leave the robot near the middle, slightly left of centre.
 
 ---
@@ -99,8 +83,8 @@ This vehicle has no internal state. Its response to food depends only on what it
 1. Drag an **InteroceptiveSensor** onto the canvas and name it `gut`. On the **Sensor** tab set:
     - `gradient` → `A`, so it "tastes" the same food the nose smells
     - `scale` → `1`, `max_val` → `1`, `start_val` → `0` (starts with an empty stomach)
-    - `tau_rise` → `1.0`, so it fills relatively fast when the mouth is on food
-    - `tau_decay` → `30`, so it empties over about 30 s once the robot leaves
+    - `tau_rise` → `2.0`, so about two seconds of eating at the patch centre fills it
+    - `tau_decay` → `5.0`, short enough to watch the belly empty in real time
 2. Switch to the **Neuron** tab and set:
     - **neuromodulator transmitter** → `insulin`
     - **transmitter color** → `#FF0000`
@@ -108,22 +92,33 @@ This vehicle has no internal state. Its response to food depends only on what it
 
 Don't draw any connection from `gut`. A transmitter doesn't need one: every tick, `gut` publishes its output as the value of `insulin` on the network's neuromodulator bus, and anything that has an insulin receptor reads it. That's the point of a hormone.
 
-`gut` samples food at the robot's **mouth** (the front of the body). The deeper the robot goes into a patch, the higher the reading, up to `1` at the centre. See [InteroceptiveSensor](../sensors/interoceptive.md) for the full dynamics.
+`gut` samples food at the robot's **mouth** (the front of the body). The deeper the robot goes into a patch, the faster it eats, so a long stay at the edge of a patch fills it as surely as a quick bite at the centre. See [InteroceptiveSensor](../sensors/interoceptive.md) for the full dynamics.
+
+Nothing in the circuit responds to insulin yet — no receptor exists — but the hormone is already being secreted and cleared exactly as intended.
+
+!!! note 
+    Add `gut` to the oscilloscope, switch the robot to **manual** mode and press **▶ Run**. Drag the robot onto a food patch and watch the trace climb; drag it away and watch the belly empty over about 5 seconds. Push it in and out a few times — a second visit while the gut is still elevated starts from a higher baseline. If the trace is too small, increase `gut`'s scale factor in the oscilloscope.
+
 
 ---
 
 ## Step 5 — Put insulin receptors on the nose
+
+Before wiring the receptor, raise `tau_decay` on `gut` to `30` — the 5 s digestion was useful for watching the trace, but the robot needs to stay full long enough to skip the second patch.
 
 1. Double-click `food` and switch to its **Neuron** tab.
 2. Under **Modulator receptors**, click **Add Receptor** and fill the row in:
 
     | Modulator | Scale | Site | Mode |
     |---|---|---|---|
-    | `insulin` | **−1.0** | `post` | `absolute` |
+    | `insulin` | **−1.0** | `pre` | `absolute` |
 
-3. Confirm and **Save**. Small red circles now appear in the `food` neurons signaling they are sensitive to the insuline neuromodulator you created.
+3. Confirm and **Save**. Small red circles now appear in the `food` neurons signaling they are sensitive to the insulin neuromodulator you created.
 
-Each tick, the receptor multiplies `food`'s output by a gain:
+![The arena with two food patches](../../assets/screenshots/feeding_arena.png){ style="display:inline-block; margin-right:24px; vertical-align:top;" }
+![The feeding network so far](../../assets/screenshots/feeding_network.png){ style="display:inline-block; vertical-align:top;" }
+
+Each tick, the receptor scales what arrives at `food`'s neuron by a gain:
 
 $$\text{gain} = 1 + \text{scale} \times \text{insulin} = 1 - \text{insulin}$$
 
@@ -136,19 +131,32 @@ $$\text{gain} = 1 + \text{scale} \times \text{insulin} = 1 - \text{insulin}$$
 
 Insulin can only turn the food sense *down*, from 100 % when empty to 0 % when full. It never increases the signal, and it never flips its sign.
 
-!!! note "Why `post`, and why −1?"
-    `post` scales what the sensor *sends on*, which is the closest match to presynaptic gating of the receptor-neuron terminal. `food`'s neuron stage is pass-through (linear, no time constants), so `pre` would give the same result here. See [Neuromodulators — pre vs post](../neuromodulators.md#wiring-details-pre-vs-post).
+!!! note "Why `pre`?"
+    A receptor can act at two sites. Call the sensor reading $r$ and the neuron's output $y$.
 
-    With `gut` capped at `max_val = 1`, a scale of `−1` takes the gain all the way to zero at full satiety and no further, matching the reduced gain reported in both papers. The gain is not clamped, so a scale beyond `−1` (e.g. `−2`) would push it *negative* above half-full. Same-side inhibition would turn into excitation, and food would start to repel the robot. To keep insulin purely inhibitory, keep `|scale| × max_val ≤ 1`.
+    With `pre`, the gain multiplies the input before the neuron processes it:
+
+    $$y = f\!\left((1 + s \cdot m)\, r\right)$$
+
+    With `post`, the gain multiplies the output after the neuron has done its work:
+
+    $$y = (1 + s \cdot m)\, f(r)$$
+
+    When the neuron is a simple pass-through ($f(r) = r$), the two are identical. But once $f$ is nonlinear — a relu, a leaky filter, a bias — the results differ. A `pre` gain shifts the neuron's operating point, changing which inputs cross a threshold. A `post` gain scales the output uniformly, leaving the neuron's internal dynamics unchanged.
+
+    Here, `food`'s neuron stage is pass-through, so `pre` and `post` give the same result. Using `pre` throughout the tutorial is the more principled choice: it gates the signal at the input, before any processing, which is the natural model of a presynaptic receptor. In Challenge 1 you will see the difference matter.
+
+!!! warning "Keep the scale at −1 or weaker"
+    With `gut` capped at `max_val = 1`, a scale of `−1` takes the gain exactly to zero when full — the nose is shut off but never reversed. A stronger scale (e.g. `−2`) would push the gain *negative*: food would start to *repel* the robot instead of just being ignored.
 
 ---
 
 ## Step 6 — Run it: skipping a meal
 
-Press **▶ Run**, and open the oscilloscope on `gut` and on `food_0` / `food_1`. You should see a cycle like this:
+Press **▶ Run**, and add `food_0` / `food_1` to the oscilloscope alongside `gut`. You should see a cycle like this:
 
 1. **Hungry.** `gut` is 0 and the gain is 1. The robot is pulled into the first patch it meets.
-2. **Eating.** With its mouth in the patch, `gut` climbs over a second or so (`tau_rise = 1`). The gain falls with it, the food signal fades, and the pull that held the robot in the patch weakens. The constant drive and the wall avoidance take over again, and the robot drifts out of the patch and back onto its path along the wall.
+2. **Eating.** With its mouth in the patch, `gut` climbs over a couple of seconds (`tau_rise = 2`), faster the deeper the robot goes. The gain falls with it, the food signal fades, and the pull that held the robot in the patch weakens. The constant drive and the wall avoidance take over again, and the robot drifts out of the patch and back onto its path along the wall.
 3. **Full, passing food by.** The next patch comes up soon after, because the two patches are close together. `gut` has barely started to empty, so the gain is still low. The weak food signal is not enough to pull the robot off its path, and it skirts the patch and keeps going.
 4. **Hungry again.** On the longer stretch of wall that follows, `gut` decays (`tau_decay = 30` s) and the gain climbs back towards 1. The next time the robot meets food, it turns in and eats. The cycle repeats every lap.
 
@@ -162,31 +170,50 @@ Now try the receptor scale at `0` (effectively no receptor), `−0.5` and `−1`
 
 Same sensors, same wiring, same world. A single receptor on the nose, fed by a signal from the gut, decides which food the robot eats.
 
-!!! tip "Which patch gets skipped depends on timing"
-    Nothing in the network says "skip this patch". After the robot leaves food, `gut` decays as `gut(t) ≈ gut₀ · e^(−t/30)`. If it leaves with `gut ≈ 0.8`, then 10 s later `gut ≈ 0.57` and the gain is only about 0.43. 60 s later `gut ≈ 0.11` and the gain is back to about 0.89. A patch reached soon after a meal is met with a weak nose, one reached much later with a strong one. Change the patch spacing, the starting position or `tau_decay`, and a different meal gets skipped, or none, or two.
+!!! tip "It's all about dynamics!"
+    Note that nothing in the network says "skip this patch". After the robot leaves food, `gut` decays as `gut(t) ≈ gut₀ · e^(−t/30)`. If it leaves with `gut ≈ 0.8`, then 10 s later `gut ≈ 0.57` and the gain is only about 0.43. 60 s later `gut ≈ 0.11` and the gain is back to about 0.89. A patch reached soon after a meal is met with a weak nose, one reached much later with a strong one. Change the patch spacing, the starting position or `tau_decay`, and a different meal gets skipped, or none, or two. This is computation leveraging neural dynamics.
 
 ---
 
 ## Challenges
 
-### Challenge 1 — Hunger turns the gain *up* (the fly version)
+### Challenge 1 — Hunger turns the gain *up*
 
-In Root et al. (2011) the logic works the other way round. Starvation *increases* the gain of the food channel, through sNPF facilitation that insulin normally holds down. Build that version.
+In the circuit you built, a full gut turns the nose *down*. The relationship can also run the other way: hunger turns the nose *up*. Build a robot that, when hungry, turns into a food patch from its edge, and that, when fed, only reacts once it is already well inside one, using a receptor with a **positive** scale.
 
-### Challenge 2 — Only the food channel is tuned
+??? tip "Solution — what changes and why"
+    1. **Transform satiation into hunger on `gut`'s Neuron tab: `bias = −1`, `scale = −1`, transmitter → `ghrelin`.** The neuron computes `−(gut − 1) = 1 − gut`, so the signal is 1 when empty and 0 when full. The receptor gain is `1 + scale × signal`, so a positive receptor on a *fullness* signal would boost sensitivity when fed — the transmitter has to be high when the robot is hungry.
 
-In the fly, only some odour channels were modulated by starvation, and only one (DM1) mattered for food search. Add a second patch type, gradient `B`, as a neutral odour with its own `GradientSensor` and **no** insulin receptor. Wire it for mild approach. Watch what happens to the robot's preference between `A` and `B` as `gut` fills and empties.
+    2. **Make hunger amplify the smell: replace `food`'s insulin receptor with `ghrelin`, scale `+1`, site `pre`.** The gain is `1 + ghrelin`: 1 when fed, 2 when starving. It must be `pre`, so the smell is amplified *before* the threshold of step 3. With `post`, hunger would only scale the output after the threshold, and a strong smell would get through whether the robot is hungry or not.
 
-<!--
-### Challenge 3 — Re-run the mouse experiment
+    3. **Give the smell a threshold: on `food`'s Sensor tab set `scale = 10`; on its Neuron tab set `bias = −3` and `activation = relu`.** The smell now runs from 0 at the patch edge to about 10 at the centre, and the neuron passes only the part above 3. A fed robot (gain 1) gets a signal only well inside a patch, where the smell is above 3. A starving robot (gain 2) doubles the smell first, so a smell of 1.5 already gets through, and it reacts from near the edge, which is where it decides whether to turn in. Don't make the threshold too strict: at `−10` even a starving robot's doubled edge smell stays below it, and the robot ignores food altogether. The bias must be on the **Neuron** tab: the Sensor tab's bias is added to the raw reading (0 to 1) before the sensor's scale, so it would silence the nose instead of setting a threshold (see [Sensor bias vs neuron bias](../sensors/index.md#sensor-bias-vs-neuron-bias)).
 
-Oncul et al. compared the same animals fasted and after a glucose injection, timing how long each took to find food. Do the same with [Headless Runs](../headless.md). Save two copies of your session, one with `gut`'s `start_val = 0` (fasted) and one with `start_val = 1` (sated). Run each over several `--seed` values and measure, from the CSV, the time until the robot first enters a patch. Is the sated robot slower? How does the answer change with receptor scale `−0.5` vs `−1`?
+    4. **Make a stronger smell steer, not stall: rewire `food → motor` as crossed excitation (`food_0 → motor_1`, `food_1 → motor_0`, weight `+1`), the Vehicle II wiring.** With the same-side inhibition from Step 3, a doubled smell pushes both wheels toward zero, and the hungry robot stops dead in the patch. With crossed excitation, smell on the left speeds up the right wheel, so a stronger smell just turns the robot harder toward the food.
 
----
--->
+    5. **Keep the smell sharp and the hormone immediate: leave `tau_rise` and `tau_decay` empty on `food`'s and `gut`'s Neuron tabs.** A time constant on `food`'s neuron smears the smell over seconds and destroys the left/right difference needed for steering. One on `gut`'s neuron adds a second lag on top of digestion, and because the filter starts at 0, the robot begins each run behaving as if it were full.
+
+    To see the effect, at least one patch must sit a little *off* the robot's path along the wall. A patch the robot drives straight over gets crossed whether it is hungry or not; only a patch it has to turn toward shows the difference.
+
+    The first lap may look different: the robot starts starving, and the excitation rushes it *through* the patch rather than slowing it down, so the gut may only half-fill and it eats at the next patch too. If that happens, shorten `gut`'s sensor `tau_rise` to `1` so a quick pass fills it.
+
+### Challenge 2 — A hungry animal takes risks
+
+A fed animal plays it safe; a hungry one takes risks it would normally avoid. In this challenge the arena's walls are **hot**. The closer the robot gets to a wall, the hotter it is, and the robot avoids the heat. Food grows only right next to the walls, so to eat, the robot has to brave the heat.
+
+Picking up on the robot from Challenge 1 robot, where `gut` broadcasts `ghrelin`, a hunger signal: 1 when empty, 0 when full.
+
+1. **Put the food in the heat.** Move both food patches so they touch the wall. A robot that keeps its usual distance from the wall should only graze their outer edge.
+2. **Treat `walls` as a heat sensor.** Its reading rises as the robot nears a wall, exactly like a thermosensor approaching a heat source, and the `walls → motor` wiring already steers the robot away from it.
+3. **Make hunger weaken the heat avoidance.** Add a `ghrelin` receptor to `walls` with a **negative** scale, site `pre`. The heat signal's gain becomes `1 + scale × ghrelin`: full strength when fed, weaker when hungry, so the hungry robot lets itself get closer to the walls.
+
+Things to work out:
+
+- **How negative should the scale be?** At `−1` a starving robot stops feeling the heat at all and drives into the wall. Find a scale that lets the hungry robot reach the food without crashing.
+- **Watch a whole cycle.** Fed: does it keep to the cooler middle and skip the food? Hungry: does it creep toward the walls and eat? After eating: does it pull back into the open?
+- **Compare with Challenge 1.** There, hunger turned a sense *up*; here it turns one *down*. One hormone, two receptors with opposite signs, two behaviours: seeking food and accepting danger.
 
 ## References
 
-- Root, C. M., Ko, K. I., Jafari, A., & Wang, J. W. (2011). Presynaptic facilitation by neuropeptide signaling mediates odor-driven food search. *Cell*, 145, 133–144. [doi:10.1016/j.cell.2011.02.008](https://doi.org/10.1016/j.cell.2011.02.008)
-- Sengupta, P. (2013). The belly rules the nose: feeding state-dependent modulation of peripheral chemosensory responses. *Current Opinion in Neurobiology*, 23, 68–75. [doi:10.1016/j.conb.2012.08.001](https://doi.org/10.1016/j.conb.2012.08.001)
-- Oncul, M., Stefens, C., Smith, E., Choudhuri, S., Filippi, B. M., & Johnston, J. (2026). Insulin controls olfactory gain at the first central synapse by regulating periglomerular neuron excitability. *bioRxiv* (preprint, not yet peer reviewed). [doi:10.64898/2026.07.22.740090](https://doi.org/10.64898/2026.07.22.740090)
+- Root et al. (2011). Presynaptic facilitation by neuropeptide signaling mediates odor-driven food search. *Cell* 145. [doi:10.1016/j.cell.2011.02.008](https://doi.org/10.1016/j.cell.2011.02.008)
+- Sengupta (2013). The belly rules the nose. *Curr. Opin. Neurobiol.* 23. [doi:10.1016/j.conb.2012.08.001](https://doi.org/10.1016/j.conb.2012.08.001)
+- Oncul et al. (2026). Insulin controls olfactory gain at the first central synapse. *bioRxiv* (preprint). [doi:10.64898/2026.07.22.740090](https://doi.org/10.64898/2026.07.22.740090)
