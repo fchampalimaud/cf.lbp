@@ -58,6 +58,8 @@ nav:
     - Watching the Brain While You Drive: simulator/tutorials/oscilloscope.md
     - A World with Many Vehicles: simulator/tutorials/multi-agent.md
     - Circuits Driving a Real Robot: simulator/tutorials/vehicle3-on-robot.md
+    - Braitenberg Vehicles with Vision: simulator/tutorials/vision-braitenberg.md
+    - Analysing a Logged Run: simulator/tutorials/log-analysis.md
   - Coding Brains: simulator/coding-brains.md
   - Wiring Brains:
     - Introduction: simulator/wiring-brains.md

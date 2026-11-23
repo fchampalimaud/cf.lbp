@@ -188,3 +188,4 @@ Click the **Session** tab → **Save** before moving on, to snapshot both the wo
 - **[Braitenberg Vehicle III](second-braitenberg.md)** — give the robot an intrinsic drive so it keeps moving on its own, instead of relying on a trail of patches.
 - **[Watching the Brain While You Drive](oscilloscope.md)** — open the oscilloscope on this circuit and see the sensor and motor signals live as the robot homes in on a patch.
 - **[Creating Worlds](../creating-worlds.md)** — all gradient, obstacle, and wall types in detail.
+- **[Analysing a Logged Run](log-analysis.md)** — record a run with the Logger, then plot the trajectory and patches in Python.
