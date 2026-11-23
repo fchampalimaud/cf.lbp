@@ -104,6 +104,29 @@ Nothing in the circuit responds to insulin yet — no receptor exists — but th
 
 ## Step 5 — Put insulin receptors on the nose
 
+!!! info "One sensor, three knobs"
+    Every sensory neuron has two fixed stages and can carry a third dynamic one.
+
+    **Stage 1 — Sensor scale / bias.** Input: raw reading $r \in [0,1]$. Output:
+
+    $$s = k_s\, r + b_s$$
+
+    With $k_s = 30$, $b_s = 0$: $s = 30 \times 0.5 = \mathbf{15}$. Fixed for the whole run.
+
+    **Stage 2 — Neuron scale / bias.** Input: $s$ from Stage 1. Output:
+
+    $$y = f(k_n\, s + b_n)$$
+
+    With $k_n = 1$, $b_n = 0$, $f =$ identity: $y = \mathbf{15}$. A non-zero $b_n$ sets a threshold. Also fixed.
+
+    **Stage 3 — Neuromodulator receptor.** The receptor computes a gain $g = 1 + k_r\, m$ from the hormone signal $m$ and intercepts the pipeline at the input site, scaling $s$ before Stage 2:
+
+    $$y' = f(k_n \cdot g \cdot s + b_n)$$
+
+    With $k_r = -1$, $m = 0.5$: $g = 0.5$, so $y' = f(1 \times 0.5 \times 15 + 0) = \mathbf{7.5}$ instead of $y = 15$ — the same stages, the same fixed knobs, a different gain every tick.
+
+    That is the whole idea of this tutorial: Stages 1 and 2 are wired once; Stage 3 lets a slow internal signal retune the gain on the fly.
+
 Before wiring the receptor, raise `tau_decay` on `gut` to `30` — the 5 s digestion was useful for watching the trace, but the robot needs to stay full long enough to skip the second patch.
 
 1. Double-click `food` and switch to its **Neuron** tab.
@@ -198,20 +221,14 @@ In the circuit you built, a full gut turns the nose *down*. The relationship can
 
 ### Challenge 2 — A hungry animal takes risks
 
-A fed animal plays it safe; a hungry one takes risks it would normally avoid. In this challenge the arena's walls are **hot**. The closer the robot gets to a wall, the hotter it is, and the robot avoids the heat. Food grows only right next to the walls, so to eat, the robot has to brave the heat.
+A hungry animal takes risks a fed one avoids. Here the arena's walls are **hot** and the food sits right against them, so to eat, the robot has to brave the heat.
 
-Picking up on the robot from Challenge 1 robot, where `gut` broadcasts `ghrelin`, a hunger signal: 1 when empty, 0 when full.
+Start from the Challenge 1 robot, where `gut` broadcasts `ghrelin` (1 when empty, 0 when full). Make the robot avoid the hot walls when fed, and approach the food patches when hungry.
 
-1. **Put the food in the heat.** Move both food patches so they touch the wall. A robot that keeps its usual distance from the wall should only graze their outer edge.
-2. **Treat `walls` as a heat sensor.** Its reading rises as the robot nears a wall, exactly like a thermosensor approaching a heat source, and the `walls → motor` wiring already steers the robot away from it.
-3. **Make hunger weaken the heat avoidance.** Add a `ghrelin` receptor to `walls` with a **negative** scale, site `pre`. The heat signal's gain becomes `1 + scale × ghrelin`: full strength when fed, weaker when hungry, so the hungry robot lets itself get closer to the walls.
+!!! note "Making the walls hot"
+    In the **World** tab, select label `B`, click **Wall** in the *Gradients* row and drag inward from the edge. The drag distance sets how far the heat reaches into the arena. 
 
-Things to work out:
-
-- **How negative should the scale be?** At `−1` a starving robot stops feeling the heat at all and drives into the wall. Find a scale that lets the hungry robot reach the food without crashing.
-- **Watch a whole cycle.** Fed: does it keep to the cooler middle and skip the food? Hungry: does it creep toward the walls and eat? After eating: does it pull back into the open?
-- **Compare with Challenge 1.** There, hunger turned a sense *up*; here it turns one *down*. One hormone, two receptors with opposite signs, two behaviours: seeking food and accepting danger.
-
+    
 ## References
 
 - Root et al. (2011). Presynaptic facilitation by neuropeptide signaling mediates odor-driven food search. *Cell* 145. [doi:10.1016/j.cell.2011.02.008](https://doi.org/10.1016/j.cell.2011.02.008)
