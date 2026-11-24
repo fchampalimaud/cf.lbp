@@ -10,7 +10,7 @@ simulation loop.
 import copy
 
 import numpy as np
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QInputDialog, QMessageBox
 from PySide6.QtCore import Qt
 
 from sim_constants import GRADIENT_COLORS
@@ -106,6 +106,29 @@ class WorldEditor:
             self._paint_nearest_element(x, y)
         elif button == 2:
             self._right_click(x, y)
+
+    def handle_double_click(self, x, y):
+        """Double-click on a gradient patch: set its quantity (signal multiplier)."""
+        hits = [p for p in self._world.patches
+                if 'x' in p and np.hypot(x - p['x'], y - p['y']) < p.get('r', 0.1)]
+        if not hits:
+            return
+        patch = min(hits, key=lambda p: np.hypot(x - p['x'], y - p['y']))
+        # Free text, not a spin box: spin boxes round to a fixed number of
+        # decimals, and quantities like 0.9999999999999 must survive intact.
+        text, ok = QInputDialog.getText(
+            self._arena, "Patch quantity",
+            f"Quantity of gradient {patch.get('label', '')} (multiplies its signal):",
+            text=repr(float(patch.get('quantity', 1.0))))
+        if not ok:
+            return
+        try:
+            value = float(text)
+        except ValueError:
+            QMessageBox.warning(self._arena, "Patch quantity", f"'{text}' is not a number.")
+            return
+        patch['quantity'] = value
+        self._setup_world()
 
     def handle_drag(self, x, y, is_start, is_finish):
         if is_start:

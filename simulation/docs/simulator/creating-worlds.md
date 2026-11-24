@@ -142,6 +142,7 @@ Tick **Polarization field** to enable it. Click **↕** and drag on the arena to
 - **Right-click** any placed object to delete it.
 - **Alt+drag** a patch or obstacle directly from any draw tool to reposition it without switching to Move mode.
 - **Ctrl+drag** duplicates a patch or obstacle — the clone (same radius, colour, label) follows the cursor; the original stays put.
+- **Double-click** a gradient patch to set its **quantity** (default 1; type any number, e.g. `0.9999999999999` — kept at full double precision). The patch's signal is multiplied by it, so a patch with quantity `0.9` peaks at `0.9` at its centre instead of `1`. The patch looks the same on screen; the value is saved with the session as `"quantity"`.
 - **Shift** while repositioning or duplicating snaps to a grid spaced by the **Grid size** setting in the Physics tab. The grid always aligns to arena centre `(0, 0)`. **Ctrl+Shift**-drag is the quickest way to build a pair of exactly mirrored stimuli.
 - Multiple gradient patches with the same label stack by maximum, not sum. Overlap several patches to widen a field without raising its peak intensity.
 - Sessions save the entire world state (patches, objects, walls, sky, floor, arena shape). Use **Session tab → Save** to snapshot it.

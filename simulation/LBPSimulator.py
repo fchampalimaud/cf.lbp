@@ -257,6 +257,7 @@ class SimulatorApp(_UiBuilderMixin, _BrainMixin, _SessionMixin, _AgentsMixin,
         # ── Connect arena signals to editor ──────────────────────────────────
         self._arena.sigClick.connect(self._editor.handle_click)
         self._arena.sigClick.connect(self._on_arena_click)
+        self._arena.sigDoubleClick.connect(self._editor.handle_double_click)
         self._arena.sigDrag.connect(self._editor.handle_drag)
         self._arena.sigHover.connect(self._editor.handle_hover)
 

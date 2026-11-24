@@ -89,8 +89,9 @@ class PolyWallItem(pg.GraphicsObject):
 # ARENA VIEWBOX — captures mouse events
 # ============================================================
 class ArenaViewBox(pg.ViewBox):
-    sigArenaClick = Signal(float, float, int)
-    sigArenaDrag  = Signal(float, float, bool, bool)
+    sigArenaClick       = Signal(float, float, int)
+    sigArenaDoubleClick = Signal(float, float)
+    sigArenaDrag        = Signal(float, float, bool, bool)
     sigArenaHover = Signal(float, float)
 
     def __init__(self, *args, **kwargs):
@@ -104,7 +105,11 @@ class ArenaViewBox(pg.ViewBox):
             self.sigArenaHover.emit(pos.x(), pos.y())
 
     def mouseClickEvent(self, ev):
-        if ev.button() == Qt.RightButton:
+        if ev.double() and ev.button() == Qt.LeftButton:
+            pos = self.mapSceneToView(ev.scenePos())
+            self.sigArenaDoubleClick.emit(pos.x(), pos.y())
+            ev.accept()
+        elif ev.button() == Qt.RightButton:
             pos = self.mapSceneToView(ev.scenePos())
             self.sigArenaClick.emit(pos.x(), pos.y(), 2)
             ev.accept()
@@ -272,9 +277,10 @@ class CircleItem(pg.GraphicsObject):
 # ARENA WIDGET
 # ============================================================
 class ArenaWidget(pg.GraphicsLayoutWidget):
-    sigClick = Signal(float, float, int)
-    sigDrag  = Signal(float, float, bool, bool)
-    sigHover = Signal(float, float)
+    sigClick       = Signal(float, float, int)
+    sigDoubleClick = Signal(float, float)
+    sigDrag        = Signal(float, float, bool, bool)
+    sigHover       = Signal(float, float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -282,6 +288,7 @@ class ArenaWidget(pg.GraphicsLayoutWidget):
 
         self._vb = ArenaViewBox(lockAspect=True)
         self._vb.sigArenaClick.connect(self.sigClick)
+        self._vb.sigArenaDoubleClick.connect(self.sigDoubleClick)
         self._vb.sigArenaDrag.connect(self.sigDrag)
         self._vb.sigArenaHover.connect(self.sigHover)
 

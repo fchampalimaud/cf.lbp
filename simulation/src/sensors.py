@@ -1054,7 +1054,7 @@ The output above feeds this sensor's neuron stage — a `LeakyLayer` with its ow
                 if patch.get('type') == 'wall':
                     continue
                 dist = np.hypot(mx - patch['x'], my - patch['y'])
-                sig  = max(0.0, 1.0 - dist / max(patch['r'], 1e-9))
+                sig  = max(0.0, 1.0 - dist / max(patch['r'], 1e-9)) * patch.get('quantity', 1.0)
                 if sig > raw:
                     raw = sig
         # scale controls sensitivity; target maps [0,1] signal → [0, max_val]

@@ -89,6 +89,7 @@ class World:
                 t    = min(max(((px - sx)*dx + (py - sy)*dy) / den, 0), 1) if den > 0 else 0
                 dist = math.sqrt((px - (sx + t*dx))**2 + (py - (sy + t*dy))**2)
                 sig  = max(0.0, 1.0 - dist / p_rad)
+            sig *= patch.get("quantity", 1.0)
             if color_channel is not None:
                 sig *= patch.get("color", [1.0, 1.0, 1.0])[color_channel]
             if sig > max_sig:
