@@ -104,26 +104,26 @@ Nothing in the circuit responds to insulin yet — no receptor exists — but th
 
 ## Step 5 — Put insulin receptors on the nose
 
-!!! info "One sensor, three knobs"
-    Every sensory neuron has two fixed stages and can carry a third dynamic one.
+!!! info "One sensory neuron, three knobs"
+    Think of a sensory neuron as two parts. The **sensor** part transduces the world into a signal and has its own dynamics. That signal is **one input** to the **sensory neuron**, which can also receive other inputs (connections from other layers or sensors) and has dynamics of its own. A neuromodulator receptor on the neuron then adds a third, changeable knob.
 
-    **Stage 1 — Sensor scale / bias.** Input: raw reading $r \in [0,1]$. Output:
+    **Stage 1 — The sensor (Sensor tab).** Input: raw reading $r \in [0,1]$. Output:
 
-    $$s = k_s\, r + b_s$$
+    $$s = f_s(r + b_s) \cdot k_s$$
 
-    With $k_s = 30$, $b_s = 0$: $s = 30 \times 0.5 = \mathbf{15}$. Fixed for the whole run.
+    The bias is added to the raw reading first, the sensor's activation $f_s$ is applied, and the scale comes last. With $b_s = 0$, $f_s =$ linear, $k_s = 30$ and $r = 0.5$: $s = 0.5 \times 30 = \mathbf{15}$. Fixed for the whole run.
 
-    **Stage 2 — Neuron scale / bias.** Input: $s$ from Stage 1. Output:
+    **Stage 2 — The neuron (Neuron tab).** Its input $u$ is the sensor's signal plus anything else connected to it:
 
-    $$y = f(k_n\, s + b_n)$$
+    $$u = s + \sum_k W_k\, x_k \qquad y = f(u + b_n) \cdot k_n$$
 
-    With $k_n = 1$, $b_n = 0$, $f =$ identity: $y = \mathbf{15}$. A non-zero $b_n$ sets a threshold. Also fixed.
+    Same order as the sensor: bias, then activation, then scale. Here nothing else is connected, so $u = s$, and with $b_n = 0$, $f =$ linear, $k_n = 1$: $y = \mathbf{15}$. Because $b_n$ acts on the already-scaled input, a negative $b_n$ with a relu sets a threshold. Also fixed.
 
-    **Stage 3 — Neuromodulator receptor.** The receptor computes a gain $g = 1 + k_r\, m$ from the hormone signal $m$ and intercepts the pipeline at the input site, scaling $s$ before Stage 2:
+    **Stage 3 — Neuromodulator receptor.** The receptor computes a gain $g = 1 + k_r\, m$ from the hormone signal $m$. At site `pre` it multiplies the neuron's whole input, before the neuron's bias and activation:
 
-    $$y' = f(k_n \cdot g \cdot s + b_n)$$
+    $$y' = f(g \cdot u + b_n) \cdot k_n$$
 
-    With $k_r = -1$, $m = 0.5$: $g = 0.5$, so $y' = f(1 \times 0.5 \times 15 + 0) = \mathbf{7.5}$ instead of $y = 15$ — the same stages, the same fixed knobs, a different gain every tick.
+    With $k_r = -1$, $m = 0.5$: $g = 0.5$, so $y' = f(0.5 \times 15 + 0) \times 1 = \mathbf{7.5}$ instead of $y = 15$: the same stages, the same fixed knobs, a different gain every tick.
 
     That is the whole idea of this tutorial: Stages 1 and 2 are wired once; Stage 3 lets a slow internal signal retune the gain on the fly.
 
@@ -221,7 +221,7 @@ In the circuit you built, a full gut turns the nose *down*. The relationship can
 
 ### Challenge 2 — A hungry animal takes risks
 
-A hungry animal takes risks a fed one avoids. Here the arena's walls are **hot** and the food sits right against them, so to eat, the robot has to brave the heat.
+A hungry animal takes risks a fed one avoids. Make the arena's walls **hot** and place the food patches right against them, so that to eat, the robot has to brave the heat.
 
 Start from the Challenge 1 robot, where `gut` broadcasts `ghrelin` (1 when empty, 0 when full). Make the robot avoid the hot walls when fed, and approach the food patches when hungry.
 
