@@ -98,7 +98,7 @@ It only reaches the simulation through `SimController`'s collaborators — `sim_
 | `sim_app_brain.py` | `_BrainMixin` | brain combo and parameters, network-file load/save for the selected agent, `_sync_group_network` |
 | `sim_app_session.py` | `_SessionMixin` | Session / Task / Logger tabs, session save / load |
 | `sim_app_network.py` | `_NetworkMixin` | Network tab: off / host / client, connecting, agents for remote clients |
-| `sim_app_robot.py` | `_RobotMixin` | Robot tab: real-robot mode, address rows, update-rate readouts |
+| `sim_app_robot.py` | `_RobotMixin` | Robot tab: real-robot mode, address rows, update-rate readouts, Test connection button |
 | `sim_app_world.py` | `_WorldMixin` | World tab: draw modes, world setup, world save / load, textures |
 
 The arena's robot disks follow the agent list automatically: the registry reports adds, removes and selection changes, and `SimController.sync_robot_items()` updates the arena (call it yourself only after changing an agent's color).
@@ -454,6 +454,12 @@ Converts a `CircuitModel` into LBP.Torch Bonsai XML that can be pasted directly 
 
 Isolates all real-robot communication. Manages one background thread per unique `robot_address` string found among the active sensors — `CameraThread` (UDP JPEG client) for camera sensors, `OscThread` (UDP OSC server) for everything else. Each thread writes decoded data into `sensor._robot_value` so the simulation loop reads it without touching any sockets. `_parse_address()` is a shared helper also used by the Robot tab's Hz display and by `SimController`'s motor dispatch. See [Running on the real robot](real-robot.md) for the full usage guide.
 
+### `RobotCheck`
+
+`robot_check.py` (no Qt) · dialog: `robot_check_dialog.py`
+
+The Robot tab's **Test connection** checklist. `plan()` groups the circuit's robot addresses by `host:port` exactly as `RobotDriver` does and reports unusable addresses; `RobotCheck.run(emit, cancel)` then checks, per endpoint, that the local port is free, that the robot answers ping (warning on slow or lost replies), that it streams data back after a `/wheels 0 0` probe, and that each sensor's OSC path arrives and its indices / formula work on the received values. When ping works but nothing comes back, the failure explains the Windows Firewall fix. All sockets are closed when `run()` returns. `RobotCheckDialog` runs it in a `QThread` and ticks off each row.
+
 ---
 
 ## File map
@@ -492,6 +498,8 @@ osc_controller.py         OscChannelManager (oscilloscope, selected agent only)
 session_io.py             save/load session JSON (multi-agent)
 shortcuts.py              every keyboard shortcut (one list), app-wide Run/Step/Reset keys, help panel
 robot_driver.py           real-robot OSC + camera threads
+robot_check.py            RobotCheck — Test connection checklist (no Qt)
+robot_check_dialog.py     RobotCheckDialog — the checklist window
 sim_net_host.py           SimNetHost — distributed-sim host side
 sim_net_client.py         SimNetClient — distributed-sim client side (+ headless CLI)
 sim_config.py             SimConfig (global simulation parameters)

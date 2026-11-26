@@ -98,3 +98,19 @@ Keyboard control (WASD) works exactly as in simulation: while active, its comman
 Open the sensor or motor layer properties (double-click in the network visualizer) and set the **Robot address** field. The Robot tab in the side panel shows each registered address and its live update rate (Hz) once robot mode is enabled.
 
 Sensors with an empty `robot_address` are silently ignored — they receive a zero array each step, and the network keeps running with those inputs silent.
+
+---
+
+## Testing the connection
+
+Before switching robot mode on, press **🔍 Test connection** in the Robot tab. A window works through a checklist and marks each item ✔ passed, ⚠ warning, ✖ failed or – skipped, with a fix suggested for anything that isn't right:
+
+| Check | What a failure usually means |
+|---|---|
+| Robot addresses are set up | An address is malformed, a sensor's index count doesn't match its neurons, or no motor layer has an address (the robot only streams sensor data after it receives a command) |
+| Port is free on this computer | Another program — a Bonsai workflow, another simulator window, a script — is already talking to the robot on that port |
+| Robot answers ping | The robot is off, on another WiFi, or has a different IP. A ⚠ for slow or lost replies means motor commands will lag: check WiFi power saving on this computer or the signal strength |
+| Robot sends data back | Ping works but nothing arrives: Windows Firewall is blocking incoming UDP. The window shows the one-line command that allows it |
+| Sensor '…' receives /path | The robot doesn't send that OSC path, or the address asks for an index the packet doesn't have, or its formula fails |
+
+During the test the robot receives a stop command (`/wheels 0 0`). If robot mode was on it is paused for the test; when you close the window everything is restored and you can run the robot straight away.

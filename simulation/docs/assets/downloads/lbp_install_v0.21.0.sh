@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# lbp_install_v0.20.0.sh — standalone bootstrapper: download this file alone (no git, no
+# lbp_install_v0.21.0.sh — standalone bootstrapper: download this file alone (no git, no
 # prior clone) and run it. It fetches the simulator into LBP_DIR/app on first
 # run, then hands off to start.sh there (your own sessions/networks/… land in
 # the sibling LBP_DIR/lbp_files, created by the app itself). Re-running it
@@ -9,11 +9,11 @@ set -euo pipefail
 # older than this installer (lbp_files is never touched).
 #
 # Downloaded files aren't executable by default: run it as
-#   bash lbp_install_v0.20.0.sh
+#   bash lbp_install_v0.21.0.sh
 # or make it executable first:
-#   chmod +x lbp_install_v0.20.0.sh && ./lbp_install_v0.20.0.sh
+#   chmod +x lbp_install_v0.21.0.sh && ./lbp_install_v0.21.0.sh
 
-VERSION="0.20.0"
+VERSION="0.21.0"
 echo "=== LBP Simulator Installer v$VERSION ==="
 echo
 

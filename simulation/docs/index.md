@@ -8,16 +8,16 @@ Download one file and run it — no git, no manual Python install.
 
 === "Windows"
 
-    [Download lbp_install_v0.20.0.bat](assets/downloads/lbp_install_v0.20.0.bat){ .md-button download="lbp_install_v0.20.0.bat" }
+    [Download lbp_install_v0.21.0.bat](assets/downloads/lbp_install_v0.21.0.bat){ .md-button download="lbp_install_v0.21.0.bat" }
 
     Save it anywhere and double-click it.
 
 === "macOS / Linux"
 
-    [Download lbp_install_v0.20.0.sh](assets/downloads/lbp_install_v0.20.0.sh){ .md-button download="lbp_install_v0.20.0.sh" }
+    [Download lbp_install_v0.21.0.sh](assets/downloads/lbp_install_v0.21.0.sh){ .md-button download="lbp_install_v0.21.0.sh" }
 
     ```bash
-    bash lbp_install_v0.20.0.sh
+    bash lbp_install_v0.21.0.sh
     ```
 
 First run downloads the simulator and installs everything it needs (including Python itself) into

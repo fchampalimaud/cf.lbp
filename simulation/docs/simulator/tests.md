@@ -136,6 +136,29 @@ Unit tests for `SimLogger` and `TrajectoryLoader`. No Qt or MuJoCo required.
 | `test_trajectory_loader_v2_compat_props` | `xs`, `ys`, `n_steps`, `arena_scale` work on a v2 file (point at the first agent) |
 | `test_trajectory_loader_v1_single_agent` | A hand-written v1 file (top-level `x`/`y`, no `agents` key) loads into a single-entry `tracks` dict with id=0 |
 
+## `tests/test_robot_check.py`
+
+Unit tests for the robot connection checklist (`robot_check.py`). No Qt, MuJoCo or robot required — the end-to-end tests use a fake robot sending OSC on localhost and an injected ping.
+
+| Test | Verifies |
+|---|---|
+| `test_plan_groups_by_host_port` | Sensors and motor layers at the same `host:port` form one endpoint, with each sensor's spec and the motor OSC path |
+| `test_plan_reports_index_count_mismatch_and_missing_path` | An index count that doesn't match the sensor's `n`, a sensor address without an OSC path, and a motor address without a path are each reported as config problems |
+| `test_no_addresses_fails_config` | A circuit with no robot addresses fails the configuration check |
+| `test_missing_motor_address_fails_config` | Sensors without any motor address fail the configuration check (the robot only streams after receiving a command) |
+| `test_parse_ping_windows_english` | Reply times are read from English Windows ping output, including `time<1ms`; timeouts and the summary line are ignored |
+| `test_parse_ping_windows_portuguese` | Reply lines are found by their TTL field, so localized Windows output works |
+| `test_parse_ping_linux` | Linux ping output with decimal times is parsed |
+| `test_parse_ping_unreachable_is_not_a_reply` | "Destination host unreachable" lines are not counted as replies |
+| `test_analyse_sensor_pass_with_formula` | A sensor whose path arrives passes, with its rate and the indexed, formula-converted values in the detail |
+| `test_analyse_sensor_missing_path_lists_what_arrived` | A missing OSC path fails and lists the paths the robot did send |
+| `test_analyse_sensor_index_out_of_range` | An index beyond the packet's length fails and names the index |
+| `test_analyse_sensor_formula_error` | A formula that raises on the received values fails |
+| `test_analyse_sensor_no_indices_size_mismatch_warns` | Without indices, a packet size different from the sensor's `n` gives a warning |
+| `test_port_in_use_fails_and_skips_reply` | A port already bound by another socket fails the port check, and the reply and sensor checks are skipped |
+| `test_full_run_with_fake_robot_passes_and_releases_port` | Against a fake robot every check passes, and the port can be bound again once `run()` returns |
+| `test_slow_ping_warns` | Missing or slow (≥ 100 ms) ping replies give a warning, not a failure |
+
 ## `tests/test_shipped_files.py`
 
 Backward-compatibility guard: every session in `configs/` and every network in `networks/` (run in an empty world) is loaded and simulated for 1 s with a fixed seed. One test per file (`latest_session.json`, the app's per-user state, is skipped).

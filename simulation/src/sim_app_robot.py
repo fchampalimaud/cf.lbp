@@ -27,6 +27,13 @@ class _RobotMixin:
         self._robot_status_lbl.setStyleSheet("color: gray; font-weight: bold;")
         sl.addWidget(self._robot_status_lbl)
         sl.addStretch()
+        test_btn = self._make_btn("🔍 Test connection")
+        test_btn.setToolTip(
+            "Test connection: check the robot addresses, the port, ping, and that every\n"
+            "sensor's data arrives — with a fix suggested for anything that fails.\n"
+            "Robot mode is paused during the test and restored afterwards.")
+        test_btn.clicked.connect(self._on_robot_test)
+        sl.addWidget(test_btn)
         target.addWidget(status_row)
 
         # Dynamic rows container
@@ -154,6 +161,25 @@ class _RobotMixin:
             self._robot_status_lbl.setStyleSheet("color: green; font-weight: bold;")
 
     # ── Real robot ───────────────────────────────────────────────────────────
+
+    def _on_robot_test(self):
+        """Run the connection checklist. Robot mode holds the robot's UDP port, so
+        it is switched off (and the run paused) for the test, then restored."""
+        circuit = getattr(self._sim_ctrl.registry, 'circuit', None)
+        if circuit is None:
+            return
+        from robot_check_dialog import RobotCheckDialog
+        was_running = self._sim_ctrl.running
+        was_robot = self._robot_btn.isChecked()
+        if was_running:
+            self._sim_ctrl.stop()
+        if was_robot:
+            self._robot_btn.setChecked(False)
+        RobotCheckDialog(circuit, self).exec()
+        if was_robot:
+            self._robot_btn.setChecked(True)
+        if was_running:
+            self._sim_ctrl.start()
 
     def _on_robot_mode_toggle(self, state):
         self._sim_ctrl.enable_robot_mode(bool(state))
