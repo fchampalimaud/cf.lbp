@@ -98,7 +98,7 @@ It only reaches the simulation through `SimController`'s collaborators — `sim_
 | `sim_app_brain.py` | `_BrainMixin` | brain combo and parameters, network-file load/save for the selected agent, `_sync_group_network` |
 | `sim_app_session.py` | `_SessionMixin` | Session / Task / Logger tabs, session save / load |
 | `sim_app_network.py` | `_NetworkMixin` | Network tab: off / host / client, connecting, agents for remote clients |
-| `sim_app_robot.py` | `_RobotMixin` | Robot tab: real-robot mode, address rows, update-rate readouts, Test connection button |
+| `sim_app_robot.py` | `_RobotMixin` | Robot tab: real-robot mode, the robot-address table (the only editor of sensor / motor-layer `robot_address`; edits are undoable network edits), update-rate readouts, Test connection button |
 | `sim_app_world.py` | `_WorldMixin` | World tab: draw modes, world setup, world save / load, textures |
 
 The arena's robot disks follow the agent list automatically: the registry reports adds, removes and selection changes, and `SimController.sync_robot_items()` updates the arena (call it yourself only after changing an agent's color).

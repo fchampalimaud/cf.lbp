@@ -1,6 +1,6 @@
 # Circuits Driving a Real Robot
 
-The simulator can drive a live LBP robot using exactly the same network it runs in simulation — no code changes, no rewiring. This tutorial shows you how: you tell each sensor and the motor layer where to find their data on the network, switch to robot mode, and the brain runs on hardware.
+The simulator can drive a live LBP robot using exactly the same network it runs in simulation — no code changes, no rewiring. This tutorial shows you how: in the **Robot tab** you tell each sensor and the motor layer where to find their data on the network, switch to robot mode, and the brain runs on hardware.
 
 You will use the **D01 - AttractionBrain** network that ships with the simulator. It has a `light` GradientSensor and a `motor` layer wired for light-seeking — simple enough to verify easily on a real robot, and a good template for wiring any network to hardware.
 
@@ -9,9 +9,10 @@ You will use the **D01 - AttractionBrain** network that ships with the simulator
 | Step | What happens |
 |------|--------------|
 | Enable robot mode | Switch the simulator to live hardware |
-| Set the motor address | Tell the simulator where to send wheel commands |
+| Set the motor address | Tell the simulator where to send wheel commands (Robot tab) |
 | Verify the connection | Confirm the link with manual drive |
-| Set the sensor address | Map the robot's IR readings to the `light` node |
+| Set the sensor address | Map the robot's IR readings to the `light` node (Robot tab) |
+| Test the connection | Check everything between the computer and the robot in one go |
 | Run the brain live | Light-seeking behaviour on real hardware |
 
 ---
@@ -27,13 +28,13 @@ Make sure you have the following ready:
 The robot communicates over OSC/UDP on port **2390**. The simulator sends and receives on that same port — no extra software is needed.
 
 
-## Step 2 — Load the attraction brain
+## Step 1 — Load the attraction brain
 
 In the **Brain** tab, switch to **Network** mode, set the project to **🔒 Simulator → Demos**, and select **D01 - AttractionBrain**.
 
 ---
 
-## Step 3 — Enable robot mode
+## Step 2 — Enable robot mode
 
 In the left panel, press **🤖 Robot** in the Simulation group. The status bar will indicate that robot mode is active.
 
@@ -41,27 +42,30 @@ In robot mode the simulated body is replaced by the real robot: sensor values ar
 
 ---
 
-## Step 4 — Open the network visualizer
+## Step 3 — Open the network visualizer
 
 In the **Brain** tab, click **⬡ Open visualizer**. You should see the attraction network: a `light` GradientSensor and a `motor` layer connected with crossed excitatory weights.
 
 ---
 
-## Step 5 — Set the motor address
+## Step 4 — Set the motor address
 
-Double-click the `motor` node in the network visualizer. The properties dialog has a **Robot address** field. Enter:
+Open the **Robot** tab in the side panel. It lists every sensor (**S**) and motor layer (**M**) of the network, each with its robot address underneath — empty means not connected. In the field under `motor`, enter:
 
 ```
 192.168.0.224:2390/wheels
 ```
 
-Replace `192.168.0.224` with your robot's actual IP. Confirm.
+Replace `192.168.0.224` with your robot's actual IP, then press **Enter**. The address is saved with the network, and the edit can be undone in the network visualizer like any other change.
 
 The simulator will send `/wheels int vleft int vright` to this address each step, clamped to [−100, 100].
 
+!!! tip "From the network visualizer"
+    Double-clicking the `motor` node still shows its robot address, read-only. **Edit in Robot tab…** next to it takes you straight to the right field.
+
 ---
 
-## Step 6 — Verify the connection with manual drive
+## Step 5 — Verify the connection with manual drive
 
 With the motor address set, confirm that commands are actually reaching the robot before going further.
 
@@ -74,16 +78,18 @@ With the motor address set, confirm that commands are actually reaching the robo
 
 If the robot responds to your keys, the connection is working. Press **⌨ Manual** again to turn it off, then **⏸ Pause** before the next step.
 
+While **⌨ Manual** is on, the drive keys never type into the Robot tab's address fields, so you can't change an address by accident while driving.
+
 ---
 
-## Step 7 — Set the sensor address
+## Step 6 — Set the sensor address
 
 The robot's light sensors are read from its analog input ports and sent as OSC on `/analogs`. Each `/analogs` packet carries five integers: a packet counter followed by four ADC readings (A1, A2, A5, A6). The light sensors should be connected to **A1** (left) and **A6** (right), which are indices 1 and 4 in the packet.
 
-Double-click the `light` node. Set the **Robot address** field to:
+In the **Robot** tab, enter in the field under `light` and press **Enter**:
 
 ```
-192.168.0.224:2390/analogs[iiiii](1,4){x/500}
+192.168.0.224:2390/analogs[iiiii](1,4){x/1023}
 ```
 
 | Part | Meaning |
@@ -94,16 +100,30 @@ Double-click the `light` node. Set the **Robot address** field to:
 | `(1,4)` | Extract indices 1 and 4 (the two IR sensors) |
 | `{x/1023}` | Normalise raw ADC range 0–1023 to [0, 1] |
 
-Confirm.
+Use the same IP as the motor address — the sensor data comes back from the robot the motor commands go to.
 
 !!! note "Scaling"
     `{x/1023}` normalises the raw ADC value to [0, 1]. The sensor's own **scale** parameter then multiplies that result — so the effective range the brain sees is [0, scale]. Set `scale` on the `light` node to match the motor range you need, exactly as you would in simulation.
 
 ---
 
+## Step 7 — Test the connection
+
+Press **🔍 Test connection** at the top of the Robot tab. A window works through a checklist and marks each item ✔ passed, ⚠ warning, ✖ failed:
+
+- the addresses are set up correctly,
+- the robot's port is free on this computer,
+- the robot answers ping (a ⚠ means slow or lost replies — motor commands will lag),
+- the robot sends data back,
+- the `light` sensor receives `/analogs`, with its rate and latest values.
+
+Anything that fails comes with the fix — for example the command that lets incoming robot data through Windows Firewall. During the test the robot receives a stop command; robot mode is paused and restored when you close the window. See [Testing the connection](../real-robot.md#testing-the-connection) for what each check means.
+
+---
+
 ## Step 8 — Run the brain on the robot
 
-Press **▶ Run**. The simulator begins sending motor commands and receiving sensor data at approximately 60 Hz.
+Press **▶ Run**. The simulator begins sending motor commands and receiving sensor data at approximately 60 Hz. The Robot tab shows each address's live update rate — a red **0 Hz** under `light` means its data isn't arriving.
 
 Point the robot toward a light source that your IR sensors can detect (a bright lamp or a projector patch works well in lab settings). With the crossed excitatory wiring, the sensor on the side closer to the source drives the opposite wheel harder — the robot steers toward the light.
 
@@ -131,6 +151,6 @@ The motor command changes every step based on the current sensor reading, with n
 
 ## What to try next
 
-- **Switch to avoidance** — load **D01 - AvoidanceBrain** instead and repeat the steps. The robot will now flee the light source.
+- **Switch to avoidance** — load **D01 - AvoidanceBrain** instead, set its addresses in the Robot tab and repeat the steps. The robot will now flee the light source.
 - **[Running Networks on the Real Robot](../real-robot.md)** — full reference for the `robot_address` format, all supported sensors, and the packet layout for bumpers, encoders, and gyro.
 - **[Wiring Brains](../wiring-brains.md)** — add a LeakyLayer for smooth motor responses, or chain more sensors into the same network.

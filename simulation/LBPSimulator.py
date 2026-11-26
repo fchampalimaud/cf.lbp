@@ -390,6 +390,10 @@ class SimulatorApp(_UiBuilderMixin, _BrainMixin, _SessionMixin, _AgentsMixin,
         self._manual_hint.setVisible(self._manual_active)
         if self._manual_active:
             self._held_keys.clear()
+            # A focused text field would also receive the drive keys as typing.
+            focused = QApplication.focusWidget()
+            if isinstance(focused, QLineEdit):
+                focused.clearFocus()
             if self._key_filter is None:
                 self._key_filter = _ManualKeyFilter(self._held_keys, self)
             # App-wide (not window-scoped), so WASD/Space still drive the robot

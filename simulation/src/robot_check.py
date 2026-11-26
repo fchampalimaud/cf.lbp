@@ -186,6 +186,46 @@ def analyse_sensor(spec: SensorSpec, msgs: list, window_s: float):
     return PASS, detail
 
 
+def stream_stats(msgs: list, stamps: list) -> dict:
+    """Per OSC path: (sent_hz, received_hz, lost_fraction) between the first and the
+    last packet of that path. The robot's packet counter (first value, an int that
+    increases by one per packet) gives what was sent; sent_hz and lost_fraction are
+    None when a path has no such counter, everything is None with < 2 packets."""
+    by_path: dict = {}
+    for (path, values), t in zip(msgs, stamps):
+        by_path.setdefault(path, []).append((t, values))
+    stats = {}
+    for path, pkts in by_path.items():
+        (t0, v0), (t1, v1) = pkts[0], pkts[-1]
+        span = t1 - t0
+        if len(pkts) < 2 or span <= 0:
+            stats[path] = (None, None, None)
+            continue
+        received = (len(pkts) - 1) / span
+        c0 = v0[0] if v0 else None
+        c1 = v1[0] if v1 else None
+        if isinstance(c0, int) and isinstance(c1, int) and c1 > c0:
+            stats[path] = ((c1 - c0) / span, received,
+                           max(0.0, 1.0 - (len(pkts) - 1) / (c1 - c0)))
+        else:
+            stats[path] = (None, received, None)
+    return stats
+
+
+def _drain(sock):
+    """Discard datagrams already queued on sock. A robot keeps streaming to the
+    last host it heard from, so packets pile up while the port is bound during the
+    ping check — counting them would inflate the measured rates."""
+    sock.settimeout(0)
+    for _ in range(100000):
+        try:
+            sock.recvfrom(65535)
+        except BlockingIOError:
+            return
+        except OSError:
+            continue
+
+
 def _firewall_hint(port: int) -> str:
     if sys.platform != 'win32':
         return (f"The robot is on the network but nothing reaches the simulator: a firewall "
@@ -206,6 +246,7 @@ class RobotCheck:
     PROBE_EVERY_S = 0.25
     PING_COUNT = 5
     SLOW_PING_MS = 100
+    LOSS_WARN = 0.10
 
     def __init__(self, circuit, ping=ping_host):
         self.endpoints, self.problems = plan(circuit)
@@ -224,8 +265,8 @@ class RobotCheck:
         """Run every check, calling emit(key, status, detail) as each starts and ends."""
         emit('config', RUNNING, '')
         if not self.endpoints and not self.problems:
-            emit('config', FAIL, "No sensor or motor layer has a Robot address. Set one in its "
-                                 "properties (double-click the node in the network window).")
+            emit('config', FAIL, "No sensor or motor layer has a Robot address. Set them in the "
+                                 "Robot tab of the main window.")
             return
         problems = list(self.problems)
         if not any(ep.motor_paths for ep in self.endpoints) \
@@ -273,7 +314,7 @@ class RobotCheck:
                 self._skip_sensors(ep, emit, f"Needs port {ep.port}.")
                 return
             emit(key, RUNNING, '')
-            msgs, raw, n_pkts = self._listen(ep, sock, cancel)
+            msgs, stamps, raw, n_pkts = self._listen(ep, sock, cancel)
             if cancel.is_set():
                 return
             if n_pkts == 0:
@@ -290,11 +331,7 @@ class RobotCheck:
             if ep.is_camera:
                 emit(key, PASS, f"{len(raw) / 1024:.0f} kB in {self.LISTEN_S:g} s")
             else:
-                counts: dict = {}
-                for p, _ in msgs:
-                    counts[p] = counts.get(p, 0) + 1
-                emit(key, PASS, ', '.join(f'{p} {c / self.LISTEN_S:.0f} Hz'
-                                          for p, c in sorted(counts.items())))
+                emit(key, *self._judge_streams(stream_stats(msgs, stamps), msgs))
 
             for s in ep.sensors:
                 key = f'{ep.label}:s:{s.name}'
@@ -307,6 +344,28 @@ class RobotCheck:
         finally:
             if sock is not None:
                 sock.close()
+
+    def _judge_streams(self, stats: dict, msgs: list):
+        """Status + detail for the 'Robot sends data back' row: per path what the
+        robot sent (from its packet counter) vs what arrived, warning on WiFi loss."""
+        lines, lossy = [], []
+        for path in sorted({p for p, _ in msgs}):
+            sent, received, lost = stats.get(path, (None, None, None))
+            if received is None:
+                lines.append(f"{path}: 1 packet")
+            elif sent is None:
+                lines.append(f"{path}: {received:.0f} Hz")
+            else:
+                lines.append(f"{path}: robot sent {sent:.0f}/s, received {received:.0f}/s "
+                             f"({lost:.0%} lost)")
+                if lost > self.LOSS_WARN:
+                    lossy.append(path)
+        detail = '\n'.join(lines)
+        if lossy:
+            return WARN, (f"{detail}\nPackets are being lost on the WiFi: check the signal "
+                          f"strength, other robots and devices on the same network, and WiFi "
+                          f"power saving on this computer.")
+        return PASS, detail
 
     def _check_ping(self, ep, emit, cancel) -> bool:
         key = f'{ep.label}:ping'
@@ -334,7 +393,8 @@ class RobotCheck:
 
     def _listen(self, ep, sock, cancel):
         """Probe the robot and collect what it sends for LISTEN_S seconds.
-        Returns (osc_msgs [(path, values)], raw camera bytes, packet count)."""
+        Returns (osc_msgs [(path, values)], arrival times parallel to osc_msgs,
+        raw camera bytes, packet count)."""
         if ep.is_camera:
             probe = b'\x00'
         else:
@@ -343,8 +403,9 @@ class RobotCheck:
             robot_ip = socket.gethostbyname(ep.host)
         except OSError:
             robot_ip = ep.host
+        _drain(sock)
         sock.settimeout(0.05)
-        msgs, raw, n_pkts = [], b'', 0
+        msgs, stamps, raw, n_pkts = [], [], b'', 0
         t_end = time.monotonic() + self.LISTEN_S
         next_probe = 0.0
         while time.monotonic() < t_end and not cancel.is_set():
@@ -368,7 +429,8 @@ class RobotCheck:
                 path, values, _ = _osc_parse(data)
                 if path is not None:
                     msgs.append((path, values))
-        return msgs, raw, n_pkts
+                    stamps.append(time.monotonic())
+        return msgs, stamps, raw, n_pkts
 
     def _skip_sensors(self, ep, emit, reason):
         for s in ep.sensors:

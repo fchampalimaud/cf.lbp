@@ -19,7 +19,7 @@ for _p in (_SRC, _SIM2D):
         sys.path.insert(0, _p)
 
 from robot_check import (RobotCheck, SensorSpec, plan, parse_ping, analyse_sensor,
-                         PASS, WARN, FAIL, SKIP, RUNNING)
+                         stream_stats, PASS, WARN, FAIL, SKIP, RUNNING)
 from robot_driver import _osc_build
 
 
@@ -147,6 +147,29 @@ def test_analyse_sensor_no_indices_size_mismatch_warns():
     assert status == WARN
 
 
+# ── stream_stats ──────────────────────────────────────────────────────────────
+
+def test_stream_stats_sent_received_and_loss():
+    # robot sends at 60/s (counter 0..60 over 1 s) but every 4th packet is lost
+    kept = [c for c in range(61) if c % 4 != 3 or c == 60]
+    msgs = [('/analogs', [c, 1, 2, 3, 4]) for c in kept]
+    stamps = [c / 60 for c in kept]
+    sent, received, lost = stream_stats(msgs, stamps)['/analogs']
+    assert abs(sent - 60) < 1e-6
+    assert abs(received - (len(kept) - 1)) < 1e-6
+    assert abs(lost - (1 - (len(kept) - 1) / 60)) < 1e-6
+
+
+def test_stream_stats_without_counter_gives_received_only():
+    msgs = [('/wheels', [0, 0])] * 11
+    stamps = [i / 10 for i in range(11)]
+    assert stream_stats(msgs, stamps)['/wheels'] == (None, 10.0, None)
+
+
+def test_stream_stats_single_packet():
+    assert stream_stats([('/analogs', [5, 0])], [0.0])['/analogs'] == (None, None, None)
+
+
 # ── end-to-end against a fake robot on localhost ─────────────────────────────
 
 def test_port_in_use_fails_and_skips_reply():
@@ -198,6 +221,68 @@ def test_full_run_with_fake_robot_passes_and_releases_port():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.bind(('', port))
     s.close()
+
+
+def test_packets_queued_before_listening_are_not_counted():
+    port = _free_port()
+    stop = threading.Event()
+
+    def robot():   # already streaming before the check starts, ~50 Hz
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        while not stop.is_set():
+            s.sendto(_osc_build('/analogs', 0, 1, 2, 3, 4), ('127.0.0.1', port))
+            time.sleep(0.02)
+        s.close()
+
+    def slow_ping(host, n, cancel):   # packets queue up on the bound port meanwhile
+        time.sleep(1.5)
+        return [1.0] * n
+
+    t = threading.Thread(target=robot, daemon=True)
+    t.start()
+    try:
+        c = _circuit([_sensor('dist', f'127.0.0.1:{port}/analogs(1,4)')],
+                     [_motor('motor', f'127.0.0.1:{port}/wheels')])
+        check = RobotCheck(c, ping=slow_ping)
+        check.LISTEN_S = 0.5
+        r = _run(check)
+    finally:
+        stop.set()
+        t.join()
+    rate = float(r[f'127.0.0.1:{port}:s:dist'][1].split(' Hz')[0])
+    assert rate < 70   # ~50 Hz real; counting the 1.5 s backlog would give ~200 Hz
+
+
+def test_packet_loss_warns_with_sent_vs_received():
+    port = _free_port()
+    stop = threading.Event()
+
+    def lossy_robot():   # counts every packet but only every 3 of 4 reach the host
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        i = 0
+        while not stop.is_set():
+            if i % 4 != 3:
+                s.sendto(_osc_build('/analogs', i, 1, 2, 3, 4), ('127.0.0.1', port))
+            i += 1
+            time.sleep(0.01)
+        s.close()
+
+    t = threading.Thread(target=lossy_robot, daemon=True)
+    t.start()
+    try:
+        c = _circuit([_sensor('dist', f'127.0.0.1:{port}/analogs(1,4)')],
+                     [_motor('motor', f'127.0.0.1:{port}/wheels')])
+        check = RobotCheck(c, ping=lambda h, n, cancel: [1.0] * n)
+        check.LISTEN_S = 0.6
+        r = _run(check)
+    finally:
+        stop.set()
+        t.join()
+    status, detail = r[f'127.0.0.1:{port}:reply']
+    assert status == WARN
+    assert '/analogs: robot sent' in detail and 'lost on the WiFi' in detail
+    lost_pct = int(detail.split('(')[1].split('%')[0])
+    assert 15 <= lost_pct <= 35
 
 
 def test_slow_ping_warns():

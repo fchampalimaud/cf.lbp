@@ -74,6 +74,9 @@ The packet layouts for reference (index 0 is always the packet counter):
 | `/bumpers` | pkt | pin 0 | pin 8 | pin 10 | pin 13 |
 | `/analogs` | pkt | A1 | A2 | A5 | A6 |
 | `/wencoders` | pkt | enc1 Δ | enc2 Δ | — | — |
+| `/heartbeat` | pkt | firmware version | loops since last heartbeat | WiFi RSSI (dBm) | battery raw (÷77 = V) |
+
+`/heartbeat` is sent by the `MKR1010_Neurethology` firmware, which sends all four packets at a fixed 60 Hz, and only after it has received a packet from the simulator. Dividing the loop count by the time between heartbeats gives the robot's loop rate.
 
 ---
 
@@ -93,11 +96,13 @@ Keyboard control (WASD) works exactly as in simulation: while active, its comman
 
 ---
 
-## Configuring sensors in the network editor
+## Setting the addresses — the Robot tab
 
-Open the sensor or motor layer properties (double-click in the network visualizer) and set the **Robot address** field. The Robot tab in the side panel shows each registered address and its live update rate (Hz) once robot mode is enabled.
+All robot addresses are set in one place: the **Robot tab** of the side panel. It lists every sensor (**S**) and motor layer (**M**) in the network with its address underneath; type an address and press Enter (or leave the field) to apply it. Each edit is a normal network edit — it can be undone in the network window and is saved with the network file. If robot mode is on, it restarts so the new address takes effect immediately. Once robot mode is enabled, each row also shows its live update rate (Hz). Pressing Enter gives the keyboard back to the app, and while ⌨ Manual is on the drive keys (W/A/S/D, Space) never type into the address fields.
 
-Sensors with an empty `robot_address` are silently ignored — they receive a zero array each step, and the network keeps running with those inputs silent.
+A sensor's or motor layer's properties dialog shows its address read-only; **Edit in Robot tab…** next to it applies the dialog and jumps to that element's row. Renaming or deleting an element in the network editor renames or removes its row.
+
+Sensors with an empty address are not connected — they receive a zero array each step, and the network keeps running with those inputs silent.
 
 ---
 
@@ -110,7 +115,7 @@ Before switching robot mode on, press **🔍 Test connection** in the Robot tab.
 | Robot addresses are set up | An address is malformed, a sensor's index count doesn't match its neurons, or no motor layer has an address (the robot only streams sensor data after it receives a command) |
 | Port is free on this computer | Another program — a Bonsai workflow, another simulator window, a script — is already talking to the robot on that port |
 | Robot answers ping | The robot is off, on another WiFi, or has a different IP. A ⚠ for slow or lost replies means motor commands will lag: check WiFi power saving on this computer or the signal strength |
-| Robot sends data back | Ping works but nothing arrives: Windows Firewall is blocking incoming UDP. The window shows the one-line command that allows it |
+| Robot sends data back | Ping works but nothing arrives: Windows Firewall is blocking incoming UDP. The window shows the one-line command that allows it. When data does arrive, each OSC path shows what the robot sent (from its packet counter) against what was received, e.g. `robot sent 60/s, received 48/s (20% lost)` — more than 10 % lost is a ⚠: packets are being lost on the WiFi. If the robot itself sends less than its firmware's rate, its loop can't keep up |
 | Sensor '…' receives /path | The robot doesn't send that OSC path, or the address asks for an index the packet doesn't have, or its formula fails |
 
 During the test the robot receives a stop command (`/wheels 0 0`). If robot mode was on it is paused for the test; when you close the window everything is restored and you can run the robot straight away.

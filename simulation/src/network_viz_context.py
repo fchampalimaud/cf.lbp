@@ -65,5 +65,9 @@ class NetworkVizContext:
         poses = world_poses(self._app.bot_pos, c.bodies, c.joints)
         self._app._arena.update_child_bodies(poses, c.bodies, self._app.sim_cfg)
 
+    def show_robot_address(self, name):
+        """Bring up the main window's Robot tab with *name*'s address field focused."""
+        self._app._show_robot_address(name)
+
     def notify_closed(self):
         self._app._net_viz = None

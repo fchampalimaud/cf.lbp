@@ -1300,6 +1300,12 @@ class NetworkDialogs:
                 editors[pname] = ('joint_combo', w, False)
                 continue
 
+            if pname == 'robot_address':
+                # Shown, not edited: the Robot tab's table is the one place to set it.
+                # Left out of editors, so OK never writes it back.
+                form.addRow(pname, self._robot_address_row(dlg, cur))
+                continue
+
             if choices is not None:
                 w = QComboBox()
                 for ch in choices:
@@ -1336,6 +1342,35 @@ class NetworkDialogs:
             editors[pname] = (ptype, w, is_angle)
 
         return editors
+
+    def _robot_address_row(self, dlg, address):
+        """Read-only robot address plus a button that accepts the dialog and then
+        opens the Robot tab on this element (see _goto_robot_tab)."""
+        row = QWidget()
+        hl = QHBoxLayout(row)
+        hl.setContentsMargins(0, 0, 0, 0)
+        hl.setSpacing(4)
+        shown = QLineEdit(address or '')
+        shown.setReadOnly(True)
+        shown.setPlaceholderText("none")
+        shown.setStyleSheet("background:#EEF0F3; color:#555;")
+        shown.setToolTip("Where this element connects in real-robot mode. "
+                         "Set it in the Robot tab of the main window.")
+        hl.addWidget(shown, 1)
+        btn = QPushButton("Edit in Robot tab…")
+        btn.setToolTip("Apply this dialog and open the Robot tab on this element's address.")
+        dlg._goto_robot_tab = False
+
+        def _go():
+            dlg._goto_robot_tab = True
+            dlg.accept()
+        btn.clicked.connect(_go)
+        hl.addWidget(btn)
+        return row
+
+    def _goto_robot_tab(self, dlg, name):
+        if getattr(dlg, '_goto_robot_tab', False):
+            self.win.gui.show_robot_address(name)
 
     def _read_param_editors(self, editors):
         """Read current values from editors dict. Returns {pname: value}."""
@@ -1524,6 +1559,7 @@ class NetworkDialogs:
             if target_container is not None:
                 new_sensor.layer = target_container
             self.win.build()
+        self._goto_robot_tab(dlg, sensor.name if is_edit else new_sensor.name)
 
     @edit_transaction
     def body_dialog(self, layer):
@@ -1788,6 +1824,7 @@ class NetworkDialogs:
             if new_mods:
                 kwargs['modulators'] = new_mods
             self._create_layer(cls, kwargs, z_spin.value(), target_container)
+        self._goto_robot_tab(dlg, layer.name if is_edit else kwargs['name'])
 
     def _drop_incompatible_connections(self, layer, new_n):
         """Changing a layer's n breaks connections whose W no longer fits. Asks,

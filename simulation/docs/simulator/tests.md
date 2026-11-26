@@ -155,8 +155,13 @@ Unit tests for the robot connection checklist (`robot_check.py`). No Qt, MuJoCo 
 | `test_analyse_sensor_index_out_of_range` | An index beyond the packet's length fails and names the index |
 | `test_analyse_sensor_formula_error` | A formula that raises on the received values fails |
 | `test_analyse_sensor_no_indices_size_mismatch_warns` | Without indices, a packet size different from the sensor's `n` gives a warning |
+| `test_stream_stats_sent_received_and_loss` | From the robot's packet counter, `stream_stats` gives the rate the robot sent, the rate that arrived and the fraction lost (every 4th packet dropped at 60/s) |
+| `test_stream_stats_without_counter_gives_received_only` | A path whose first value doesn't increase (no packet counter) reports only the received rate |
+| `test_stream_stats_single_packet` | A path with one packet reports no rates |
 | `test_port_in_use_fails_and_skips_reply` | A port already bound by another socket fails the port check, and the reply and sensor checks are skipped |
 | `test_full_run_with_fake_robot_passes_and_releases_port` | Against a fake robot every check passes, and the port can be bound again once `run()` returns |
+| `test_packets_queued_before_listening_are_not_counted` | Packets a robot that is already streaming queues on the port during the ping check are discarded before listening, so the reported rate is the real one (not inflated by the backlog) |
+| `test_packet_loss_warns_with_sent_vs_received` | A fake robot whose every 4th packet never arrives makes "Robot sends data back" a warning showing "robot sent …/s, received …/s (≈25% lost)" and the WiFi hint |
 | `test_slow_ping_warns` | Missing or slow (≥ 100 ms) ping replies give a warning, not a failure |
 
 ## `tests/test_shipped_files.py`
