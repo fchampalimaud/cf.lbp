@@ -28,7 +28,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from robot_driver import _parse_address, _osc_build, _osc_parse, _eval_formula
+from robot_driver import (_parse_address, _osc_build, _osc_messages, _eval_formula,
+                          _BUNDLE_TAG)
 
 PENDING, RUNNING, PASS, WARN, FAIL, SKIP = 'pending', 'running', 'pass', 'warn', 'fail', 'skip'
 
@@ -314,7 +315,7 @@ class RobotCheck:
                 self._skip_sensors(ep, emit, f"Needs port {ep.port}.")
                 return
             emit(key, RUNNING, '')
-            msgs, stamps, raw, n_pkts = self._listen(ep, sock, cancel)
+            msgs, stamps, raw, n_pkts, bundles = self._listen(ep, sock, cancel)
             if cancel.is_set():
                 return
             if n_pkts == 0:
@@ -331,7 +332,7 @@ class RobotCheck:
             if ep.is_camera:
                 emit(key, PASS, f"{len(raw) / 1024:.0f} kB in {self.LISTEN_S:g} s")
             else:
-                emit(key, *self._judge_streams(stream_stats(msgs, stamps), msgs))
+                emit(key, *self._judge_streams(stream_stats(msgs, stamps), msgs, *bundles))
 
             for s in ep.sensors:
                 key = f'{ep.label}:s:{s.name}'
@@ -345,9 +346,11 @@ class RobotCheck:
             if sock is not None:
                 sock.close()
 
-    def _judge_streams(self, stats: dict, msgs: list):
+    def _judge_streams(self, stats: dict, msgs: list, n_bundles: int = 0,
+                       n_bundled_msgs: int = 0):
         """Status + detail for the 'Robot sends data back' row: per path what the
-        robot sent (from its packet counter) vs what arrived, warning on WiFi loss."""
+        robot sent (from its packet counter) vs what arrived, warning on WiFi loss.
+        Says so when the robot packs its messages into OSC bundles."""
         lines, lossy = [], []
         for path in sorted({p for p, _ in msgs}):
             sent, received, lost = stats.get(path, (None, None, None))
@@ -360,6 +363,9 @@ class RobotCheck:
                              f"({lost:.0%} lost)")
                 if lost > self.LOSS_WARN:
                     lossy.append(path)
+        if n_bundles:
+            lines.append(f"Sent as OSC bundles ({n_bundled_msgs / n_bundles:.1f} messages "
+                         f"per packet)")
         detail = '\n'.join(lines)
         if lossy:
             return WARN, (f"{detail}\nPackets are being lost on the WiFi: check the signal "
@@ -394,7 +400,9 @@ class RobotCheck:
     def _listen(self, ep, sock, cancel):
         """Probe the robot and collect what it sends for LISTEN_S seconds.
         Returns (osc_msgs [(path, values)], arrival times parallel to osc_msgs,
-        raw camera bytes, packet count)."""
+        raw camera bytes, packet count, (OSC bundles among the packets, messages
+        inside those bundles)).
+        Messages unpacked from one bundle share its arrival time."""
         if ep.is_camera:
             probe = b'\x00'
         else:
@@ -405,7 +413,7 @@ class RobotCheck:
             robot_ip = ep.host
         _drain(sock)
         sock.settimeout(0.05)
-        msgs, stamps, raw, n_pkts = [], [], b'', 0
+        msgs, stamps, raw, n_pkts, n_bundles, n_bundled_msgs = [], [], b'', 0, 0, 0
         t_end = time.monotonic() + self.LISTEN_S
         next_probe = 0.0
         while time.monotonic() < t_end and not cancel.is_set():
@@ -426,11 +434,15 @@ class RobotCheck:
             if ep.is_camera:
                 raw += data
             else:
-                path, values, _ = _osc_parse(data)
-                if path is not None:
+                t = time.monotonic()
+                unpacked = _osc_messages(data)
+                if data.startswith(_BUNDLE_TAG):
+                    n_bundles += 1
+                    n_bundled_msgs += len(unpacked)
+                for path, values, _ in unpacked:
                     msgs.append((path, values))
-                    stamps.append(time.monotonic())
-        return msgs, stamps, raw, n_pkts
+                    stamps.append(t)
+        return msgs, stamps, raw, n_pkts, (n_bundles, n_bundled_msgs)
 
     def _skip_sensors(self, ep, emit, reason):
         for s in ep.sensors:

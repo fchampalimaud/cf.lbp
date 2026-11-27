@@ -158,8 +158,14 @@ Unit tests for the robot connection checklist (`robot_check.py`). No Qt, MuJoCo 
 | `test_stream_stats_sent_received_and_loss` | From the robot's packet counter, `stream_stats` gives the rate the robot sent, the rate that arrived and the fraction lost (every 4th packet dropped at 60/s) |
 | `test_stream_stats_without_counter_gives_received_only` | A path whose first value doesn't increase (no packet counter) reports only the received rate |
 | `test_stream_stats_single_packet` | A path with one packet reports no rates |
+| `test_osc_messages_plain_message` | `_osc_messages` returns a plain (non-bundle) OSC message as a one-item list |
+| `test_osc_messages_bundle_of_two_in_order` | An OSC bundle of `/analogs` + `/bumpers` is unpacked into both messages, in order, with their values and type tags |
+| `test_osc_messages_nested_bundle` | A bundle nested inside a bundle is unpacked recursively, keeping the message order |
+| `test_osc_messages_truncated_bundle_keeps_complete_messages` | A bundle cut short keeps the complete messages before the cut; a cut header or garbage gives no messages |
+| `test_osc_thread_dispatches_every_message_of_a_bundle` | `OscThread` writes each message of a bundle into the sensors registered on its path (indices and formula applied) and counts both paths |
 | `test_port_in_use_fails_and_skips_reply` | A port already bound by another socket fails the port check, and the reply and sensor checks are skipped |
 | `test_full_run_with_fake_robot_passes_and_releases_port` | Against a fake robot every check passes, and the port can be bound again once `run()` returns |
+| `test_full_run_with_bundling_robot_counts_each_path` | Against a fake robot that sends `/analogs` + `/bumpers` in one bundle per cycle, every check passes, each path gets its own sent/received rate and the reply row says "Sent as OSC bundles (2.0 messages per packet)" |
 | `test_packets_queued_before_listening_are_not_counted` | Packets a robot that is already streaming queues on the port during the ping check are discarded before listening, so the reported rate is the real one (not inflated by the backlog) |
 | `test_packet_loss_warns_with_sent_vs_received` | A fake robot whose every 4th packet never arrives makes "Robot sends data back" a warning showing "robot sent …/s, received …/s (≈25% lost)" and the WiFi hint |
 | `test_slow_ping_warns` | Missing or slow (≥ 100 ms) ping replies give a warning, not a failure |

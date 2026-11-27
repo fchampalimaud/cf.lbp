@@ -20,7 +20,7 @@ for _p in (_SRC, _SIM2D):
 
 from robot_check import (RobotCheck, SensorSpec, plan, parse_ping, analyse_sensor,
                          stream_stats, PASS, WARN, FAIL, SKIP, RUNNING)
-from robot_driver import _osc_build
+from robot_driver import _osc_build, _osc_bundle, _osc_messages, OscThread
 
 
 def _sensor(name, addr, n=2, camera=False):
@@ -170,7 +170,81 @@ def test_stream_stats_single_packet():
     assert stream_stats([('/analogs', [5, 0])], [0.0])['/analogs'] == (None, None, None)
 
 
+# ── OSC bundles ───────────────────────────────────────────────────────────────
+
+def test_osc_messages_plain_message():
+    assert _osc_messages(_osc_build('/analogs', 3, 1, 2)) == [('/analogs', [3, 1, 2], 'iii')]
+
+
+def test_osc_messages_bundle_of_two_in_order():
+    b = _osc_bundle(_osc_build('/analogs', 7, 10, 20, 30, 40), _osc_build('/bumpers', 7, 0, 1, 0, 0))
+    assert _osc_messages(b) == [('/analogs', [7, 10, 20, 30, 40], 'iiiii'),
+                                ('/bumpers', [7, 0, 1, 0, 0], 'iiiii')]
+
+
+def test_osc_messages_nested_bundle():
+    inner = _osc_bundle(_osc_build('/bumpers', 1, 0))
+    b = _osc_bundle(_osc_build('/analogs', 1, 5), inner, _osc_build('/wencoders', 1, -2, 3))
+    assert [m[0] for m in _osc_messages(b)] == ['/analogs', '/bumpers', '/wencoders']
+
+
+def test_osc_messages_truncated_bundle_keeps_complete_messages():
+    b = _osc_bundle(_osc_build('/analogs', 1, 5), _osc_build('/bumpers', 1, 0))
+    assert [m[0] for m in _osc_messages(b[:-6])] == ['/analogs']
+    assert _osc_messages(b[:10]) == []          # cut inside the header
+    assert _osc_messages(b'garbage') == []
+
+
+def test_osc_thread_dispatches_every_message_of_a_bundle():
+    dist = _sensor('dist', '127.0.0.1:1/analogs(1,4){x/100}')
+    bump = _sensor('bump', '127.0.0.1:1/bumpers(2,3)')
+    t = OscThread(_free_port(), [dist, bump])
+    try:
+        for addr, values, _ in _osc_messages(_osc_bundle(
+                _osc_build('/analogs', 0, 100, 0, 0, 300), _osc_build('/bumpers', 0, 0, 1, 0, 0))):
+            t._dispatch_message(addr, values)
+    finally:
+        t._sock.close()
+    assert list(dist._robot_value) == [1.0, 3.0]
+    assert list(bump._robot_value) == [1.0, 0.0]
+    assert set(t.path_rates()) == {'/analogs', '/bumpers'}
+
+
 # ── end-to-end against a fake robot on localhost ─────────────────────────────
+
+def test_full_run_with_bundling_robot_counts_each_path():
+    port = _free_port()
+    stop = threading.Event()
+
+    def robot():   # one bundle per cycle, like MKR1010_NeuroethologyOscBundle
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        i = 0
+        while not stop.is_set():
+            s.sendto(_osc_bundle(_osc_build('/analogs', i, 100, 200, 300, 400),
+                                 _osc_build('/bumpers', i, 0, 1, 0, 0)), ('127.0.0.1', port))
+            i += 1
+            time.sleep(0.01)
+        s.close()
+
+    t = threading.Thread(target=robot, daemon=True)
+    t.start()
+    try:
+        c = _circuit([_sensor('dist', f'127.0.0.1:{port}/analogs(1,4)'),
+                      _sensor('bump', f'127.0.0.1:{port}/bumpers(2,3)')],
+                     [_motor('motor', f'127.0.0.1:{port}/wheels')])
+        check = RobotCheck(c, ping=lambda h, n, cancel: [1.0] * n)
+        check.LISTEN_S = 0.5
+        r = _run(check)
+    finally:
+        stop.set()
+        t.join()
+    ep = f'127.0.0.1:{port}'
+    status, detail = r[f'{ep}:reply']
+    assert status == PASS
+    assert '/analogs: robot sent' in detail and '/bumpers: robot sent' in detail
+    assert 'Sent as OSC bundles (2.0 messages per packet)' in detail
+    assert r[f'{ep}:s:dist'][0] == PASS and r[f'{ep}:s:bump'][0] == PASS
+
 
 def test_port_in_use_fails_and_skips_reply():
     blocker = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

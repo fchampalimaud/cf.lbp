@@ -58,6 +58,43 @@ def _osc_build(address: str, *args) -> bytes:
     return data
 
 
+_BUNDLE_TAG = b'#bundle\x00'
+
+
+def _osc_bundle(*messages: bytes, timetag: int = 1) -> bytes:
+    """Build an OSC bundle from already-encoded messages (or nested bundles).
+    timetag 1 means "immediately"; receivers here ignore it."""
+    data = _BUNDLE_TAG + struct.pack('>Q', timetag)
+    for m in messages:
+        data += struct.pack('>i', len(m)) + m
+    return data
+
+
+def _osc_messages(data: bytes, _depth: int = 0) -> list:
+    """Return every OSC message in a datagram as [(address, values, type_str), ...].
+
+    A plain message gives a one-item list (same result as _osc_parse). An OSC bundle
+    ('#bundle\\0', 8-byte timetag, then [int32 size][element] repeated) is unpacked,
+    recursing into nested bundles; the timetag is ignored because values are applied
+    as they arrive. A malformed element ends the unpacking — the messages before it
+    are kept. Unparsable messages are left out, so the list can be empty."""
+    if not data.startswith(_BUNDLE_TAG):
+        address, values, type_str = _osc_parse(data)
+        return [] if address is None else [(address, values, type_str)]
+    if _depth >= 8:
+        return []
+    out = []
+    off = 16                                    # tag + timetag
+    while off + 4 <= len(data):
+        size = struct.unpack('>i', data[off:off + 4])[0]
+        off += 4
+        if size <= 0 or off + size > len(data):
+            break
+        out.extend(_osc_messages(data[off:off + size], _depth + 1))
+        off += size
+    return out
+
+
 def _parse_address(addr: str):
     """Parse 'host:port[/osc_path][[type_tag]][(i,j,...)][{formula}]' into components.
 
@@ -253,29 +290,33 @@ class OscThread(threading.Thread):
                     print(f'[Robot] OscThread:{self._port} recv error (ignored): {e}')
                     continue
                 pkt_count += 1
-                address, values, _ = _osc_parse(data)
-                if address is None or not values:
-                    continue
-                targets = self._dispatch.get(address, [])
-                if not targets:
-                    continue
-                self._recv_counts[address] = self._recv_counts.get(address, 0) + 1
-                for sensor, _, indices, formula in targets:
-                    arr = np.array(values, dtype=np.float32)
-                    if indices is not None:
-                        try:
-                            arr = arr[indices]
-                        except IndexError:
-                            continue
-                    if formula:
-                        try:
-                            arr = np.asarray(_eval_formula(formula, arr), dtype=np.float32)
-                        except Exception as e:
-                            print(f'[Robot] {sensor.name}: formula {formula!r} failed: {e}')
-                            continue
-                    sensor._robot_value = arr
+                for address, values, _ in _osc_messages(data):
+                    self._dispatch_message(address, values)
         finally:
             self._sock.close()
+
+    def _dispatch_message(self, address: str, values: list):
+        """Write one OSC message's values into every sensor registered on its path."""
+        if not values:
+            return
+        targets = self._dispatch.get(address, [])
+        if not targets:
+            return
+        self._recv_counts[address] = self._recv_counts.get(address, 0) + 1
+        for sensor, _, indices, formula in targets:
+            arr = np.array(values, dtype=np.float32)
+            if indices is not None:
+                try:
+                    arr = arr[indices]
+                except IndexError:
+                    continue
+            if formula:
+                try:
+                    arr = np.asarray(_eval_formula(formula, arr), dtype=np.float32)
+                except Exception as e:
+                    print(f'[Robot] {sensor.name}: formula {formula!r} failed: {e}')
+                    continue
+            sensor._robot_value = arr
 
     def stop(self):
         self._stop_evt.set()

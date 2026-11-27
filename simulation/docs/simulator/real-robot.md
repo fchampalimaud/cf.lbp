@@ -78,6 +78,8 @@ The packet layouts for reference (index 0 is always the packet counter):
 
 `/heartbeat` is sent by the `MKR1010_Neurethology` firmware, which sends all four packets at a fixed 60 Hz, and only after it has received a packet from the simulator. Dividing the loop count by the time between heartbeats gives the robot's loop rate.
 
+The robot may also pack the messages of one send cycle into a single **OSC bundle** (the `MKR1010_NeuroethologyOscBundle` firmware does this, sending `/analogs` and `/bumpers` in one UDP packet). The simulator unpacks bundles, nested ones included, and handles each message inside exactly like a separate packet, so robot addresses stay the same. Bundle timetags are ignored: values are used as soon as they arrive. Older simulator versions ignore bundles, so the robot would seem to send nothing.
+
 ---
 
 ## Real-time `dt`
@@ -115,7 +117,7 @@ Before switching robot mode on, press **🔍 Test connection** in the Robot tab.
 | Robot addresses are set up | An address is malformed, a sensor's index count doesn't match its neurons, or no motor layer has an address (the robot only streams sensor data after it receives a command) |
 | Port is free on this computer | Another program — a Bonsai workflow, another simulator window, a script — is already talking to the robot on that port |
 | Robot answers ping | The robot is off, on another WiFi, or has a different IP. A ⚠ for slow or lost replies means motor commands will lag: check WiFi power saving on this computer or the signal strength |
-| Robot sends data back | Ping works but nothing arrives: Windows Firewall is blocking incoming UDP. The window shows the one-line command that allows it. When data does arrive, each OSC path shows what the robot sent (from its packet counter) against what was received, e.g. `robot sent 60/s, received 48/s (20% lost)` — more than 10 % lost is a ⚠: packets are being lost on the WiFi. If the robot itself sends less than its firmware's rate, its loop can't keep up |
+| Robot sends data back | Ping works but nothing arrives: Windows Firewall is blocking incoming UDP. The window shows the one-line command that allows it. When data does arrive, each OSC path shows what the robot sent (from its packet counter) against what was received, e.g. `robot sent 60/s, received 48/s (20% lost)` — more than 10 % lost is a ⚠: packets are being lost on the WiFi. If the robot itself sends less than its firmware's rate, its loop can't keep up. If the robot sends OSC bundles, the row also says how many messages each packet carried |
 | Sensor '…' receives /path | The robot doesn't send that OSC path, or the address asks for an index the packet doesn't have, or its formula fails |
 
 During the test the robot receives a stop command (`/wheels 0 0`). If robot mode was on it is paused for the test; when you close the window everything is restored and you can run the robot straight away.
