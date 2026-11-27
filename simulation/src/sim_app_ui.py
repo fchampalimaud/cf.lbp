@@ -75,6 +75,7 @@ class _UiBuilderMixin:
         self._build_session_group(tab_session)
         self._build_task_group(tab_session)
         self._build_logger_group(tab_session)
+        self._build_loop_group(tab_session)
         self._build_video_group(tab_session)
         self._build_physics_group(tab_physics)
         self._build_robot_group(tab_robot)

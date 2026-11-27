@@ -52,6 +52,7 @@ class SimController(QObject):
         # once per rendered frame — NOT once per physics substep (see sig_tick_values,
         # used for oscilloscope trace-appending, which needs full physics-rate resolution)
     sig_tick_values     = Signal(object)     # dict[str, float] — once per physics substep
+    sig_run_finished    = Signal()           # sim_time reached stop_at_time; the sim is paused
 
     # Real-robot mode: how long each frame runs network ticks before redrawing and
     # handing control back to Qt. Key presses (manual driving) are only seen between
@@ -94,6 +95,7 @@ class SimController(QObject):
         self._phys_ms_acc = 0.0
         self._last_loop_t = None
         self._frame_count = 0
+        self.stop_at_time = None   # sim seconds; set by the Loop group, None = run forever
 
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
@@ -340,6 +342,8 @@ class SimController(QObject):
                 self._tick()
                 steps_done += 1
                 self._time_debt -= self.sim_cfg.dt
+                if self._time_up():
+                    break
                 if time.perf_counter() > t_deadline:
                     self._time_debt = 0.0
                     break
@@ -348,7 +352,7 @@ class SimController(QObject):
             for _ in range(self.speed_mult):
                 self._tick()
                 steps_done += 1
-                if time.perf_counter() > t_deadline:
+                if self._time_up() or time.perf_counter() > t_deadline:
                     break
 
         overhead_rgb = None
@@ -385,8 +389,16 @@ class SimController(QObject):
             mode_tag = "RT" if self._rt_mode else f"×{self.speed_mult}"
             self.sig_timing_updated.emit(f"step: {step_ms:.2f} ms  {mode_tag}  {speedup:.1f}× real")
 
-        if self.running:
+        if self._time_up():
+            self.stop()
+            self.sig_run_finished.emit()
+        elif self.running:
             self._timer.start()
+
+    def _time_up(self):
+        # Half-dt tolerance: sim_time accumulates dt in floating point.
+        return (self.stop_at_time is not None and not self.robot.enabled
+                and self.sim.sim_time >= self.stop_at_time - 0.5 * self.sim_cfg.dt)
 
     def _tick_robot(self):
         """One physics-substep of real-robot mode, driven by RobotModeController."""

@@ -196,6 +196,17 @@ Records sensor and motor data to a timestamped CSV file during a run.
 
 **● Record** / **■ Stop** — start and stop logging; **Visualize trajectories** opens the recorded run in the trajectory viewer. While logging, the status bar shows a **● REC** indicator.
 
+### Loop { #loop }
+
+Repeats the same experiment several times, exactly as if you pressed **↺ Reset** and **▶ Run** by hand each time.
+
+**Runs** — how many times to repeat.
+**Duration** — length of each run in *simulated* seconds, so a run lasts the same number of steps at any Speed ×.
+**Log each run** — write one log file per run to `logs/` in your [files folder](#my-files), named `sim_<date>_<time>_run001.jsonl`, `…_run002.jsonl`, … (one timestamp for the whole batch).
+**▶ Start Loop** / **■ Stop Loop** — start the batch, or stop it early (the log of the unfinished run is closed). The label next to it shows the current run, e.g. *Run 3 / 10*. **⏸ Pause** pauses the current run and **▶ Run** continues it; **↺ Reset** or loading a session ends the loop.
+
+Not available with the [real robot](#real-robot) or as a network client, since both run on wall-clock time.
+
 ### Video { #video }
 
 Records the arena view as an H.264 `.mp4` file, ready to drop straight into a slide deck. If the Network Visualizer window is open when recording starts, it is captured to a second, independent `.mp4` file at the same time. Files are written to `logs/videos/` in your [files folder](#my-files).

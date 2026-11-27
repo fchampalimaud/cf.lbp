@@ -1456,6 +1456,72 @@ def test_mounted_gradient_snaps_to_agent_immediately_on_reset():
 @pytest.mark.skipif(
     __import__('importlib').util.find_spec('mujoco') is None,
     reason='mujoco not installed')
+def test_loop_stop_at_time_ends_run_on_exact_step():
+    """Loop group: with stop_at_time set, _loop stops on the tick that reaches
+    it (even mid-batch at high speed), pauses and emits sig_run_finished;
+    reset() then starts the clock from zero for the next run."""
+    from sim_controller import SimController
+    from circuit_model import CircuitModel
+    from rigid_body import RigidBody
+    from world import World
+    from brain_base import BaseBrain
+    from sim_config import SimConfig
+
+    class _FakeArena:
+        def setup_sensors(self, *a, **k): pass
+        def sync_agents(self, *a, **k): pass
+        def sync_robot_items(self, *a, **k): pass
+
+    class _FakeOscCtrl:
+        channels = []
+        _osc_items = set()
+        channel_colors = {}
+        def reset_trace(self): pass
+        def update_osc(self): pass
+        def refresh_mult_cache(self): pass
+
+    class _FakeLogger:
+        def log(self, *a, **k): pass
+
+    class _TestBrain(BaseBrain):
+        def setup(self): pass
+        def loop(self, *sensors): return 20.0, 20.0
+        def plots(self): return []
+
+    sim_cfg = SimConfig()
+    circuit = CircuitModel()
+    circuit.bodies = [RigidBody('root', 'root', sim_cfg.body_radius)]
+    world = World(sim_cfg)
+    ctrl = SimController(circuit, sim_cfg, world, _FakeArena(), _FakeOscCtrl(), _FakeLogger(),
+                         get_trail_visible=lambda: False, get_motor_override=lambda: None)
+    agent = ctrl.registry.agents[0]
+    agent.brain = _TestBrain()
+    agent.brain.sensors, agent.brain.layers, agent.brain.connections = [], [], []
+    agent.circuit = circuit
+    ctrl.registry.brain = agent.brain
+    ok, err = ctrl.mujoco.start()
+    assert ok, err
+
+    finished = []
+    ctrl.sig_run_finished.connect(lambda: finished.append(True))
+    ctrl.speed_mult = 10_000                       # whole run fits in one batch
+    duration = 0.5
+    expected_steps = round(duration / sim_cfg.dt)
+
+    for _ in range(2):                             # two runs, like two loop iterations
+        ctrl.reset()
+        ctrl.stop_at_time = duration
+        ctrl.running = True
+        while ctrl.running:
+            ctrl._loop()
+        assert ctrl.sim.time_index == expected_steps
+        assert ctrl.sim.sim_time == pytest.approx(duration)
+    assert finished == [True, True]
+
+
+@pytest.mark.skipif(
+    __import__('importlib').util.find_spec('mujoco') is None,
+    reason='mujoco not installed')
 def test_mujoco_build_xml_textures():
     """_build_xml must: dedupe repeated texture files into one <texture>/<material>
     pair, use material= (not rgba=) for textured objects/walls, keep rgba= for
@@ -1963,7 +2029,7 @@ def test_robot_mode_frame_returns_to_qt_quickly_simulation_unchanged():
             sim_cfg=types.SimpleNamespace(dt=0.01),
             _osc_ctrl=types.SimpleNamespace(refresh_mult_cache=lambda: None),
             _last_loop_t=None, _phys_ms_acc=0.0, _frame_count=0,
-            _tick_robot=tick, _tick=tick,
+            _tick_robot=tick, _tick=tick, _time_up=lambda: False,
             _render_free_running_cameras=lambda: None,
             mujoco=types.SimpleNamespace(engine=None, view_3d=False),
             _emit_frame_ready=lambda rgb: None,

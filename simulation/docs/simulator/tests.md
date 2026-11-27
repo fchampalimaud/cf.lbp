@@ -117,6 +117,7 @@ Core layer math, serialisation, and visualiser smoke tests.
 | `test_headless_session_loads_all_agents_and_runs` | `session_loader.build_simulation` builds every agent group of a saved session without the GUI (multi-agent tutorial: 3 agents, all with brains), and the result can be stepped |
 | `test_simulation_runs_without_qt` | Importing the simulation core (`simulation`, `sim_engine`, `agent_registry`, `session_loader`, `headless`) in a fresh interpreter never imports PySide6 or pyqtgraph |
 | `test_step_agents_renders_due_cameras_only` | `step_agents` renders `fps > 0` cameras on their schedule and leaves `fps = 0` cameras to the display loop |
+| `test_loop_stop_at_time_ends_run_on_exact_step` | Loop group: with `SimController.stop_at_time` set, a frame stops on the exact tick that reaches it (even mid-batch at high speed), pauses and emits `sig_run_finished`; after `reset()` the next run takes the same number of steps |
 
 ## `tests/test_logger.py`
 

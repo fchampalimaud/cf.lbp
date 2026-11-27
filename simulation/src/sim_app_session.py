@@ -4,7 +4,7 @@ import datetime
 from collections import deque
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QLabel, QComboBox, QLineEdit, QMessageBox,
-    QCheckBox, QDoubleSpinBox,
+    QCheckBox, QDoubleSpinBox, QSpinBox,
 )
 from PySide6.QtCore import QTimer
 
@@ -105,6 +105,44 @@ class _SessionMixin:
         vzl.addWidget(btn_viz)
         vl.addWidget(viz_row)
 
+    def _build_loop_group(self, panel_vl=None):
+        gb, vl = self._panel.add_group("Loop", panel_vl)
+        row = QWidget(); hl = QHBoxLayout(row); hl.setContentsMargins(0, 0, 0, 0)
+        hl.addWidget(QLabel("Runs:"))
+        self._loop_runs_spin = QSpinBox()
+        self._loop_runs_spin.setRange(1, 10000)
+        self._loop_runs_spin.setValue(10)
+        self._loop_runs_spin.setToolTip("How many times the experiment is repeated")
+        hl.addWidget(self._loop_runs_spin)
+        hl.addWidget(QLabel("Duration:"))
+        self._loop_duration_spin = QDoubleSpinBox()
+        self._loop_duration_spin.setRange(0.1, 100000.0)
+        self._loop_duration_spin.setDecimals(1)
+        self._loop_duration_spin.setValue(60.0)
+        self._loop_duration_spin.setSuffix(" s")
+        self._loop_duration_spin.setToolTip("Length of each run in simulated seconds")
+        hl.addWidget(self._loop_duration_spin)
+        hl.addStretch()
+        vl.addWidget(row)
+
+        row = QWidget(); hl = QHBoxLayout(row); hl.setContentsMargins(0, 0, 0, 0)
+        self._loop_log_cb = QCheckBox("Log each run")
+        self._loop_log_cb.setChecked(True)
+        self._loop_log_cb.setToolTip("Write one log file per run, as ● Record would")
+        hl.addWidget(self._loop_log_cb)
+        self._loop_progress = QLabel("")
+        self._loop_progress.setStyleSheet(f"color:{C['muted']};")
+        hl.addWidget(self._loop_progress, 1)
+        self._btn_loop = self._make_btn("▶ Start Loop", C['success'])
+        self._btn_loop.setToolTip("Reset, run for Duration, and repeat Runs times — "
+                                  "like pressing ↺ Reset and ▶ Run by hand")
+        self._btn_loop.clicked.connect(self._on_loop_clicked)
+        hl.addWidget(self._btn_loop)
+        vl.addWidget(row)
+
+        self._loop_active = False
+        self._loop_in_reset = False
+
     def _build_video_group(self, panel_vl=None):
         gb, vl = self._panel.add_group("Video", panel_vl)
         row = QWidget(); hl = QHBoxLayout(row); hl.setContentsMargins(0, 0, 0, 0)
@@ -165,10 +203,10 @@ class _SessionMixin:
 
     # ── Logger ────────────────────────────────────────────────────────────────
 
-    def _logger_start(self):
+    def _logger_start(self, path=None):
         agents_info = [{'id': a.id, 'name': a.name, 'color': a.color}
                        for a in self._sim_ctrl.registry.agents]
-        self._logger.start(arena_scale=self.sim_cfg.arena_scale,
+        self._logger.start(path=path, arena_scale=self.sim_cfg.arena_scale,
                            arena_round=self.world.arena_round,
                            agents=agents_info)
         self._btn_log_start.setEnabled(False)
@@ -180,6 +218,81 @@ class _SessionMixin:
         self._btn_log_start.setEnabled(True)
         self._btn_log_stop.setEnabled(False)
         self._update_record_status()
+
+    # ── Loop ──────────────────────────────────────────────────────────────────
+
+    def _on_loop_clicked(self):
+        if self._loop_active:
+            self._loop_stop()
+        else:
+            self._loop_start()
+
+    def _loop_start(self):
+        if self._sim_ctrl.robot.enabled or self._sim_ctrl.network.is_client:
+            self._status_bar.showMessage(
+                "Loop runs on simulated time — not available with the real robot or as a network client", 8000)
+            return
+        if not self.brain and not self._sim_ctrl.network.is_hosting:
+            return
+        if self._logger.running:
+            self._logger_stop()
+        self._loop_total = self._loop_runs_spin.value()
+        self._loop_index = 0
+        # One stamp for the whole batch; the run number keeps fast runs from overwriting each other.
+        self._loop_stamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        self._loop_active = True
+        self._btn_loop.setText("■ Stop Loop")
+        self._btn_loop.setStyleSheet(self._make_btn("■ Stop Loop", C['danger']).styleSheet())
+        for w in (self._loop_runs_spin, self._loop_duration_spin, self._loop_log_cb,
+                  self._btn_log_start):
+            w.setEnabled(False)
+        self._loop_next_run()
+
+    def _loop_next_run(self):
+        if not self._loop_active:
+            return
+        self._loop_index += 1
+        self._loop_in_reset = True
+        try:
+            self._reset()
+        finally:
+            self._loop_in_reset = False
+        if self._loop_log_cb.isChecked():
+            self._logger_start(str(data_paths.user_path(
+                'logs', f'sim_{self._loop_stamp}_run{self._loop_index:03d}.jsonl')))
+            self._btn_log_start.setEnabled(False)
+            self._btn_log_stop.setEnabled(False)
+        self._loop_progress.setText(f"Run {self._loop_index} / {self._loop_total}")
+        self._sim_ctrl.stop_at_time = self._loop_duration_spin.value()
+        self._sim_ctrl.start()
+
+    def _on_loop_run_finished(self):
+        if not self._loop_active:
+            return
+        if self._logger.running:
+            self._logger_stop()
+        if self._loop_index < self._loop_total:
+            # Deferred: we are inside SimController._loop's frame.
+            QTimer.singleShot(0, self._loop_next_run)
+        else:
+            self._loop_stop(finished=True)
+
+    def _loop_stop(self, finished=False):
+        self._loop_active = False
+        self._sim_ctrl.stop_at_time = None
+        self._sim_ctrl.stop()
+        if self._logger.running:
+            self._logger_stop()
+        self._btn_loop.setText("▶ Start Loop")
+        self._btn_loop.setStyleSheet(self._make_btn("▶ Start Loop", C['success']).styleSheet())
+        for w in (self._loop_runs_spin, self._loop_duration_spin, self._loop_log_cb,
+                  self._btn_log_start):
+            w.setEnabled(True)
+        self._btn_log_stop.setEnabled(False)
+        done = self._loop_total if finished else self._loop_index - 1
+        self._loop_progress.setText(f"Done: {done} / {self._loop_total}")
+        self._status_bar.showMessage(
+            f"Loop {'finished' if finished else 'stopped'}: {done} of {self._loop_total} runs completed", 8000)
 
     def _open_trajectory_viewer(self):
         from trajectory_viz import TrajectoryWindow as TrajectoryViewer

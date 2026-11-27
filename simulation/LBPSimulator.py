@@ -226,6 +226,7 @@ class SimulatorApp(_UiBuilderMixin, _BrainMixin, _SessionMixin, _AgentsMixin,
         self._sim_ctrl.sig_frame_ready.connect(self._arena.on_frame_ready)
         self._sim_ctrl.sig_frame_ready.connect(self._osc_ctrl.on_frame_ready)
         self._sim_ctrl.sig_tick_values.connect(self._osc_ctrl.on_tick_values)
+        self._sim_ctrl.sig_run_finished.connect(self._on_loop_run_finished)
         self._refresh_agent_list()
 
         # App-wide (not window-scoped) so Up/Down works no matter which
@@ -418,6 +419,9 @@ class SimulatorApp(_UiBuilderMixin, _BrainMixin, _SessionMixin, _AgentsMixin,
     # _apply_task / _logger_* / _open_trajectory_viewer → sim_app_session._SessionMixin
 
     def _reset(self):
+        # Any reset not issued by the loop itself (button, Ctrl+R, loading) ends the loop.
+        if self._loop_active and not self._loop_in_reset:
+            self._loop_stop()
         if self.brain is not None:
             self.brain.layers      = self.circuit.layers
             self.brain.sensors     = self.circuit.sensors
