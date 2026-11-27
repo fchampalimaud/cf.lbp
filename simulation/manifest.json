@@ -38,6 +38,7 @@
   "networks/Demos/D08 - DistanceAndGradientBrain.json",
   "networks/Demos/D08 - GradientBrain.json",
   "networks/Demos/D09 - VectorBasedHomingBrain.json",
+  "networks/Robots/BraitenbergWithCollisions.json",
   "networks/Tutorials/Buridan - Braitenberg.json",
   "networks/Tutorials/Buridan - InhibitionOfMutualInhibition.json",
   "networks/Tutorials/Buridan - MutualInhibition.json",
