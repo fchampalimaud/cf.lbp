@@ -6,18 +6,18 @@ No git, no terminal commands to remember — just one file.
 
 === "Windows"
 
-    [Download lbp_install_v0.23.1.bat](../assets/downloads/lbp_install_v0.23.1.bat){ .md-button download="lbp_install_v0.23.1.bat" }
+    [Download lbp_install_v0.23.2.bat](../assets/downloads/lbp_install_v0.23.2.bat){ .md-button download="lbp_install_v0.23.2.bat" }
 
     Save it anywhere and double-click it.
 
 === "macOS / Linux"
 
-    [Download lbp_install_v0.23.1.sh](../assets/downloads/lbp_install_v0.23.1.sh){ .md-button download="lbp_install_v0.23.1.sh" }
+    [Download lbp_install_v0.23.2.sh](../assets/downloads/lbp_install_v0.23.2.sh){ .md-button download="lbp_install_v0.23.2.sh" }
 
     Downloaded files aren't executable by default, so open a terminal where you saved it and run:
 
     ```bash
-    bash lbp_install_v0.23.1.sh
+    bash lbp_install_v0.23.2.sh
     ```
 
 First run downloads the simulator (no git required), installs [uv](https://docs.astral.sh/uv/) if
