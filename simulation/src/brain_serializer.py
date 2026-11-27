@@ -189,6 +189,9 @@ def _sensor_to_dict(sensor) -> dict:
     viz_z = getattr(sensor, 'z', None)
     if viz_z:
         d['viz_z'] = viz_z
+    viz_row = getattr(sensor, 'viz_row', None)
+    if viz_row is not None:
+        d['viz_row'] = viz_row
     return d
 
 
@@ -245,6 +248,7 @@ def _sensor_from_dict(d: dict):
     kw.pop('gut_mode', None)       # removed field — InteroceptiveSensor is always integrating
     viz_layer = kw.pop('viz_layer', None)
     viz_z     = kw.pop('viz_z', None)
+    viz_row   = kw.pop('viz_row', None)
     body_ids = kw.pop('body_ids', None)
     body_id  = kw.pop('body_id', 'root')   # backward compat with old JSON
     neuromod_transmitter = kw.pop('neuromodulator_transmitter', None)
@@ -264,6 +268,8 @@ def _sensor_from_dict(d: dict):
         sensor.layer = viz_layer
     if viz_z is not None:
         sensor.z = viz_z
+    if viz_row is not None:
+        sensor.viz_row = viz_row
     if neuromod_transmitter:
         sensor.neuromodulator_transmitter = neuromod_transmitter
     if neuromod_color:

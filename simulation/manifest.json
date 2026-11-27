@@ -25,6 +25,7 @@
   "networks/Default/MyBrain.json",
   "networks/Default/RingAttractorBrain.json",
   "networks/Default/RingAttractorTut1.json",
+  "networks/Default/RobotBrain.json",
   "networks/Default/WhiskerBrain.json",
   "networks/Demos/D01 - AttractionBrain.json",
   "networks/Demos/D01 - AvoidanceBrain.json",

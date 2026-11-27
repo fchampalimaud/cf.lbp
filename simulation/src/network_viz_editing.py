@@ -132,9 +132,8 @@ class NetworkViewBox(pg.ViewBox):
                     nw.renderer.update_conn_preview(mouse_pt)
                 elif nw.editing.sel.node is not None:
                     snap_x = nw.layout_engine.get_snap_x(mouse_pt.x())
-                    layer_name = nw.editing.sel.node.rsplit('_', 1)[0]
-                    layer = next((l for l in nw.gui.circuit.layers if l.name == layer_name), None)
-                    nw.renderer.show_drag_indicator(snap_x, mouse_pt.y(), layer)
+                    obj = nw.editing.node_owner(nw.editing.sel.node)
+                    nw.renderer.show_drag_indicator(snap_x, mouse_pt.y(), obj)
             if ev.isFinish():
                 self._dragging = False
                 mouse_pt = self.mapSceneToView(ev.scenePos())
@@ -305,35 +304,40 @@ class NetworkEditing:
             for c in self.win.gui.circuit.connections]
         self.win.build()
 
+    def node_owner(self, node_key):
+        """The layer or sensor a node belongs to ('motor_0' → layer 'motor'), or None.
+        Lateralized sensor halves resolve to their sensor: 'camera_L_0' → 'camera'."""
+        if not node_key:
+            return None
+        circuit = self.win.gui.circuit
+        item_name = node_key.rsplit('_', 1)[0]
+        obj = next((l for l in circuit.layers if l.name == item_name), None) \
+            or next((s for s in circuit.sensors if s.name == item_name), None)
+        if obj is None:
+            parent_name = item_name.rsplit('_', 1)[0]
+            obj = next((s for s in circuit.sensors if s.name == parent_name), None)
+        return obj
+
     @edit_transaction
     def on_node_drag_drop(self, snap_x, mouse_y=None):
         if not self.sel.node:
             return
-        item_name = self.sel.node.rsplit('_', 1)[0]
-        layer  = next((l for l in self.win.gui.circuit.layers  if l.name == item_name), None)
-        sensor = next((s for s in self.win.gui.circuit.sensors if s.name == item_name), None)
-        obj    = layer or sensor
-        if obj is None:
-            # Lateralized camera halves: 'camera_L_0' → item_name='camera_L' → parent 'camera'
-            parent_name = item_name.rsplit('_', 1)[0]
-            sensor = next((s for s in self.win.gui.circuit.sensors if s.name == parent_name), None)
-            obj = sensor
+        obj = self.node_owner(self.sel.node)
         if obj is None:
             return
-
-        current_container = getattr(obj, 'layer', None)
+        # Dropped back in its own column with a y → vertical reorder within the
+        # column (layers and sensors alike). Compared by drawn x, not .layer, which
+        # can be None for a lateral half whose column is decided at layout time.
+        if mouse_y is not None and self._same_column(obj, snap_x):
+            self._reorder_by_y(obj, mouse_y)
+            return
 
         if self.win.layout_engine.snap_is_existing(snap_x):
             target_container = next(
                 (d for d, x in self.win._lay.container_x_map.items() if abs(x - snap_x) < 1e-9), None
             )
         else:
-            target_container = self.win.layout_engine.insert_midpoint_container(snap_x, exclude=item_name)
-
-        # Same column and y available → vertical reorder within column.
-        if target_container == current_container and mouse_y is not None and layer is not None:
-            self._reorder_layer_by_y(layer, mouse_y)
-            return
+            target_container = self.win.layout_engine.insert_midpoint_container(snap_x, exclude=obj.name)
 
         partner_name = getattr(obj, 'lateral_pair', None)
         if target_container is not None:
@@ -366,24 +370,23 @@ class NetworkEditing:
             self.sel.pen_override[sel] = 'selected'
             self.win.renderer.redraw_nodes()
 
-    def _reorder_layer_by_y(self, layer, mouse_y):
-        """Insert `layer` at the vertical slot nearest to `mouse_y` within its column."""
-        # Runs inside _on_node_drag_drop's edit transaction (one undo step).
-        _, insert_idx = self.win.layout_engine.get_container_snap_y(layer, mouse_y)
+    def _same_column(self, obj, snap_x):
+        x = self.win.layout_engine.node_x(obj)
+        return x is not None and abs(snap_x - x) < 1e-9
 
-        others = self.win.layout_engine.container_mates(layer)
+    def _reorder_by_y(self, obj, mouse_y):
+        """Insert layer or sensor `obj` at the vertical slot nearest to `mouse_y`
+        within its column."""
+        # Runs inside on_node_drag_drop's edit transaction (one undo step).
+        engine = self.win.layout_engine
+        _, insert_idx = engine.get_container_snap_y(obj, mouse_y)
 
-        def top_y(l):
-            ys = [self.win._lay.positions[f'{l.name}_{j}'][1]
-                  for j in range(l.n or 0)
-                  if f'{l.name}_{j}' in self.win._lay.positions]
-            return max(ys) if ys else 0.5
+        others = engine.container_mates(obj)
+        others.sort(key=engine.top_y, reverse=True)  # top-first (highest y = top)
 
-        others.sort(key=top_y, reverse=True)  # top-first (highest y = top)
-
-        ordered = others[:insert_idx] + [layer] + others[insert_idx:]
-        for i, l in enumerate(ordered):
-            l.viz_row = i
+        ordered = others[:insert_idx] + [obj] + others[insert_idx:]
+        for i, o in enumerate(ordered):
+            o.viz_row = i
 
         self.build_without_selection_filter()
 

@@ -1100,6 +1100,53 @@ def test_activation_panel_supports_sensors(qtbot):
 
 
 @pytest.mark.skipif(not _HAS_PYTEST_QT, reason='pytest-qt not installed')
+def test_sensors_reorder_vertically_within_their_column(qtbot):
+    """Dragging a sensor up or down in its own column reorders the column, like
+    layers — a lateralized sensor moves as one entry (both halves). The order is
+    kept across rebuilds and saved (viz_row). Regression: the drop handler only
+    reordered layers, so sensors snapped back to where they were."""
+    from sensors import GradientSensor
+    from neurons import LeakyLayer
+    from circuit_model import CircuitModel, Connection
+    from network_viz import NetworkVisualizerWindow
+    from brain_serializer import _sensor_to_dict, _sensor_from_dict
+
+    a, b = GradientSensor(name='a', n=1), GradientSensor(name='b', n=1)
+    lat = GradientSensor(name='lat', n=1)
+    lat.lateralized = True
+    out = LeakyLayer(name='out', n=1, tau_rise=0.1, tau_decay=0.1)
+    out.layer = 1
+    W = np.ones((1, 1), dtype=np.float32)
+    conns = [Connection(src=s, tgt='out', W=W) for s in ('a', 'b', 'lat_L', 'lat_R')]
+    circuit = CircuitModel(sensors=[a, b, lat], layers=[out], connections=conns)
+    win = NetworkVisualizerWindow(_FakeGui(circuit))
+    qtbot.addWidget(win)
+    win.build()
+    eng = win.layout_engine
+
+    def order():   # sensor names top → bottom
+        return sorted(['a', 'b', 'lat'], key=lambda n: -eng.top_y(
+            next(s for s in circuit.sensors if s.name == n)))
+
+    assert order() == ['a', 'b', 'lat']
+    col_x = eng.node_x(a)
+    top = max(win._lay.positions[k][1] for k in win._lay.positions) + 0.1
+
+    win.editing.sel.node = 'lat_R_0'             # grab the lateralized sensor by a half
+    win.editing.on_node_drag_drop(col_x, top)
+    assert order() == ['lat', 'a', 'b']
+    assert eng.node_x(lat) == pytest.approx(col_x)   # still in its column
+
+    win.editing.sel.node = 'a_0'
+    win.editing.on_node_drag_drop(col_x, -1.0)   # to the bottom
+    assert order() == ['lat', 'b', 'a']
+
+    win.build()
+    assert order() == ['lat', 'b', 'a']          # kept across rebuilds
+    assert _sensor_from_dict(_sensor_to_dict(a)).viz_row == a.viz_row   # and saved
+
+
+@pytest.mark.skipif(not _HAS_PYTEST_QT, reason='pytest-qt not installed')
 def test_side_view_drag_preserves_sensor_z(qtbot):
     """Dragging a sensor container in the side view must update its z, not just
     its column — otherwise it can never win a z-cut competition in its new

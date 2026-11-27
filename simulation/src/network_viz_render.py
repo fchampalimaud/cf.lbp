@@ -1808,21 +1808,15 @@ class NetworkRenderer:
         for item, *_ in self.drawn.edge_items_tagged:
             item.setOpacity(1.0)
 
-    def show_drag_indicator(self, snap_x, mouse_y=None, layer=None):
-        # Same column and y provided → horizontal slot indicator.
-        if layer is not None and mouse_y is not None:
-            # Use the layer's visual x position rather than its raw .layer position
+    def show_drag_indicator(self, snap_x, mouse_y=None, obj=None):
+        # Same column and y provided → horizontal slot indicator (layer or sensor).
+        if obj is not None and mouse_y is not None:
+            # Use the node's visual x position rather than its raw .layer position
             # so that layers with layer=None (e.g. the _L half of a lateralized
             # pair) are detected as same-column when they should be.
-            my_x = next(
-                (self.win._lay.positions[f'{layer.name}_{j}'][0]
-                 for j in range(layer.n or 0)
-                 if f'{layer.name}_{j}' in self.win._lay.positions),
-                None,
-            )
-            col_x = my_x
+            col_x = self.win.layout_engine.node_x(obj)
             if col_x is not None and abs(snap_x - col_x) < 1e-9:
-                snap_y, _ = self.win.layout_engine.get_container_snap_y(layer, mouse_y)
+                snap_y, _ = self.win.layout_engine.get_container_snap_y(obj, mouse_y)
                 self.h_drag_indicator.setValue(snap_y)
                 self.h_drag_indicator.setVisible(True)
                 self.drag_indicator.setVisible(False)

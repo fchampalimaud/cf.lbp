@@ -64,6 +64,9 @@ class _SplitHalf:
         self._side        = side
         self.is_image_node = sensor.is_image_node
         self.lateral_pair = mirror_name(self.name)
+        # Both halves share the parent sensor's slot in its column.
+        if getattr(sensor, 'viz_row', None) is not None:
+            self.viz_row = sensor.viz_row
         if sensor.is_camera:
             # Camera sensor: pixel-split half
             l_end, r_start = sensor._half_bounds()
@@ -74,6 +77,15 @@ class _SplitHalf:
             # Non-camera lateralized sensor (joint-pair): each half has the sensor's n outputs
             self.n       = sensor.n or 1
             self.n_total = sensor.n or 1
+
+
+def _set_viz_row(obj, slot_idx):
+    """Record obj's slot in its column so the order survives rebuilds and reloads.
+    A lateralized sensor's half stand-in writes through to the real sensor."""
+    target = obj._sensor if isinstance(obj, _SplitHalf) else obj
+    target.viz_row = slot_idx
+    if target is not obj:
+        obj.viz_row = slot_idx
 
 
 def _sensor_is_lateralized(sensor, circuit=None):
@@ -674,7 +686,11 @@ class LayoutEngine:
             items = by_container[d]
             # Sort by viz_row if set; preserve natural insertion order otherwise.
             indexed = list(enumerate(items))
-            indexed.sort(key=lambda p: getattr(p[1][1], 'viz_row', 1000 + p[0]))
+
+            def _row(p):
+                row = getattr(p[1][1], 'viz_row', None)
+                return row if row is not None else 1000 + p[0]
+            indexed.sort(key=_row)
             container_groups.append([item for _, item in indexed])
         return container_groups, sorted_depths
 
@@ -727,8 +743,8 @@ class LayoutEngine:
                 groups.append((R_ct, R_obj.name, R_nodes, x, container,
                                slot_top, slot_bot, R_obj.viz_color))
                 if record_side_effects:
-                    if L_ct == 'layer': L_obj.viz_row = slot_idx
-                    if R_ct == 'layer': R_obj.viz_row = slot_idx
+                    _set_viz_row(L_obj, slot_idx)
+                    _set_viz_row(R_obj, slot_idx)
 
             else:   # 'single'
                 _, ct, obj = entry
@@ -750,8 +766,8 @@ class LayoutEngine:
                 if ct == 'sensor': sensor_nodes.update(container_nodes)
                 groups.append((ct, obj.name, container_nodes, x, container,
                                slot_top, slot_bot, obj.viz_color))
-                if record_side_effects and ct == 'layer':
-                    obj.viz_row = slot_idx
+                if record_side_effects:
+                    _set_viz_row(obj, slot_idx)
 
     def _place_ring(self, obj, x, container, positions, groups, record_side_effects):
         """Ring layout: neurons arranged in a circle, neuron 0 at the top."""
@@ -844,48 +860,49 @@ class LayoutEngine:
                    for d, cx in self.win._lay.container_x_map.items()
                    if d not in self.win._hidden_containers)
 
-    def container_mates(self, layer):
-        """Return all layers that share the same visual column as *layer*.
+    def node_keys(self, obj):
+        """Position keys of every drawn node of a layer or sensor. A lateralized
+        sensor is drawn as two halves ('cam_L_0', 'cam_R_0'), both belong to it."""
+        names = {obj.name}
+        circuit = self.win.gui.circuit
+        if any(s is obj for s in circuit.sensors) and _sensor_is_lateralized(obj, circuit):
+            names |= {f'{obj.name}_L', f'{obj.name}_R'}
+        return [k for k in self.win._lay.positions if k.rsplit('_', 1)[0] in names]
+
+    def node_x(self, obj):
+        """x of obj's column, or None if it isn't drawn."""
+        keys = self.node_keys(obj)
+        return self.win._lay.positions[keys[0]][0] if keys else None
+
+    def top_y(self, obj):
+        """y of obj's topmost node — its representative position in the column
+        (bilateral entries are symmetric around 0.5, so their mean is useless)."""
+        ys = [self.win._lay.positions[k][1] for k in self.node_keys(obj)]
+        return max(ys) if ys else 0.5
+
+    def container_mates(self, obj):
+        """Return all layers and sensors that share the same visual column as *obj*.
 
         Uses the current ``_positions`` dict rather than the raw ``.layer``
         attribute so that layers with ``layer=None`` (e.g. the _L half of a
         lateralized pair, whose column is decided by enforcement at layout time)
         are found correctly.
         """
-        my_x = None
-        for j in range(layer.n or 0):
-            pos = self.win._lay.positions.get(f'{layer.name}_{j}')
-            if pos is not None:
-                my_x = pos[0]
-                break
+        my_x = self.node_x(obj)
         if my_x is None:
             return []
+        circuit = self.win.gui.circuit
         return [
-            l for l in self.win.gui.circuit.layers
-            if l is not layer and (l.n or 0) > 0
-            and any(
-                abs((self.win._lay.positions.get(f'{l.name}_{k}') or (float('inf'),))[0] - my_x) < 1e-9
-                for k in range(l.n or 0)
-            )
+            o for o in list(circuit.layers) + list(circuit.sensors)
+            if o is not obj
+            and any(abs(self.win._lay.positions[k][0] - my_x) < 1e-9 for k in self.node_keys(o))
         ]
 
-    def get_container_snap_y(self, layer, mouse_y):
-        """Snap mouse_y to the nearest insertion boundary within layer's column.
+    def get_container_snap_y(self, obj, mouse_y):
+        """Snap mouse_y to the nearest insertion boundary within obj's column.
         Returns (snap_y, insert_idx) where insert_idx=0 means top slot."""
-        others = [
-            l for l in self.container_mates(layer)
-            if (l.n or 0) > 0
-        ]
-
-        def top_y(l):
-            # Bilateral layers are symmetric around 0.5, so avg_y is always 0.5.
-            # Use the top (max y) neuron as the layer's representative position.
-            ys = [self.win._lay.positions[f'{l.name}_{j}'][1]
-                  for j in range(l.n or 0)
-                  if f'{l.name}_{j}' in self.win._lay.positions]
-            return max(ys) if ys else 0.5
-
-        centers = sorted([top_y(l) for l in others], reverse=True)  # top-first
+        others = self.container_mates(obj)
+        centers = sorted([self.top_y(o) for o in others], reverse=True)  # top-first
 
         if not centers:
             return (mouse_y, 0)
