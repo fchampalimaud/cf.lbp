@@ -1,0 +1,2884 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Build and run neural-circuit behaviours on a simulated robot">
+      
+      
+      
+      
+        <link rel="prev" href="../vehicle3-on-robot/">
+      
+      
+        <link rel="next" href="../log-analysis/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/logo.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+    
+    
+      
+        <title>Braitenberg Vehicles with Vision - Little Brain Project Simulator</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../extra.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#braitenberg-vehicles-with-vision" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="Little Brain Project Simulator" class="md-header__button md-logo" aria-label="Little Brain Project Simulator" data-md-component="logo">
+      
+  <img src="../../../assets/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Little Brain Project Simulator
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Braitenberg Vehicles with Vision
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../.." class="md-tabs__link">
+          
+  
+  
+  Home
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../first-braitenberg/" class="md-tabs__link">
+          
+  
+  
+  Tutorials
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../creating-worlds/" class="md-tabs__link">
+          
+  
+  
+  Deployment Tools
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../coding-brains/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Coding Brains
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../wiring-brains/" class="md-tabs__link">
+          
+  
+  
+  Wiring Brains
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../headless/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Headless Runs
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/" class="md-tabs__link">
+          
+  
+  
+  Developer
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../real-robot/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Real Robot
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="Little Brain Project Simulator" class="md-nav__button md-logo" aria-label="Little Brain Project Simulator" data-md-component="logo">
+      
+  <img src="../../../assets/logo.svg" alt="logo">
+
+    </a>
+    Little Brain Project Simulator
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_1" id="__nav_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Home
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tour/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Simulator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorials
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tutorials
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../first-braitenberg/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Braitenberg Vehicle II
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../second-braitenberg/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Braitenberg Vehicle III
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../buridans-world/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Surviving in Buridan's World
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../vector-navigation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vector-Based Homing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../hunger-and-satiety/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The Belly Rules the Nose - Neuromodulation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment Tools
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deployment Tools
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../creating-worlds/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Creating Worlds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../oscilloscope/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Watching the Brain While You Drive
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../multi-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    A World with Many Vehicles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../vehicle3-on-robot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Circuits Driving a Real Robot
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Braitenberg Vehicles with Vision
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Braitenberg Vehicles with Vision
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#background-from-gradient-patches-to-camera-pixels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Background — from gradient patches to camera pixels
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-1-set-up-the-world" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1 — Set up the world
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-2-create-a-new-network" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2 — Create a new network
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-3-add-the-rgb-camera" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3 — Add the RGB camera
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-4-add-colour-opponent-filters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4 — Add colour-opponent filters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-5-connect-camera-to-filters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 5 — Connect camera to filters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-6-add-a-constant-drive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 6 — Add a constant drive
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-7-wire-the-motors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 7 — Wire the motors
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 7 — Wire the motors">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#drive-motor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Drive → motor
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#color-motor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        color → motor
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-8-run-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 8 — Run it
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-to-try-next" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What to try next
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../log-analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Analysing a Logged Run
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../coding-brains/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Coding Brains
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Wiring Brains
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Wiring Brains
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../wiring-brains/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Introduction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_2" id="__nav_5_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sensor types
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Sensor types
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/gradient/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GradientSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/color/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ColorSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/collision/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CollisionSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/distance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DistanceSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/interoceptive/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    InteroceptiveSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/proprioceptive/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ProprioceptiveSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/whisker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WhiskerSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/skycompass/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SkyCompassSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/graycamera/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GrayCameraSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sensors/rgbcamera/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RGBCameraSensor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_3" id="__nav_5_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neuron types
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Neuron types
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/sum/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SumLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/motor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MotorLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/constant/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ConstantLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/leaky/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LeakyLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/product/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ProductLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/adaptive/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AdaptiveLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/pulse/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PulseLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/sine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SineLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/ring_attractor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RingAttractorLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/conv2d/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Conv2dLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/leaky2d/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Leaky2dLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/reichardt2d/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reichardt2dLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/td/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TDLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/delta/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DeltaLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/three_factor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ThreeFactorLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/snapshot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SnapshotLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../layers/matsuoka/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MatsuokaLayer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../neuromodulators/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Neuromodulators
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../headless/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Headless Runs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Class Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Unit Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../real-robot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Real Robot
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#background-from-gradient-patches-to-camera-pixels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Background — from gradient patches to camera pixels
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-1-set-up-the-world" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1 — Set up the world
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-2-create-a-new-network" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2 — Create a new network
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-3-add-the-rgb-camera" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3 — Add the RGB camera
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-4-add-colour-opponent-filters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 4 — Add colour-opponent filters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-5-connect-camera-to-filters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 5 — Connect camera to filters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-6-add-a-constant-drive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 6 — Add a constant drive
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-7-wire-the-motors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 7 — Wire the motors
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 7 — Wire the motors">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#drive-motor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Drive → motor
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#color-motor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        color → motor
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-8-run-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 8 — Run it
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-to-try-next" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What to try next
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="braitenberg-vehicles-with-vision">Braitenberg Vehicles with Vision</h1>
+<p>The gradient-patch sensor used in earlier tutorials is a useful fiction: it gives the robot a tidy, single-number reading that represents "how much stimulus is nearby." Real eyes don't work that way. They send the brain a full image, and the brain has to extract from that image the signal it cares about.</p>
+<p>This tutorial replaces the gradient sensor with a simulated RGB camera and a small convolutional layer that acts as a colour filter. The resulting Braitenberg circuit can distinguish objects by colour — approaching green ones and avoiding red ones — using the same crossed-and-same-side wiring logic you already know. No code is required.</p>
+<p><strong>What you will build</strong></p>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Place coloured objects</td>
+<td>The arena has red and green solid objects</td>
+</tr>
+<tr>
+<td>Add an RGB camera</td>
+<td>A lateralized camera gives the robot left and right eyes</td>
+</tr>
+<tr>
+<td>Add colour-opponent filters</td>
+<td>A <code>Conv2dLayer</code> extracts redness and greenness from each eye</td>
+</tr>
+<tr>
+<td>Add a constant drive</td>
+<td>The robot keeps moving when nothing coloured is visible</td>
+</tr>
+<tr>
+<td>Wire the motors</td>
+<td>Crossed weights produce attraction to green, avoidance of red</td>
+</tr>
+<tr>
+<td>Deploy on the robot</td>
+<td>Wire the camera to a live ESP32-CAM stream</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="background-from-gradient-patches-to-camera-pixels">Background — from gradient patches to camera pixels</h2>
+<p>A <code>GradientSensor</code> ray returns a single float: the stimulus strength at the tip of the ray. That was enough for a colourless world.</p>
+<p>A camera returns a <code>3 × H × W</code> tensor — three colour channels (R, G, B) over a grid of pixels. That's far more information, but the motor layer still expects just two numbers (left wheel, right wheel). Something has to collapse the image down into the numbers the motors need.</p>
+<p>This circuit does it in two steps:</p>
+<ol>
+<li>
+<p><strong>Split the image left/right.</strong> A lateralized camera gives the left hemisphere the left half of the image and the right hemisphere the right half. The robot now has a "left eye" and a "right eye," just like in the gradient-sensor case.</p>
+</li>
+<li>
+<p><strong>Apply colour-opponent filters.</strong> A <code>Conv2dLayer</code> with a 1×1 kernel treats every pixel independently. Each filter is simply a set of channel weights — <code>[+1, −1, 0]</code> for redness, <code>[−1, +1, 0]</code> for greenness. After global average pooling, each filter returns a single number per eye: how much red (or green) dominates in that half of the view. These two numbers per eye replace what the gradient-sensor ray used to give you.</p>
+</li>
+<li>
+<p><strong>Wire the motors.</strong> The four conv outputs (2 filters × 2 eyes) feed the two motor neurons through a crossed weight matrix. The result is a robot that steers toward green objects and away from red ones.</p>
+</li>
+</ol>
+<hr />
+<h2 id="step-1-set-up-the-world">Step 1 — Set up the world</h2>
+<ol>
+<li>Launch the simulator. Click the <strong>World</strong> tab.</li>
+<li>In the <em>Objects</em> row, click <strong>+ Add object</strong> three or four times to place solid coloured circles in the arena. Use the colour picker on each to make two or three of them red and one green.</li>
+<li>Drag the objects to spread them around the right half of the arena. Put the green one somewhere in the middle.</li>
+</ol>
+<p>Objects are physical — the robot will bounce off them — which is what you want here. The robot's camera will see them as coloured regions as it approaches.</p>
+<hr />
+<h2 id="step-2-create-a-new-network">Step 2 — Create a new network</h2>
+<ol>
+<li>Click the <strong>Brain</strong> tab and select <strong>Network</strong> mode.</li>
+<li>Click <strong>+</strong> beside <strong>Network</strong> and name the new network <code>VisionBrain</code>.</li>
+<li>Click <strong>⬡ Open visualizer</strong>. The canvas shows only the <code>motor</code> node.</li>
+</ol>
+<hr />
+<h2 id="step-3-add-the-rgb-camera">Step 3 — Add the RGB camera</h2>
+<p>The robot will see the world through a lateralized RGB camera: one image for the left half of its field of view, one for the right.</p>
+<ol>
+<li>Drag an <strong>RGBCameraSensor</strong> chip from the palette onto the canvas, to the left of the <code>motor</code> node.</li>
+<li>In the dialog, set:<ul>
+<li><strong>name</strong> → <code>camera</code></li>
+<li><strong>width</strong> → <code>64</code></li>
+<li><strong>height</strong> → <code>48</code></li>
+<li><strong>FOV</strong> → <code>90</code></li>
+<li><strong>lateralized</strong> → ✓ (tick the checkbox)</li>
+<li><strong>overlap</strong> → <code>0</code></li>
+</ul>
+</li>
+<li>Confirm. Two image nodes appear: <code>camera_L</code> and <code>camera_R</code>.</li>
+</ol>
+<p><img alt="Arena with red and green objects" src="../../../assets/screenshots/vision_arena.png" style="display:inline-block; margin-right:24px; vertical-align:top;" />
+<img alt="Network visualizer with live camera image nodes" src="../../../assets/screenshots/vision_network.png" style="display:inline-block; vertical-align:top;" /></p>
+<p>With <code>lateralized</code> ticked, the 64-pixel-wide image is split cleanly down the middle: the left 32 columns become <code>camera_L</code>, the right 32 columns become <code>camera_R</code>. Because <code>overlap = 0</code> there is no shared region — each eye sees a strictly separate half of the scene.</p>
+<div class="admonition tip">
+<p class="admonition-title">Run it now</p>
+<p>Tick <strong>⌨ Manual</strong> in the Controls panel, then press <strong>▶ Run</strong>. Drive the robot toward the coloured objects with <code>W</code> / <code>S</code> / <code>A</code> / <code>D</code> and watch the two image nodes in the visualizer update as you steer — coloured objects slide in and out of the left and right eyes as the robot turns. Press <strong>■ Stop</strong> and untick <strong>⌨ Manual</strong> before continuing.</p>
+</div>
+<hr />
+<h2 id="step-4-add-colour-opponent-filters">Step 4 — Add colour-opponent filters</h2>
+<p>A <code>Conv2dLayer</code> with a 1×1 kernel acts as a pixel-independent colour filter: it multiplies each pixel by a set of channel weights and then averages the result across the whole image. With two filters you can compute both redness and greenness from each eye simultaneously.</p>
+<ol>
+<li>Drag a <strong>Conv2dLayer</strong> chip from the palette onto the canvas, between the camera and the <code>motor</code> node.</li>
+<li>In the dialog, set:<ul>
+<li><strong>name</strong> → <code>color</code></li>
+<li><strong>n_filters</strong> → <code>2</code></li>
+<li><strong>kernel_size</strong> → <code>1</code></li>
+<li><strong>pool</strong> → <code>global_avg</code></li>
+<li><strong>activation</strong> → <code>relu</code></li>
+<li><strong>scale</strong> → <code>50</code></li>
+<li><strong>lateralized</strong> → ✓</li>
+</ul>
+</li>
+<li>Confirm. Two neuron-pair nodes appear: <code>color_L</code> and <code>color_R</code>, each with two circles.</li>
+</ol>
+<hr />
+<h2 id="step-5-connect-camera-to-filters">Step 5 — Connect camera to filters</h2>
+<p>Drag from <strong><code>camera_L</code></strong> onto <strong><code>color_L</code></strong>. Instead of the usual weight matrix, the <strong>Filter Stack</strong> dialog opens. It has three parts:</p>
+<ul>
+<li><strong>Presets</strong> (left) — a column of buttons. Each click <em>adds</em> one filter to the stack.</li>
+<li><strong>Filter stack</strong> (middle) — the filters this connection will apply, in order. Each filter becomes one output neuron of <code>color_L</code>.</li>
+<li><strong>Preview</strong> (right) — a heatmap of the selected filter's kernel.</li>
+</ul>
+<p>Build the stack:</p>
+<ol>
+<li>Click <strong>R−G</strong>. A filter named <code>R−G</code> appears in the stack. Its kernel weights the red channel <code>+1</code> and the green channel <code>−1</code>.</li>
+<li>Click <strong>G−R</strong>. A second filter appears below it, with the weights reversed: green <code>+1</code>, red <code>−1</code>.</li>
+<li>Click <strong>OK</strong>.</li>
+</ol>
+<p>The order matters: <code>R−G</code> becomes <code>color_L_0</code> and <code>G−R</code> becomes <code>color_L_1</code>. If you added them the other way round, drag them in the list to reorder, or select one and click <strong>Remove selected</strong> to start over.</p>
+<p>You don't need to wire the right side. Because both the camera and the conv layer are lateralized, the simulator wires <code>camera_R → color_R</code> automatically, with its own copy of the same two filters. Both arcs appear on the canvas.</p>
+<p>After <code>relu</code>, <code>R−G</code> is nonzero only when red is stronger than green in that half of the image, and <code>G−R</code> only when green is stronger than red. Each eye now outputs two numbers: how much red dominates on that side, and how much green dominates.</p>
+<div class="admonition note">
+<p class="admonition-title">Why 1×1 kernels?</p>
+<p>A 1×1 kernel looks at one pixel at a time, so position in the image doesn't matter. Global average pooling then averages over the whole half-image. The robot steers by <em>how much</em> red or green it sees on each side, not by <em>where</em> the object sits within that side. For a Braitenberg vehicle that is enough: more red on the left than on the right means steer left.</p>
+</div>
+<div class="admonition tip">
+<p class="admonition-title">Writing your own filter</p>
+<p>The presets cover the common colour contrasts. For anything else, click <strong>{ } Code filter…</strong> at the bottom of the Presets column. You write a few lines of Python that assign a NumPy array of shape <code>(in_ch, kH, kW)</code> to <code>W</code>. Here that is <code>(3, 1, 1)</code>: three colour channels, one-pixel kernel. The names <code>np</code>, <code>in_ch</code>, <code>kH</code>, <code>kW</code> and the kernel centre <code>ch</code>, <code>cw</code> are predefined.</p>
+<p>This reproduces the <code>R−G</code> preset:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">W</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="n">in_ch</span><span class="p">,</span> <span class="n">kH</span><span class="p">,</span> <span class="n">kW</span><span class="p">))</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">W</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">ch</span><span class="p">,</span> <span class="n">cw</span><span class="p">]</span> <span class="o">=</span>  <span class="mf">1.0</span>   <span class="c1"># red</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">W</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="n">ch</span><span class="p">,</span> <span class="n">cw</span><span class="p">]</span> <span class="o">=</span> <span class="o">-</span><span class="mf">1.0</span>   <span class="c1"># green</span>
+</span></code></pre></div>
+<p>Change the channel weights to build other detectors. For example, <code>W[0] = 1; W[1] = -0.5; W[2] = -0.5</code> responds to red against both green and blue. Give the filter a name and click <strong>OK</strong> to add it to the stack.</p>
+</div>
+<hr />
+<h2 id="step-6-add-a-constant-drive">Step 6 — Add a constant drive</h2>
+<p>Without a baseline, the motors only receive input when a coloured object is in view — the robot stops wherever the colour signal runs out. A <code>ConstantLayer</code> fixes this exactly as it did in Vehicle III.</p>
+<ol>
+<li>Drag a <strong>ConstantLayer</strong> chip from the palette onto the canvas.</li>
+<li>In the dialog, set:<ul>
+<li><strong>name</strong> → <code>drive</code></li>
+<li><strong>n</strong> → <code>2</code></li>
+<li><strong>value</strong> → <code>50</code></li>
+</ul>
+</li>
+<li>Confirm.</li>
+</ol>
+<p>The <code>value</code> of <code>50</code> is on the same scale as the colour signals: the conv layer's <code>scale</code> of <code>50</code> means a half-image full of pure red drives its filter to <code>50</code>. In practice an object fills only part of the view, so the colour signals stay below the drive and steer the robot without overwhelming it. Raise <code>drive</code> and the robot cruises faster; raise <code>scale</code> and it turns more sharply.</p>
+<hr />
+<h2 id="step-7-wire-the-motors">Step 7 — Wire the motors</h2>
+<p>Now connect the drive and the four colour neurons to the motor layer, with weights that produce attraction to green and avoidance of red.</p>
+<h3 id="drive-motor">Drive → motor</h3>
+<p>Drag from <strong><code>drive</code></strong> onto <strong><code>motor</code></strong>. In the weight-matrix editor, choose <strong>One-to-one</strong> (or enter the identity matrix manually):</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>drive_0</code></th>
+<th><code>drive_1</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>motor_0</code> (left)</td>
+<td><strong>1</strong></td>
+<td>0</td>
+</tr>
+<tr>
+<td><code>motor_1</code> (right)</td>
+<td>0</td>
+<td><strong>1</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Confirm.</p>
+<h3 id="color-motor">color → motor</h3>
+<p>Drag from <strong><code>color_L</code></strong> onto <strong><code>motor</code></strong>. You only make this one connection. Because <code>color_L</code> and <code>color_R</code> are a lateralized pair, the weight-matrix editor covers both eyes at once: 2 rows (the motors) and 4 columns (the four colour neurons).</p>
+<p>The columns follow the order the neurons are drawn on the canvas, top to bottom. The right eye is drawn mirrored, so its two neurons come in reverse order:</p>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Neuron</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>color_L_0</code></td>
+<td>red, left eye</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>color_L_1</code></td>
+<td>green, left eye</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>color_R_1</code></td>
+<td>green, right eye</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>color_R_0</code></td>
+<td>red, right eye</td>
+</tr>
+</tbody>
+</table>
+<p>Choose <strong>Manual</strong> and enter:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>red L</th>
+<th>green L</th>
+<th>green R</th>
+<th>red R</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>motor_0</code> (left wheel)</td>
+<td><strong>1</strong></td>
+<td>0</td>
+<td><strong>1</strong></td>
+<td>0</td>
+</tr>
+<tr>
+<td><code>motor_1</code> (right wheel)</td>
+<td>0</td>
+<td><strong>1</strong></td>
+<td>0</td>
+<td><strong>1</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Confirm. Click <strong>Save</strong> in the visualizer toolbar.</p>
+<p>Read the matrix one colour at a time:</p>
+<ul>
+<li><strong>Green is crossed.</strong> Green on the left drives the right wheel; green on the right drives the left wheel. This is Vehicle II's attraction wiring.</li>
+<li><strong>Red is same-side.</strong> Red on the left drives the left wheel; red on the right drives the right wheel. This is Vehicle II's avoidance wiring.</li>
+</ul>
+<p>The matrix is symmetric when you mirror it left-to-right: each eye is wired the same way as the other, just onto the opposite wheel.</p>
+<hr />
+<h2 id="step-8-run-it">Step 8 — Run it</h2>
+<p>Close the visualizer (or leave it open alongside the arena). Press <strong>▶ Run</strong>.</p>
+<p>Watch the robot. When a green object is on its right, <code>color_R_1</code> fires and speeds up the left wheel, so the robot turns right, toward the green object. When a red object is on its right, <code>color_R_0</code> fires and speeds up the right wheel, so the robot turns left, away from the red one.</p>
+<p>Away from any coloured object, all four colour neurons sit near zero (<code>relu</code> removes the negative values), so both wheels run at the <code>drive</code> baseline of <code>50</code> and the robot drives straight.</p>
+<div class="admonition tip">
+<p class="admonition-title">Understanding the weight logic</p>
+<p>This is the gradient-sensor Braitenberg wiring applied twice, once per colour: crossed for green (attraction), same-side for red (avoidance). Both run at the same time, so when red and green are both in view the two pulls compete, and the stronger colour signal wins.</p>
+</div>
+<hr />
+<h2 id="what-to-try-next">What to try next</h2>
+<ul>
+<li><strong><a href="../../sensors/rgbcamera/">RGBCameraSensor reference</a></strong> — full parameter list including tilt angle and frame rate.</li>
+<li><strong><a href="../../layers/conv2d/">Conv2dLayer reference</a></strong> — larger kernels, pooling modes, and adaptation dynamics.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.tabs.sticky", "navigation.top", "content.code.copy", "content.code.annotate", "toc.follow"], "search": "../../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+
+      <script src="../../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    var markup =
+      '<span class="lbp-title-project">little brain project</span>' +
+      '<span class="lbp-title-sim">SIMULATOR</span>';
+    document.querySelectorAll(
+      ".md-header__title .md-header__topic .md-ellipsis"
+    ).forEach(function (el) {
+      el.innerHTML = markup;
+    });
+  });
+</script>
+
+  </body>
+</html>

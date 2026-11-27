@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="380" viewBox="756 20 172 218" overflow="hidden">
+  <defs>
+  <radialGradient id="grd_light" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#f5c842" stop-opacity="0.75"/>
+    <stop offset="100%" stop-color="#f5c842" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="grd_food" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#7cb849" stop-opacity="0.8"/>
+    <stop offset="100%" stop-color="#7cb849" stop-opacity="0"/>
+  </radialGradient>
+  </defs>
+  <rect x="756" y="20" width="172" height="218" fill="#f5f0ea"/>
+  <circle cx="842.0" cy="86.0" r="34" fill="url(#grd_food)"/><circle cx="842.0" cy="86.0" r="4" fill="#5d9e1f" opacity="0.9"/><rect x="818" y="174" width="48" height="10" rx="4" fill="none" stroke="#9a8070" stroke-width="1"/><rect x="819" y="175" width="30" height="8" rx="3" fill="#7cb849" opacity="0.7"/><text x="842" y="196" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="8.5" fill="#7a6050">internal state</text><circle cx="842.0" cy="135.0" r="27" fill="#e2d8cc" stroke="#5c4a3a" stroke-width="1.5"/><polygon points="842.0,108.0 834.3,146.1 849.7,146.1" fill="#5c4a3a" opacity="0.35"/><circle cx="842.0" cy="108.0" r="4" fill="#cc3333" stroke="#991111" stroke-width="0.8"/><text x="842" y="37" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="11" font-weight="700" fill="#3a2e28">InteroceptiveSensor</text><text x="842" y="231" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="9" fill="#7a6050" font-style="italic">gut / energy level</text>
+</svg>
