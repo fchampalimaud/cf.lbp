@@ -1940,6 +1940,45 @@ def test_robot_mode_runs_brain_loop_and_sends_its_command():
     assert motor.output.tolist() == [40.0, 40.0]
 
 
+def test_robot_mode_frame_returns_to_qt_quickly_simulation_unchanged():
+    """In robot mode one frame ticks the network for only ROBOT_BURST_S before
+    returning to Qt, so key presses (manual driving) are picked up within a few
+    tens of ms instead of ~100 ms. Simulation (×N speed) keeps its 50 ms budget."""
+    import time
+    import types
+    from sim_controller import SimController
+
+    def frame(robot_enabled, tick_s=0.001):
+        ticks = []
+
+        def tick():
+            ticks.append(1)
+            time.sleep(tick_s)
+        fake = types.SimpleNamespace(
+            running=True,
+            _timer=types.SimpleNamespace(start=lambda: None),
+            robot=types.SimpleNamespace(enabled=robot_enabled),
+            ROBOT_BURST_S=SimController.ROBOT_BURST_S,
+            _rt_mode=False, speed_mult=1000,
+            sim_cfg=types.SimpleNamespace(dt=0.01),
+            _osc_ctrl=types.SimpleNamespace(refresh_mult_cache=lambda: None),
+            _last_loop_t=None, _phys_ms_acc=0.0, _frame_count=0,
+            _tick_robot=tick, _tick=tick,
+            _render_free_running_cameras=lambda: None,
+            mujoco=types.SimpleNamespace(engine=None, view_3d=False),
+            _emit_frame_ready=lambda rgb: None,
+            sig_timing_updated=types.SimpleNamespace(emit=lambda s: None))
+        t0 = time.perf_counter()
+        SimController._loop(fake)
+        return time.perf_counter() - t0, len(ticks)
+
+    assert SimController.ROBOT_BURST_S <= 0.01
+    elapsed, n = frame(robot_enabled=True)
+    assert n >= 1 and elapsed < 0.030      # used to run 50 ms per frame
+    elapsed, n = frame(robot_enabled=False)
+    assert elapsed >= 0.045                 # simulation still uses its 50 ms budget
+
+
 def test_simulation_step_ticks_task_once_with_all_agents():
     """Simulation.step ticks the task once per step and gives it every agent's
     position, not only the selected agent's."""

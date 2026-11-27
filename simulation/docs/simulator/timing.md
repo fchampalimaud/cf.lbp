@@ -52,7 +52,7 @@ flowchart LR
     subgraph QT ["Qt Timer  (~every 20 ms)"]
         direction TB
         Q1([timer fires]) --> QL
-        subgraph QL [Inner loop — up to 50 ms]
+        subgraph QL [Inner loop — up to 5 ms]
             QR[read _robot_value\napply scale · τ · f] --> QN[brain.loop → wheel_cmd\ndt = real elapsed]
             QN --> QA[append traces]
             QA -->|deadline not reached| QR
@@ -77,8 +77,10 @@ flowchart LR
 | Thread | Rate | Driven by |
 |---|---|---|
 | OscThread | robot send rate (~60 Hz) | incoming UDP packets |
-| Qt loop — network | ~230 Hz | 50 ms deadline |
+| Qt loop — network | as fast as possible, in 5 ms bursts | `ROBOT_BURST_S` deadline (5 ms) |
 | MotorThread | ~60 Hz | fixed 16 ms sleep |
+
+The robot-mode burst is short (5 ms, against 50 ms in simulation mode) because key presses are only handled between bursts: a long burst would delay manual driving by up to ~100 ms. The robot sends new sensor data only every ~17 ms, so 5 ms still runs the network several times per sensor update. The rate of `/wheels` messages to the robot does not depend on it: MotorThread sends the latest command at 60 Hz either way.
 
 ---
 

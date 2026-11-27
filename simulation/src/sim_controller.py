@@ -53,6 +53,13 @@ class SimController(QObject):
         # used for oscilloscope trace-appending, which needs full physics-rate resolution)
     sig_tick_values     = Signal(object)     # dict[str, float] — once per physics substep
 
+    # Real-robot mode: how long each frame runs network ticks before redrawing and
+    # handing control back to Qt. Key presses (manual driving) are only seen between
+    # frames, so a long burst delays them; the robot sends new sensor data only every
+    # ~17 ms anyway, so 5 ms still ticks several times per sensor update. Commands to
+    # the robot are unaffected: MotorThread sends the latest one at a fixed 60 Hz.
+    ROBOT_BURST_S = 0.005
+
     def __init__(self, circuit, sim_cfg, world, arena, osc_ctrl, logger,
                  get_trail_visible, get_motor_override, parent=None,
                  brain_mgr=None):
@@ -316,10 +323,11 @@ class SimController(QObject):
 
         steps_done = 0
         if self.robot.enabled:
-            # Same inner loop as simulation — run network as many times as possible
-            # within the deadline. dt is real wall-clock time between steps.
-            # Motor commands are sent by MotorThread independently at ~60 Hz.
-            t_deadline = _t0 + 0.050
+            # Run the network as many times as possible within a short burst (see
+            # ROBOT_BURST_S), then return to Qt so key presses are picked up soon.
+            # dt is real wall-clock time between steps. Motor commands are sent by
+            # MotorThread independently at ~60 Hz.
+            t_deadline = _t0 + self.ROBOT_BURST_S
             while True:
                 self._tick_robot()
                 steps_done += 1
